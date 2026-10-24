@@ -202,7 +202,14 @@ export function ReportView() {
               ["Discount rate", `${((a.discount_rate ?? 0.07) * 100).toFixed(1)}%`],
               ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 3.65).toFixed(2)}/MMBtu`],
               ["Carbon price (on-site combustion)", `$${(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t`],
-              ["Grid prices", syntheticPrices ? "Synthetic hourly placeholder (CAISO 2024 pending)" : "Hourly, per the simulation sources below"],
+              [
+                "Grid prices",
+                a.price_source === "flat"
+                  ? `Flat $${(a.flat_price_usd_per_mwh ?? 60).toFixed(0)}/MWh every hour (what-if assumption)`
+                  : syntheticPrices
+                    ? "Synthetic hourly placeholder (CAISO 2024 pending)"
+                    : "CAISO 2024 hourly, per the simulation sources below",
+              ],
               ["Import delivery adder", `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
             ]}
           />
