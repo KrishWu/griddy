@@ -6,6 +6,7 @@
 // module actually uses are shown: a control that moves nothing looks broken on stage.
 import { useState } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import type { Assumptions } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
@@ -41,7 +42,7 @@ export function AssumptionsPanel() {
           Collapse
         </button>
         <SliderField
-          label="Discount rate"
+          label={<Term k="discount_rate">Discount rate</Term>}
           unit="%"
           value={a.discount_rate ?? 0.07}
           onChange={(v) => set({ discount_rate: v })}
@@ -53,7 +54,7 @@ export function AssumptionsPanel() {
         />
         <SliderField
           label="Gas price (annual average)"
-          unit="$/MMBtu"
+          unit={<Term k="mmbtu">$/MMBtu</Term>}
           value={a.gas_price_usd_per_mmbtu ?? 3.65}
           onChange={(v) => set({ gas_price_usd_per_mmbtu: v })}
           min={1}
@@ -62,7 +63,11 @@ export function AssumptionsPanel() {
           step={0.1}
         />
         <SliderField
-          label="Carbon price (on-site combustion)"
+          label={
+            <>
+              <Term k="carbon_price">Carbon price</Term> (on-site combustion)
+            </>
+          }
           unit="$/t"
           value={a.carbon_price_usd_per_t ?? 0}
           onChange={(v) => set({ carbon_price_usd_per_t: v })}
@@ -90,7 +95,7 @@ export function AssumptionsPanel() {
               step={1}
             />
             <SliderField
-              label="Grid delivery adder on imports"
+              label={<Term k="import_adder">Grid delivery adder on imports</Term>}
               unit="$/MWh"
               value={a.import_adder_usd_per_mwh ?? 20}
               onChange={(v) => set({ import_adder_usd_per_mwh: v })}
@@ -110,7 +115,7 @@ export function AssumptionsPanel() {
               </select>
             </label>
             <label className="block text-xs text-zinc-600 dark:text-zinc-400">
-              Grid price
+              <Term k="lmp">Grid price</Term>
               <select
                 className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1 text-sm dark:border-zinc-700"
                 value={a.price_source ?? "caiso_historical"}

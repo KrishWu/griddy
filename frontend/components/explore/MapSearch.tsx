@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { request } from "@/lib/api";
+import { prefersReducedMotion } from "@/lib/settings";
 
 interface Place { id: string; name: string; kind: string; location: { lon: number; lat: number }; bounds?: [number, number, number, number] }
 export function MapSearch({ mapRef, ready, onNavigate }: { mapRef: RefObject<MLMap | null>; ready: boolean; onNavigate: () => void }) {
@@ -25,11 +26,13 @@ export function MapSearch({ mapRef, ready, onNavigate }: { mapRef: RefObject<MLM
   const go = (p: Place) => {
     const map = mapRef.current; if (!map) return;
     onNavigate();
-    if (p.bounds) map.fitBounds([[p.bounds[0], p.bounds[1]], [p.bounds[2], p.bounds[3]]], { padding: 45, maxZoom: 12, duration: 800 });
-    else map.flyTo({ center: [p.location.lon, p.location.lat], zoom: p.kind === "Place" ? 11 : 13, duration: 900 });
+    // Settings > Reduce motion (or the OS): jump instead of animating.
+    const motion = { animate: !prefersReducedMotion(), essential: true } as const;
+    if (p.bounds) map.fitBounds([[p.bounds[0], p.bounds[1]], [p.bounds[2], p.bounds[3]]], { padding: 45, maxZoom: 12, duration: 800, ...motion });
+    else map.flyTo({ center: [p.location.lon, p.location.lat], zoom: p.kind === "Place" ? 11 : 13, duration: 900, ...motion });
     setQuery(p.name); setResults(null);
   };
-  return <div className="pointer-events-auto w-72 max-w-[calc(100vw-5rem)] rounded-md bg-white/95 p-2 text-xs shadow ring-1 ring-black/10 dark:bg-zinc-950/95 dark:ring-white/10">
+  return <div className="pointer-events-auto w-72 max-w-full rounded-md bg-white/95 p-2 text-xs shadow ring-1 ring-black/10 dark:bg-zinc-950/95 dark:ring-white/10">
     <form onSubmit={e => void search(e)} className="flex gap-1">
       <label className="sr-only" htmlFor="map-search">Find a California city, county, plant or coordinates</label>
       <input id="map-search" type="search" autoComplete="off" value={query} placeholder="City, county, plant or lat, lon" minLength={2} maxLength={120}

@@ -1,4 +1,5 @@
 // Renders Finding[] from any module. SHARED (foundation).
+import { Term } from "@/components/glossary/Term";
 import type { Finding } from "@/lib/contract";
 
 const COLOR: Record<Finding["severity"], string> = {
@@ -18,7 +19,11 @@ export function FindingsList({ findings }: { findings: Finding[] }) {
           <div>
             <div className="font-medium">
               {f.title}
-              {f.needs_utility_study && <span className="ml-2 text-[10px] uppercase text-amber-600">needs utility study</span>}
+              {f.needs_utility_study && (
+                <span className="ml-2 text-[10px] uppercase text-amber-600">
+                  needs <Term k="utility_study">utility study</Term>
+                </span>
+              )}
             </div>
             <div className="text-zinc-500">{f.detail}</div>
           </div>
