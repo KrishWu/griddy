@@ -4,8 +4,12 @@ Pure numpy/python, no I/O. engine.py builds a Fleet (capacities) and Drivers (ho
 demand, per-MW renewable output, prices) and dispatch() decides, hour by hour, how the
 campus is supplied. Every rule below has a unit test in tests/test_simulate_dispatch.py.
 
+0. Nuclear (nuclear_mw, nuclear_smr_mw: hourly AVAILABLE output) is must-run baseload: it
+   serves load first, up to its available output, and never charges the battery, exports
+   or spills; on an hour with less load it runs below its maximum (generation_mw is what
+   it served).
 1. Renewables: solar = solar_mw x clip(solar_cf, 0, 1), wind likewise. They are
-   must-take; generation_mw INCLUDES output that is later curtailed.
+   must-take after nuclear; generation_mw INCLUDES output that is later curtailed.
 2. Surplus hour (renewables > demand): charge the battery (power and headroom
    limits), then export up to the export limit if the export price is >= 0, then
    curtail the rest. The battery charges from on-site renewable surplus and, only when
@@ -58,7 +62,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-GENERATION_KEYS = ("solar_pv", "onshore_wind", "gas_cc", "gas_ct")
+GENERATION_KEYS = ("solar_pv", "onshore_wind", "gas_cc", "gas_ct", "nuclear", "nuclear_smr")
 DEFAULT_INITIAL_SOC_FRAC = 0.5  # first pass of the cyclic year
 GRID_SPREAD_USD_PER_MWH = 5.0  # minimum margin before grid charging is worth the cycle
 VOLL_USD_PER_MWH = 1000.0  # value of lost load: what an unserved MWh is worth avoiding
@@ -78,6 +82,8 @@ class Fleet:
     import_limit_mw: float = 0.0  # 0 when not grid-connected (engine handles that)
     export_limit_mw: float = 0.0
     grid_charging: bool = False  # rule 6: charge from spare imports in cheap hours
+    nuclear_mw: float | np.ndarray = 0.0  # rule 0: large reactors' hourly AVAILABLE output (nameplate x availability)
+    nuclear_smr_mw: float | np.ndarray = 0.0  # rule 0: small modular reactors, likewise
 
 
 @dataclass
@@ -93,7 +99,7 @@ class Drivers:  # all hourly arrays of length n
 
 @dataclass
 class Dispatch:
-    generation_mw: dict[str, np.ndarray]  # ALWAYS keys solar_pv, onshore_wind, gas_cc, gas_ct; renewable generation INCLUDES curtailed output
+    generation_mw: dict[str, np.ndarray]  # ALWAYS the GENERATION_KEYS; renewable generation INCLUDES curtailed output
     charge_mw: np.ndarray
     discharge_mw: np.ndarray
     soc_mwh: np.ndarray  # state of charge at the END of each hour
@@ -354,10 +360,18 @@ def dispatch(fleet: Fleet, drivers: Drivers, initial_soc_frac: float | None = No
         if not 0.0 <= frac <= 1.0:
             raise ValueError(f"initial_soc_frac: must be in [0, 1], got {initial_soc_frac!r}")
 
+    # 0. Nuclear (must-run baseload) serves load first, never more than the load.
+    nuc_l = _hourly(fleet.nuclear_mw, n, "nuclear_mw", nonneg=True)
+    nuc_s = _hourly(fleet.nuclear_smr_mw, n, "nuclear_smr_mw", nonneg=True)
+    nuc_avail = nuc_l + nuc_s
+    nuc_served = np.minimum(nuc_avail, demand)
+    nuclear = nuc_served * np.divide(nuc_l, nuc_avail, out=np.zeros(n), where=nuc_avail > 0)
+    nuclear_smr = nuc_served - nuclear
+
     # 1. Renewables (must-take). net > 0 is a deficit, net < 0 a surplus.
     solar = _scalar(fleet.solar_mw, "solar_mw") * solar_cf
     wind = _scalar(fleet.wind_mw, "wind_mw") * wind_cf
-    net = demand - solar - wind
+    net = demand - nuc_served - solar - wind
     net_list = net.tolist()
     export_cap = np.where(export_price >= 0.0, export_limit, 0.0)  # exportable MW each hour
     # batt_mwh = 0 or batt_mw = 0 means nothing moves (SOC stays put).
@@ -385,7 +399,7 @@ def dispatch(fleet: Fleet, drivers: Drivers, initial_soc_frac: float | None = No
         need = np.maximum(net, 0.0) - discharge
         gas_cc, gas_ct, imports, unmet, _ = _merit_order(need, import_cost, cc_cost, ct_cost, cc_avail, ct_avail, import_limit)
         return Dispatch(
-            generation_mw={"solar_pv": solar, "onshore_wind": wind, "gas_cc": gas_cc, "gas_ct": gas_ct},
+            generation_mw={"solar_pv": solar, "onshore_wind": wind, "gas_cc": gas_cc, "gas_ct": gas_ct, "nuclear": nuclear, "nuclear_smr": nuclear_smr},
             charge_mw=charge,
             discharge_mw=discharge,
             soc_mwh=soc_mwh,

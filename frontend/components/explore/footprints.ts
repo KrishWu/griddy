@@ -16,7 +16,7 @@ const ROW_SLACK = 1.2; // row width = 1.2 x sqrt(total area): a roughly square b
 export const BATTERY_REF_HOURS = 4; // the catalog's battery land rate is for a 4 h system; Evaluate's BOM scales by duration_h / 4
 
 /** Extrusion heights (m) before the zoom-dependent exaggeration in mapStyle; schematic, for legibility only. */
-export const FOOTPRINT_HEIGHT_M: Record<AssetKind, number> = { solar_pv: 20, battery: 40, gas_cc: 60, gas_ct: 60, onshore_wind: 8 };
+export const FOOTPRINT_HEIGHT_M: Record<AssetKind, number> = { solar_pv: 20, battery: 40, gas_cc: 60, gas_ct: 60, onshore_wind: 8, nuclear: 70, nuclear_smr: 45 };
 
 // One catalog request per page load, shared across remounts; a failure lets the next mount retry.
 let catalogPromise: Promise<Catalog> | null = null;

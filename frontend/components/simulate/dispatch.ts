@@ -10,7 +10,7 @@ import { mwh } from "@/lib/format";
 
 import type { SimExtras, WorstDay } from "./extras";
 
-export type SeriesKey = "solar" | "wind" | "discharge" | "gas_cc" | "gas_ct" | "imports" | "unmet" | "curtailed" | "charge" | "exports";
+export type SeriesKey = "nuclear" | "solar" | "wind" | "discharge" | "gas_cc" | "gas_ct" | "imports" | "unmet" | "curtailed" | "charge" | "exports";
 
 export interface SeriesDef {
   key: SeriesKey;
@@ -28,6 +28,8 @@ export interface SeriesDef {
 // Colors are CSS variables set on the chart wrapper (light + dark steps, validated as a
 // set for adjacent-pair CVD separation in this stack order).
 export const SERIES: SeriesDef[] = [
+  // Nuclear (large + SMR) is must-run baseload, so it sits at the bottom of the stack.
+  { key: "nuclear", short: "Nuclear", legend: "Nuclear", label: "Nuclear (large + SMR)", color: "var(--gf-nuclear)", stack: "pos" },
   { key: "solar", short: "Solar", legend: "Solar", label: "Solar (used)", color: "var(--gf-solar)", stack: "pos" },
   { key: "wind", short: "Wind", legend: "Wind", label: "Wind (used)", color: "var(--gf-wind)", stack: "pos" },
   { key: "discharge", short: "Batt out", legend: "Battery", label: "Battery discharge", color: "var(--gf-battery)", stack: "pos" },
@@ -80,6 +82,7 @@ export function pointAt(h: HourlySeries, t: number): Point {
   const solarCurt = renewable > 0 ? (curtailed * solarGen) / renewable : 0;
   return {
     demand: pos(h.demand_mw, t),
+    nuclear: pos(h.generation_mw.nuclear, t) + pos(h.generation_mw.nuclear_smr, t),
     solar: Math.max(0, solarGen - solarCurt),
     wind: Math.max(0, windGen - (curtailed - solarCurt)),
     discharge: pos(h.battery_discharge_mw, t),
@@ -105,7 +108,7 @@ export interface YearScan {
 
 export function scanYear(h: HourlySeries): YearScan {
   const present: Presence = {
-    solar: false, wind: false, discharge: false, gas_cc: false, gas_ct: false, imports: false,
+    nuclear: false, solar: false, wind: false, discharge: false, gas_cc: false, gas_ct: false, imports: false,
     unmet: false, curtailed: false, charge: false, exports: false, soc: false,
   };
   const keys = Object.keys(present) as (keyof Presence)[];
@@ -115,7 +118,7 @@ export function scanYear(h: HourlySeries): YearScan {
   for (let t = 0; t < h.demand_mw.length; t++) {
     const p = pointAt(h, t);
     for (const k of keys) if (!present[k] && Math.abs(p[k]) > EPS_MW) present[k] = true;
-    const up = p.solar + p.wind + p.discharge + p.gas_cc + p.gas_ct + p.imports + p.unmet + p.curtailed;
+    const up = p.nuclear + p.solar + p.wind + p.discharge + p.gas_cc + p.gas_ct + p.imports + p.unmet + p.curtailed;
     hiMw = Math.max(hiMw, up, p.demand);
     loMw = Math.min(loMw, p.charge + p.exports);
     socMaxMwh = Math.max(socMaxMwh, p.soc);

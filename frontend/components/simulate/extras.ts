@@ -28,7 +28,7 @@ export interface SimExtras {
   notes: string[];
 }
 
-const KINDS: AssetKind[] = ["solar_pv", "onshore_wind", "gas_cc", "gas_ct", "battery"];
+const KINDS: AssetKind[] = ["solar_pv", "onshore_wind", "gas_cc", "gas_ct", "battery", "nuclear", "nuclear_smr"];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 

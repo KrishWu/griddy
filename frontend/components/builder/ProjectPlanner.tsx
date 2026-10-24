@@ -42,6 +42,8 @@ export function ProjectPlanner() {
           <option value="wind_storage">Wind + storage</option>
           <option value="gas_cc">Combined-cycle gas</option>
           <option value="gas_ct">Gas peaker</option>
+          <option value="nuclear">Nuclear (large reactor)</option>
+          <option value="nuclear_smr">Nuclear (small modular reactors)</option>
         </select>
       </label>
       <div className="grid grid-cols-2 gap-2">

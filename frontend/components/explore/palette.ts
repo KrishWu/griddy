@@ -71,6 +71,8 @@ export const ASSET_FUEL: Record<AssetKind, Fuel> = {
   gas_cc: "gas",
   gas_ct: "gas",
   battery: "battery",
+  nuclear: "nuclear",
+  nuclear_smr: "nuclear",
 };
 
 export const ASSET_LABEL: Record<AssetKind, string> = {
@@ -79,6 +81,8 @@ export const ASSET_LABEL: Record<AssetKind, string> = {
   gas_cc: "Gas combined cycle",
   gas_ct: "Gas combustion turbine",
   battery: "Battery storage",
+  nuclear: "Nuclear (large reactor)",
+  nuclear_smr: "Nuclear (small modular reactor)",
 };
 
 /** Interconnection-queue choropleth: active requested MW per county on one hue (teal, clear of the

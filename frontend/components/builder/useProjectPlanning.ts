@@ -5,7 +5,7 @@ import { request } from "@/lib/api";
 import type { Scenario } from "@/lib/contract";
 
 export interface PlanningInputs {
-  plant_type: "hybrid" | "solar_storage" | "wind_storage" | "gas_cc" | "gas_ct";
+  plant_type: "hybrid" | "solar_storage" | "wind_storage" | "gas_cc" | "gas_ct" | "nuclear" | "nuclear_smr";
   renewable_energy_share: number;
   storage_hours: number;
   reserve_margin: number;
@@ -17,6 +17,7 @@ export interface ProjectPlan {
   screening: { meets_entered_checks: boolean; issues: string[]; basis: string };
 }
 
+const PLANT_TYPES: PlanningInputs["plant_type"][] = ["hybrid", "solar_storage", "wind_storage", "gas_cc", "gas_ct", "nuclear", "nuclear_smr"];
 const DEFAULTS: PlanningInputs = { plant_type: "hybrid", renewable_energy_share: 0.7, storage_hours: 4, reserve_margin: 0.15 };
 export const PLAN_DEBOUNCE_MS = 400;
 
@@ -25,7 +26,7 @@ function inputsFor(scenario: Scenario | null): PlanningInputs {
   const number = (value: unknown, fallback: number, min: number, max: number) =>
     typeof value === "number" && Number.isFinite(value) && value >= min && value <= max ? value : fallback;
   return {
-    plant_type: saved?.plant_type && ["hybrid", "solar_storage", "wind_storage", "gas_cc", "gas_ct"].includes(saved.plant_type) ? saved.plant_type : DEFAULTS.plant_type,
+    plant_type: saved?.plant_type && PLANT_TYPES.includes(saved.plant_type) ? saved.plant_type : DEFAULTS.plant_type,
     renewable_energy_share: number(saved?.renewable_energy_share, DEFAULTS.renewable_energy_share, 0, 1),
     storage_hours: number(saved?.storage_hours, DEFAULTS.storage_hours, 0.5, 48),
     reserve_margin: number(saved?.reserve_margin, DEFAULTS.reserve_margin, 0, 1),

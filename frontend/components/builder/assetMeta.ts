@@ -8,6 +8,9 @@ export const ASSET_META: Record<AssetKind, { label: string; color: string; maxPe
   battery: { label: "Battery", color: "#8b5cf6", maxPerPeak: 1.5 },
   gas_cc: { label: "Gas CC", color: "#6b7280", maxPerPeak: 1.5 },
   gas_ct: { label: "Gas CT", color: "#9ca3af", maxPerPeak: 1.5 },
+  // Nuclear uses the map's nuclear-plant color (explore/palette.ts); SMRs a lighter step of it.
+  nuclear: { label: "Nuclear (large)", color: "#009E73", maxPerPeak: 1.5 },
+  nuclear_smr: { label: "Nuclear SMR", color: "#2dd4bf", maxPerPeak: 1.5 },
 };
 
-export const ASSET_ORDER: AssetKind[] = ["solar_pv", "onshore_wind", "battery", "gas_cc", "gas_ct"];
+export const ASSET_ORDER: AssetKind[] = ["solar_pv", "onshore_wind", "battery", "nuclear", "nuclear_smr", "gas_cc", "gas_ct"];
