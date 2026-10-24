@@ -10,6 +10,7 @@
 // Our sources/layers are (re)added on every 'style.load', so a basemap swap keeps them.
 // Settings (lib/settings.tsx) pick the basemap (follow theme / light / dark; Mixed keeps it light),
 // filter the canvas (contrast, brightness) and turn camera animations off under reduced motion.
+// A locate button under the zoom controls (like Google Maps) flies to the viewer's own location.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Popup } from "maplibre-gl";
 
@@ -60,6 +61,15 @@ const SITE_ZOOM = 9; // the 25 km ring fits comfortably
 const SELECT_DELAY_MS = 250; // wait this long after a click on empty map, so a double-click zooms instead of moving the site
 const FOOTPRINT_PITCH = 50;
 const REFRAME_DELAY_MS = 300; // footprints on: refit this long after the asset set or site settles
+const LOCATE_ZOOM = 13; // closest the locate button zooms; a coarse (IP / Wi-Fi) fix frames its accuracy circle instead
+const LOCATE_NOTE_MS = 8000; // how long a "couldn't find you" note stays up
+
+/** What the map says when the browser can't give a position (GeolocationPositionError codes). */
+function locateMessage(code: number): string {
+  if (code === 1) return "Location is blocked for this site. Allow it in your browser's site settings, then reload.";
+  if (code === 3) return "Finding your location took too long. Try again.";
+  return "Couldn't find your location. Check that location is turned on for this browser in your computer's settings.";
+}
 
 /** Queue status from the boundaries layer: counties with active requests, or "unavailable" when the
  *  backend's queue file is missing (no county carries queue_active_mw). */
@@ -241,6 +251,8 @@ export function MapView() {
   const { visible, setVisible, hiddenOverlays, setStatus: publishStatus } = useLayerState();
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState<string | null>(null);
   const retryBasemap = useRef<(() => void) | null>(null);
   useEffect(() => {
     toneRef.current = tone;
@@ -343,6 +355,25 @@ export function MapView() {
       });
       map.current = m;
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
+      // Locate me, under the zoom buttons: one browser geolocation fix per click (the browser asks
+      // permission the first time), a blue dot with its accuracy circle, framed beside the drawer.
+      // Camera options are set per click so they follow the drawer and the reduced-motion setting.
+      class LocateControl extends maplibregl.GeolocateControl {
+        override trigger(): boolean {
+          userMoved.current = true; // an explicit view choice: don't auto-ease to the site afterwards
+          this.options.fitBoundsOptions = { maxZoom: LOCATE_ZOOM, padding: framePadding(m, shiftRef.current), duration: 1200, ...motion() };
+          setLocateError(null);
+          setLocating(true);
+          return super.trigger();
+        }
+      }
+      const locate = new LocateControl({ positionOptions: { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 } });
+      locate.on("geolocate", () => setLocating(false));
+      locate.on("error", (e) => {
+        setLocating(false);
+        setLocateError(locateMessage(e.code));
+      });
+      m.addControl(locate, "top-right");
       m.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
       // Named places with an always-visible title (Stanford, where the website starts); removed with the map.
       for (const lm of LANDMARKS) {
@@ -587,6 +618,12 @@ export function MapView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerOpen]);
 
+  useEffect(() => {
+    if (!locateError) return;
+    const t = setTimeout(() => setLocateError(null), LOCATE_NOTE_MS);
+    return () => clearTimeout(t);
+  }, [locateError]);
+
   // Camera: ease to the site the first time it is known (unless the user already moved);
   // later, follow it only if it changed without a map click and is off-screen (e.g. a preset switch).
   useEffect(() => {
@@ -776,6 +813,16 @@ export function MapView() {
             <button type="button" className="font-medium underline" onClick={() => retryBasemap.current?.()}>
               Retry
             </button>
+          </span>
+        )}
+        {locating && (
+          <span role="status" className="rounded bg-white/95 px-2 py-0.5 text-[10px] text-zinc-600 shadow ring-1 ring-black/10 dark:bg-zinc-900/95 dark:text-zinc-300 dark:ring-white/10">
+            Finding your location…
+          </span>
+        )}
+        {locateError && (
+          <span role="alert" className="max-w-72 rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 shadow ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800">
+            {locateError}
           </span>
         )}
       </div>
