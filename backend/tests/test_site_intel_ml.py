@@ -1,4 +1,4 @@
-"""Model signals for the GriddyGrade (app/site_intel/ml.py), offline.  OWNER: workstream E.
+"""Model and resource signals for the power plant GriddyGrade (app/site_intel/ml.py), offline.  OWNER: workstream E.
 
 Ranges and invariants only: B's and A's artifacts will keep changing the numbers.
 """
@@ -60,43 +60,32 @@ def test_missing_artifact_is_unavailable(monkeypatch):
 
 
 @needs_artifact
-def test_signals_are_in_range_and_leave_gas_and_double_counts_out():
+def test_site_cell_signals_are_in_range_and_leave_double_counts_out():
     ctx = ml.ml_context(ALAMEDA)
     json.dumps(ctx, allow_nan=False)  # what the API returns: no NaN
     assert ctx["queue_mw"] >= 0
-    clean = ctx["clean_build"]
-    assert set(clean) == {"radius_km", "solar_pv", "onshore_wind", "battery"}  # no gas_cc
-    for kind in ("solar_pv", "onshore_wind", "battery"):
-        assert 0 <= clean[kind]["best"] <= 1
-        assert clean[kind]["distance_km"] <= ml.CLEAN_RADIUS_KM
-    assert "in_nonattainment" not in json.dumps(ctx)  # E scores EPA designations itself
-    assert "d_line_hv_km" not in json.dumps(ctx)  # A's summary has the grid distances
-    for kind, m in ctx["site_artifact"]["model_metrics"].items():
-        assert kind != "gas_cc" and 0.5 <= m["roc_auc"] <= 1
+    suit = ctx["site_cell"]["suitability"]
+    assert {"solar_pv", "onshore_wind", "gas_cc"} <= set(suit)  # every generation kind the model learned
+    assert all(0 <= p <= 1 for p in suit.values())
+    res = ctx["site_cell"]["resource"]
+    assert 3 <= res["ghi_kwh_m2_day"] <= 8 and 0 < res["wind100_ms"] < 20
+    basis = ctx["resource_basis"]
+    assert basis["wind_height_m"] == 100 and basis["grid_km"] >= 25 and basis["years"] == 1  # what the grade checks before scoring
+    assert "in_nonattainment" not in json.dumps(ctx)  # E reads EPA designations itself
+    assert "d_line_hv_km" not in json.dumps(ctx)  # A's summary and grid_tiers have the grid distances
+    assert "clean_build" not in ctx and "forecast" not in ctx  # data center signals are gone
+    for m in ctx["site_artifact"]["model_metrics"].values():
+        assert 0.5 <= m["roc_auc"] <= 1
 
 
 @needs_artifact
-def test_forecast_context_prefers_p50():
-    f = ml.ml_context(ALAMEDA)["forecast"]
-    if f is None:
-        pytest.skip("no demand forecast artifact")
-    region = f["region"]
-    assert region["base_peak_mw_p50"] > 0
-    assert region["peak_mw_p50"] <= region["peak_mw_p90"]
-    assert (f["scenario"], f["year"]) == ("mid", 2035)
-    assert 0 <= f["metrics"].get("p10_p90_coverage", 0.5) <= 1
-
-
-@needs_artifact
-def test_a_broken_forecast_leaves_the_other_signals(monkeypatch):
-    import app.forecast.service as fs
-
-    def boom(*_):
-        raise RuntimeError("forecast down")
-
-    monkeypatch.setattr(fs, "forecast", boom)
-    ctx = ml.ml_context(ALAMEDA)
-    assert ctx["available"] is True and ctx["forecast"] is None and ctx["queue_mw"] >= 0
+def test_site_cell_is_the_nearest_cell_not_the_best_nearby():
+    t = ml._table()
+    i = int(np.argmax(t.p["solar_pv"]))
+    p = LngLat(lon=float(t.lon[i]), lat=float(t.lat[i]))
+    ctx = ml.ml_context(p)
+    assert ctx["cell"]["id"] == int(t.cell[i]) and ctx["cell"]["distance_km"] < 0.01
+    assert ctx["site_cell"]["suitability"]["solar_pv"] == pytest.approx(float(t.p["solar_pv"][i]), abs=1e-4)
 
 
 @needs_artifact
@@ -118,6 +107,8 @@ def test_site_intel_carries_the_signals_and_their_provenance(offline):
     model = next(p for s, p in sources.items() if s.startswith("Griddy site-location model"))
     assert model.kind == "inferred" and ctx["site_artifact"]["id"] in model.source and "ROC-AUC" in (model.note or "")
     assert any(p.kind == "observed" and "Queued Up" in p.source for p in intel.provenance)
+    era5 = next(p for p in intel.provenance if "ERA5" in p.source)
+    assert era5.kind == "observed" and "not a long-term mean" in (era5.note or "")
     if ctx["queue_mw"] < ml.QUEUE_HIGH_MW:
         assert not any(f.id == "interconnection_queue_congested" for f in intel.findings)
 

@@ -3,6 +3,8 @@
 // Run by backend/app/site_intel/prep/grade_percentiles.py (it builds the input file):
 //   node components/site_intel/prep/gradePercentiles.mjs <reference.jsonl.gz> <out.json> [meta JSON]
 // Each input line is {cell, summary, intel}: A's site summary and E's site intel for one 5 km cell.
+// Cut-offs are tabulated per technology and voltage-search tier: capacity only changes the score
+// through the tier, so one representative capacity per tier stands for all of it.
 import { createReadStream, writeFileSync } from "node:fs";
 import { register } from "node:module";
 import { createInterface } from "node:readline";
@@ -11,22 +13,24 @@ import { createGunzip } from "node:zlib";
 register("./aliasHooks.mjs", import.meta.url);
 const { readSummary } = await import("@/components/explore/useSiteSummary");
 const { feasibilityInput } = await import("../feasibilityInput.ts");
-const { calculateFeasibilityScore, HV_KV } = await import("../feasibility.ts");
+const { calculatePowerPlantFeasibility } = await import("../feasibility.ts");
+const { POWER_PLANT_POLICY: policy, POLICY_TECHNOLOGIES } = await import("../feasibilityPolicy.ts");
 
-// Average data center loads to tabulate; percentile.ts interpolates between them on a log scale.
-const LOADS_MW = [25, 50, 100, 250, 500, 1000, 2000];
-const PLAUSIBLE_LINE_KM = 50;
-const REFERENCE = `5 km cells of California within ${PLAUSIBLE_LINE_KM} km of a ${HV_KV} kV+ line and inside a utility service territory`;
+const tiers = policy.grid.tiers.map((t, i) => {
+  const lo = i > 0 ? policy.grid.tiers[i - 1].maxMw : 0;
+  return { kv: t.minKv, capacityMw: Number.isFinite(t.maxMw) ? (lo + t.maxMw) / 2 : 2 * lo };
+});
+const PLAUSIBLE_LINE_KM = policy.grid.zeroKm;
+const REFERENCE = `5 km cells of California inside a utility service territory and within ${PLAUSIBLE_LINE_KM} km of an operational AC line at the project's voltage-search threshold`;
 
 const [, , inPath, outPath, metaJson] = process.argv;
 if (!inPath || !outPath) throw new Error("usage: gradePercentiles.mjs <reference.jsonl.gz> <out.json> [meta JSON]");
 const meta = metaJson ? JSON.parse(metaJson) : {};
 
-/** Plausible: where a data center could realistically go (the percentile ranks against these). */
-function plausible(input) {
-  const line = input.line;
-  const hv = line && (line.voltageKv === null || line.voltageKv >= HV_KV);
-  return Boolean(hv && typeof line.distanceKm === "number" && line.distanceKm <= PLAUSIBLE_LINE_KM && input.utility.status === "identified");
+/** Plausible: where a plant of this size could realistically connect (the percentile ranks against these). */
+function plausible(site, kv) {
+  const line = site.grid[kv]?.line;
+  return site.utility.state === "available" && line?.state === "available" && typeof line.value?.distanceKm === "number" && line.value.distanceKm <= PLAUSIBLE_LINE_KM;
 }
 
 /** numpy-style linear quantiles, k = 0..100. */
@@ -41,43 +45,44 @@ function cutoffs(values) {
   });
 }
 
-const raw = LOADS_MW.map(() => []);
+const raw = Object.fromEntries(POLICY_TECHNOLOGIES.map((t) => [t, Object.fromEntries(tiers.map(({ kv }) => [kv, []]))]));
 let cells = 0;
 let withMl = 0;
-let forecastId = null;
-const capped = LOADS_MW.map(() => 0);
 const lines = createInterface({ input: createReadStream(inPath).pipe(createGunzip()), crlfDelay: Infinity });
 for await (const line of lines) {
   if (!line.trim()) continue;
   const { summary, intel } = JSON.parse(line);
   cells++;
-  const input = feasibilityInput({ summary, view: readSummary(summary), intel });
-  if (!plausible(input)) continue;
-  if (input.ml) withMl++;
-  forecastId ??= intel?.extras?.ml?.forecast?.artifact_id ?? null;
-  LOADS_MW.forEach((load, i) => {
-    const r = calculateFeasibilityScore(input, load);
-    raw[i].push(r.overallScoreRaw);
-    if (r.cap) capped[i]++;
-  });
+  const site = feasibilityInput({ summary, view: readSummary(summary), intel });
+  if (site.sitingSimilarity.solar_pv?.state === "available") withMl++;
+  for (const { kv, capacityMw } of tiers) {
+    if (!plausible(site, kv)) continue;
+    for (const technology of POLICY_TECHNOLOGIES) {
+      const r = calculatePowerPlantFeasibility(site, { technology, capacityMw }, policy);
+      if (!r.valid) throw new Error(r.errors.join("; "));
+      if (r.voltageTier.minKv !== kv) throw new Error(`capacity ${capacityMw} MW fell in the ${r.voltageTier.minKv} kV tier, not ${kv}`);
+      raw[technology][kv].push(r.overallScoreRaw);
+    }
+  }
 }
 
-const count = raw[0].length;
-if (count < 100) throw new Error(`only ${count} plausible cells: is the reference file complete?`);
+const counts = tiers.map(({ kv }) => raw.solar_pv[kv].length);
+if (Math.min(...counts) < 100) throw new Error(`only ${Math.min(...counts)} plausible cells in a tier: is the reference file complete?`);
 const table = {
   generated: new Date().toISOString().slice(0, 10),
+  policy_version: policy.version,
   reference: REFERENCE,
-  count,
   cells_scored: cells,
   site_artifact: meta.site_artifact ?? null,
-  forecast_artifact: forecastId,
-  loads_mw: LOADS_MW,
-  cutoffs: raw.map(cutoffs),
+  technologies: Object.fromEntries(
+    POLICY_TECHNOLOGIES.map((t) => [t, Object.fromEntries(tiers.map(({ kv }) => [String(kv), { count: raw[t][kv].length, cutoffs: cutoffs(raw[t][kv]) }]))]),
+  ),
 };
 writeFileSync(outPath, JSON.stringify(table) + "\n");
 
-const at100 = table.cutoffs[LOADS_MW.indexOf(100)];
-console.log(`${count.toLocaleString("en-US")} plausible of ${cells.toLocaleString("en-US")} cells (${withMl.toLocaleString("en-US")} with model signals)`);
-console.log(`raw grade at 100 MW: p10 ${at100[10]}, p25 ${at100[25]}, p50 ${at100[50]}, p75 ${at100[75]}, p90 ${at100[90]}, max ${at100[100]}`);
-console.log(`capped at 100 MW: ${((100 * capped[LOADS_MW.indexOf(100)]) / count).toFixed(1)}% of plausible cells`);
+console.log(`${cells.toLocaleString("en-US")} cells (${withMl.toLocaleString("en-US")} with model signals); plausible per tier: ${tiers.map(({ kv }, i) => `${kv} kV ${counts[i].toLocaleString("en-US")}`).join(", ")}`);
+for (const t of POLICY_TECHNOLOGIES) {
+  const c = table.technologies[t]["220"].cutoffs;
+  console.log(`${t.padEnd(14)} 220 kV raw score: p10 ${c[10]}, p50 ${c[50]}, p90 ${c[90]}, max ${c[100]}`);
+}
 console.log(`wrote ${outPath}`);

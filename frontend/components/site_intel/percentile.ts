@@ -1,30 +1,36 @@
-// The GriddyGrade as a percentile: where the site's raw grade falls among plausible California
-// sites scored with the same code.  OWNER: workstream E (Site Intelligence).
+// The GriddyGrade as a percentile: where the site's raw score falls among plausible California
+// sites scored with the same code for the same technology and voltage-search tier.
+// OWNER: workstream E (Site Intelligence).
 //
-// gradePercentiles.json holds 101 cut-offs (the 0th..100th percentile of the raw grade) per
-// tabulated load, made offline by backend/app/site_intel/prep/grade_percentiles.py, which runs
+// gradePercentiles.json holds 101 cut-offs (the 0th..100th percentile of the raw score) per
+// technology and tier, made offline by backend/app/site_intel/prep/grade_percentiles.py, which runs
 // feasibilityInput.ts + feasibility.ts in Node on every reference cell, so the percentile can't
-// drift from the live grade. Pure, with no value imports, so Node runs it as-is in the tests.
+// drift from the live score. Pure, with no value imports, so Node runs it as-is in the tests.
 
-export interface PercentileTable {
-  /** Average data center loads the cut-offs were computed for, ascending. */
-  loads_mw: number[];
-  /** cutoffs[i] = 101 ascending raw grades (0th..100th percentile) at loads_mw[i]. */
-  cutoffs: number[][];
+export interface PercentileCutoffs {
   /** Number of reference sites. */
   count: number;
+  /** 101 ascending raw scores: the 0th..100th percentile. */
+  cutoffs: number[];
+}
+
+export interface PercentileTable {
+  generated: string;
+  /** Scoring policy the cut-offs were computed with. */
+  policy_version: string;
   /** What the sites are ranked against, in words. */
   reference: string;
-  generated: string;
+  cells_scored: number;
   site_artifact: string | null;
-  forecast_artifact: string | null;
+  /** technology -> voltage-search tier (minimum kV, as a string) -> cut-offs. */
+  technologies: Record<string, Record<string, PercentileCutoffs>>;
 }
 
 const EPS = 1e-6;
 
 /**
- * Percentile (0-100) of a raw grade within 101 ascending cut-offs. Between two cut-offs it
- * interpolates; on a value many cut-offs share (the cap and saturated scores tie), it returns the
+ * Percentile (0-100) of a raw score within 101 ascending cut-offs. Between two cut-offs it
+ * interpolates; on a value many cut-offs share (neutral and saturated scores tie), it returns the
  * middle of that range, so a tie never reads as the best or the worst of the group.
  */
 export function percentileFor(raw: number, cutoffs: number[]): number {
@@ -44,16 +50,16 @@ export function percentileFor(raw: number, cutoffs: number[]): number {
   return (hi + (raw - a) / (b - a)) * scale;
 }
 
-/** Percentile at any load: the two nearest tabulated loads, interpolated on a log scale (clamped at the ends). */
-export function percentileAt(raw: number, loadMw: number, table: PercentileTable): number {
-  const loads = table.loads_mw;
-  if (!loads.length || loads.length !== table.cutoffs.length) return Number.NaN;
-  const at = (i: number) => percentileFor(raw, table.cutoffs[i]);
-  if (!(loadMw > loads[0])) return at(0);
-  if (loadMw >= loads[loads.length - 1]) return at(loads.length - 1);
-  const j = loads.findIndex((l) => l >= loadMw);
-  const t = (Math.log(loadMw) - Math.log(loads[j - 1])) / (Math.log(loads[j]) - Math.log(loads[j - 1]));
-  return at(j - 1) + t * (at(j) - at(j - 1));
+/** The reference cut-offs for a technology and tier, or null when none were tabulated. */
+export function cutoffsFor(technology: string, tierKv: number, table: PercentileTable): PercentileCutoffs | null {
+  const c = table.technologies?.[technology]?.[String(tierKv)];
+  return c && Array.isArray(c.cutoffs) && c.cutoffs.length >= 2 ? c : null;
+}
+
+/** Percentile among reference sites for the same technology and tier; NaN when there is no table for them. */
+export function percentileAt(raw: number, technology: string, tierKv: number, table: PercentileTable): number {
+  const c = cutoffsFor(technology, tierKv, table);
+  return c ? percentileFor(raw, c.cutoffs) : Number.NaN;
 }
 
 /** The displayed percentile, to the nearest tenth from 0.1 to 99.9 (no site is "0th" or "100th" of a sample). */

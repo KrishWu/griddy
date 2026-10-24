@@ -1,5 +1,5 @@
-// Tests for the data center feasibility score (feasibility.ts) and its input adapter
-// (feasibilityInput.ts).  OWNER: workstream E (Site Intelligence).
+// Tests for the power plant site feasibility score (feasibility.ts, feasibilityPolicy.ts) and its
+// input adapter (feasibilityInput.ts).  OWNER: workstream E (Site Intelligence).
 // Run from frontend/:  node --test components/site_intel/feasibility.test.mjs
 // Node >= 22.18 runs the .ts modules directly (type stripping), so there is no test framework or
 // build step to install. backend/tests/test_site_intel_feasibility.py runs this file inside pytest.
@@ -9,717 +9,617 @@ import { describe, test } from "node:test";
 
 import {
   COMPONENT_KEYS,
-  DEFAULT_LOAD_MW,
-  FORMULA,
-  GENERATION_LOAD_MULTIPLE,
-  GRID_ZERO_KM,
-  MUST_HAVE_CAP,
-  NEUTRAL_SCORE,
-  QUEUE_HIGH_MW,
-  QUEUE_ZERO_MW,
-  WEIGHTS,
-  calculateFeasibilityScore,
+  CRITICAL_HEADLINE,
+  LAND_DISCLOSURE,
+  LIMITED_EVIDENCE,
+  NOT_FULLY_ASSESSED,
+  assessConstraints,
+  calculatePowerPlantFeasibility,
   categoryFor,
-  cleanBuildScore,
   communityScore,
   completenessLabelFor,
-  demandPressure,
-  designationScore,
   distanceScore,
-  queueScore,
-  scoreAirPermitting,
+  epaSubscore,
+  formulaFor,
+  scoreAdministrative,
   scoreCommunity,
-  scoreGeneration,
-  scoreGridProximity,
-  scoreInfrastructure,
+  scoreEnvironment,
+  scoreGrid,
+  scoreInput,
+  scoreResource,
+  validateProject,
+  voltageTierFor,
 } from "./feasibility.ts";
-import { feasibilityInput } from "./feasibilityInput.ts";
+import { feasibilityInput, intelFor } from "./feasibilityInput.ts";
+import { POLICY_TECHNOLOGIES, POWER_PLANT_POLICY as POLICY } from "./feasibilityPolicy.ts";
 
-const identified = (name) => ({ status: "identified", name });
-const NONE = { status: "none" };
-const UNKNOWN = { status: "unknown" };
-const kv230 = (distanceKm, name = "Asset") => ({ name, voltageKv: 230, distanceKm });
+const close = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} != ${b}`);
+const ok = (value) => ({ state: "available", value });
+const absent = (state = "unavailable", reason) => ({ state, value: null, ...(reason ? { reason } : {}) });
+const asset = (distanceKm, voltageKv, name = "Asset", extra = {}) => ok({ name, voltageKv, distanceKm, operatingEstablished: true, ...extra });
+const tier = (subKm, lineKm, kv) => ({ substation: asset(subKm, kv, `Sub ${kv}`), line: asset(lineKm, kv, `Line ${kv}`) });
+const ghi = (value, over = {}) => ({ state: "available", value, unit: "kWh/m2/day", gridKm: 50, period: "2024", kind: "observed", source: "ERA5 test", ...over });
+const era5Wind = (value) => ({ state: "available", value, unit: "m/s", heightM: 100, gridKm: 50, period: "2024", kind: "observed", source: "ERA5 test" });
+const ml = (value) => ({ state: "available", value, unit: "model score (0-1)", kind: "inferred", source: "Griddy site-location model test" });
 
-/** Model signals as feasibilityInput maps E's extras.ml (Bay Area-like queue and resources). */
-function mlSignals(over = {}) {
-  return {
-    artifactId: "sites-model-test",
-    rocAuc: { solar_pv: 0.94, onshore_wind: 0.96, battery: 0.96 },
-    cellKm: 1.2,
-    county: "Alameda",
-    queueMw: 2400,
-    cleanBuild: { solar_pv: 0.9, onshore_wind: 0.85, battery: 0.97 },
-    demand: {
-      forecastId: "forecast-test",
-      scenario: "mid",
-      year: 2035,
-      baseYear: 2024,
-      regionName: "PG&E area (CAISO)",
-      basePeakP50Mw: 19584,
-      peakP50Mw: 23437,
-      mapeP50Pct: 8.7,
-      coverage: 0.5,
-    },
-    ...over,
-  };
-}
-
-/** A fully observed California site; override pieces per test. */
+/** A California site with every dataset Griddy exposes observed; override pieces per test. */
 function site(over = {}) {
   return {
-    substation: kv230(3, "Tesla"),
-    line: kv230(3, "Tesla-Metcalf"),
-    generation: { plantCount: 12, byFuelMw: { gas: 800, solar: 400, battery: 128 }, totalMw: 1328 },
-    population: 1000,
-    designations: [],
+    location: { lon: -119.5, lat: 35.4 },
+    inCoverage: true,
+    grid: { 69: tier(2, 1, 69), 115: tier(4, 2, 115), 220: tier(8, 3, 230) },
+    resource: { ghi_annual_mean: ghi(5.25), wind_speed_hub: era5Wind(4.2) },
+    sitingSimilarity: { solar_pv: ml(0.9), onshore_wind: ml(0.8), gas_cc: ml(0.7), battery: ml(0.95) },
+    population: ok(1000),
+    designations: ok([]),
+    environmentalScreen: absent("unavailable", "no documented method"),
     aqi: { aqi: 42, category: "Good", pollutant: "PM2.5" },
-    utility: identified("PG&E"),
-    balancingAuthority: identified("CAISO"),
-    outsideCoverage: false,
-    reasons: {},
-    ml: mlSignals(),
+    utility: ok("PG&E"),
+    balancingAuthority: ok("CAISO"),
+    protectedShare: absent(),
+    queue: absent(),
+    nearbyFuelMw: absent(),
     ...over,
   };
 }
 
+/** Nothing usable anywhere (but inside coverage, so missing is not "outside"). */
 const NOTHING = {
-  substation: null,
-  line: null,
-  generation: null,
-  population: null,
-  designations: null,
+  location: null,
+  inCoverage: null,
+  grid: {},
+  resource: {},
+  sitingSimilarity: {},
+  population: absent(),
+  designations: absent(),
+  environmentalScreen: absent(),
   aqi: null,
-  utility: UNKNOWN,
-  balancingAuthority: UNKNOWN,
-  outsideCoverage: false,
+  utility: absent(),
+  balancingAuthority: absent(),
+  protectedShare: absent(),
+  queue: absent(),
+  nearbyFuelMw: absent(),
 };
 
+const project = (over = {}) => ({ technology: "solar_pv", capacityMw: 100, ...over });
+const grade = (s = site(), p = project(), policy = POLICY) => {
+  const r = calculatePowerPlantFeasibility(s, p, policy);
+  assert.equal(r.valid, true, r.valid ? "" : r.errors.join("; "));
+  invariants(r);
+  return r;
+};
 const comp = (r, key) => r.components.find((c) => c.key === key);
-const close = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} != ${b}`);
 
-/** Must hold for every result. */
+/** Must hold for every valid result. */
 function invariants(r) {
-  assert.ok(Number.isFinite(r.overallScoreRaw), "finite score");
-  assert.ok(r.overallScoreRaw >= 0 && r.overallScoreRaw <= 100, `score ${r.overallScoreRaw} in 0-100`);
-  assert.equal(r.overallScore, Math.round(r.overallScoreRaw * 10) / 10); // displayed to the nearest tenth
-  assert.equal(r.components.length, 5);
-  const sum = r.components.reduce((a, c) => a + c.weightedContribution, 0);
-  close(sum, r.pointsTotal); // contributions reconcile with the points total
-  if (r.cap) {
-    assert.equal(r.overallScoreRaw, r.cap.limit); // the cap only ever lowers the grade
-    assert.ok(r.pointsTotal > r.cap.limit);
-    assert.ok(r.seriousConstraints.some((t) => /capped/.test(t)));
-  } else close(r.overallScoreRaw, r.pointsTotal);
+  assert.ok(Number.isFinite(r.overallScoreRaw) && r.overallScoreRaw >= 0 && r.overallScoreRaw <= 100, `score ${r.overallScoreRaw} in 0-100`);
+  assert.equal(r.overallScore, Math.round(r.overallScoreRaw)); // displayed as an integer
+  assert.equal(r.category, categoryFor(r.overallScore, POLICY)); // from the displayed score: no contradiction
+  assert.deepEqual(
+    r.components.map((c) => c.key),
+    COMPONENT_KEYS,
+  ); // exactly the five components: no land row
+  close(
+    r.components.reduce((a, c) => a + c.weightedContribution, 0),
+    r.pointsTotal,
+  );
+  close(r.pointsTotal, r.overallScoreRaw); // contributions sum to the unrounded score
   for (const c of r.components) {
-    assert.ok(Number.isFinite(c.score) && c.score >= 0 && c.score <= 100, `${c.key} score ${c.score}`);
+    assert.ok(Number.isFinite(c.score) && c.score >= 0 && c.score <= 100, `${c.key} ${c.score}`);
     close(c.weightedContribution, c.score * c.weight);
-    if (c.status === "unavailable") assert.equal(c.score, NEUTRAL_SCORE);
-    if (c.status !== "observed") assert.ok(c.missingFields.length > 0, `${c.key} lists what is missing`);
+    if (c.status === "unavailable") assert.equal(c.score, POLICY.neutralScore);
   }
-  assert.ok(r.dataCompletenessPercent >= 0 && r.dataCompletenessPercent <= 100);
-  assert.ok(r.considerations.some((c) => c.tone === "caveat" && /grid capacity has not been verified/i.test(c.text)));
+  const observed = r.components.filter((c) => c.status === "observed").reduce((a, c) => a + c.weight, 0);
+  close(r.dataCompletenessPercent, 100 * observed); // partial components get no completeness
+  assert.equal(r.completenessLabel, completenessLabelFor(r.dataCompletenessPercent, POLICY));
+  assert.ok(comp(r, "administrative").weightedContribution <= 5 + 1e-9, "administrative context adds at most 5 points");
+  assert.ok(!r.components.some((c) => /land/i.test(c.label)), "no land component");
+  if (r.constraints.assessment === "identified") assert.equal(r.headline, CRITICAL_HEADLINE);
+  else assert.equal(r.headline, r.category);
+  assert.ok(!/no constraints/i.test(r.constraints.summary));
 }
 
-describe("weights and labels", () => {
-  test("component weights sum to 100%", () => {
-    close(Object.values(WEIGHTS).reduce((a, w) => a + w, 0), 1);
-    assert.deepEqual(COMPONENT_KEYS, ["grid", "generation", "community", "air", "infrastructure"]);
+describe("policy and formula", () => {
+  test("weights are 0.30 + 0.30 + 0.20 + 0.15 + 0.05 = 1, with no land weight", () => {
+    assert.deepEqual(POLICY.weights, { grid: 0.3, resource: 0.3, environment: 0.2, community: 0.15, administrative: 0.05 });
+    close(
+      Object.values(POLICY.weights).reduce((a, b) => a + b, 0),
+      1,
+    );
+    assert.equal(formulaFor(POLICY), "0.30 G + 0.30 R + 0.20 E + 0.15 C + 0.05 I");
+    assert.ok(!Object.keys(POLICY.weights).some((k) => /land/i.test(k)));
   });
 
-  test("land is not a component; I was reduced and its share went to G and P", () => {
-    assert.ok(!COMPONENT_KEYS.includes("land"));
-    assert.deepEqual(WEIGHTS, { grid: 0.36, generation: 0.25, community: 0.17, air: 0.17, infrastructure: 0.05 });
-    assert.equal(FORMULA, "0.36 G + 0.25 P + 0.17 C + 0.17 A + 0.05 I");
+  test("a policy whose weights don't sum to 1 is refused, not silently rescaled", () => {
+    const bad = { ...POLICY, weights: { ...POLICY.weights, grid: 0.4 } };
+    const r = calculatePowerPlantFeasibility(site(), project(), bad);
+    assert.equal(r.valid, false);
+    assert.match(r.errors[0], /sum to 1/);
   });
 
-  test("category bands use the displayed (rounded) score", () => {
-    assert.equal(categoryFor(100), "Favorable preliminary screening");
-    assert.equal(categoryFor(80), "Favorable preliminary screening");
-    assert.equal(categoryFor(79.9), "Moderately favorable");
-    assert.equal(categoryFor(79), "Moderately favorable");
-    assert.equal(categoryFor(60), "Moderately favorable");
-    assert.equal(categoryFor(59), "Mixed constraints");
-    assert.equal(categoryFor(40), "Mixed constraints");
-    assert.equal(categoryFor(39), "Challenging");
-    assert.equal(categoryFor(20), "Challenging");
-    assert.equal(categoryFor(19), "Highly constrained");
-    assert.equal(categoryFor(0), "Highly constrained");
+  test("categories follow the displayed integer score", () => {
+    assert.equal(categoryFor(80, POLICY), "Favorable preliminary screening");
+    assert.equal(categoryFor(79, POLICY), "Moderately favorable");
+    assert.equal(categoryFor(60, POLICY), "Moderately favorable");
+    assert.equal(categoryFor(59, POLICY), "Mixed constraints");
+    assert.equal(categoryFor(40, POLICY), "Mixed constraints");
+    assert.equal(categoryFor(20, POLICY), "Challenging");
+    assert.equal(categoryFor(19, POLICY), "Highly constrained");
+    assert.equal(categoryFor(0, POLICY), "Highly constrained");
   });
 
-  test("completeness labels", () => {
-    assert.equal(completenessLabelFor(100), "High");
-    assert.equal(completenessLabelFor(80), "High");
-    assert.equal(completenessLabelFor(79), "Moderate");
-    assert.equal(completenessLabelFor(50), "Moderate");
-    assert.equal(completenessLabelFor(49), "Low");
-    assert.equal(completenessLabelFor(0), "Low");
+  test("completeness labels use the unrounded percentage", () => {
+    assert.equal(completenessLabelFor(80, POLICY), "High");
+    assert.equal(completenessLabelFor(79.999, POLICY), "Moderate");
+    assert.equal(completenessLabelFor(50, POLICY), "Moderate");
+    assert.equal(completenessLabelFor(49.999, POLICY), "Low");
   });
 });
 
-describe("grid connection proximity", () => {
-  test("1. nearby 230 kV substation and line score high", () => {
-    const g = scoreGridProximity(kv230(1), kv230(0.5));
-    close(g.score, 0.6 * distanceScore(1) + 0.4 * distanceScore(0.5)); // no queue signal: the 60/40 split
-    assert.ok(g.score > 90);
+describe("project validation", () => {
+  test("defaults are solar PV at 100 MW", () => {
+    assert.deepEqual(POLICY.defaults, { technology: "solar_pv", capacityMw: 100 });
+  });
+
+  for (const capacityMw of [0, -5, Number.NaN, Number.POSITIVE_INFINITY, "100", null, undefined]) {
+    test(`capacity ${String(capacityMw)} is a validation error, not a substituted default`, () => {
+      const r = calculatePowerPlantFeasibility(site(), { technology: "solar_pv", capacityMw }, POLICY);
+      assert.equal(r.valid, false);
+      assert.match(r.errors.join(" "), /capacity must be a finite number of MW greater than 0/);
+    });
+  }
+
+  test("a battery-only project is not scored", () => {
+    const r = calculatePowerPlantFeasibility(site(), { technology: "battery", capacityMw: 100 }, POLICY);
+    assert.equal(r.valid, false);
+    assert.match(r.errors[0], /not primary generation/);
+  });
+
+  test("an unknown technology or invalid optional setting is reported", () => {
+    assert.equal(validateProject({ technology: "fusion", capacityMw: 10 }, POLICY).ok, false);
+    assert.equal(validateProject({ technology: "natural_gas", capacityMw: 10, cooling: "ice" }, POLICY).ok, false);
+    assert.equal(validateProject({ technology: "solar_pv", capacityMw: 10, storageMw: -1 }, POLICY).ok, false);
+    assert.equal(validateProject({ technology: "solar_pv", capacityMw: 10, storageMw: Number.NaN }, POLICY).ok, false);
+    assert.equal(validateProject({ technology: "solar_pv", capacityMw: 0.5 }, POLICY).ok, true);
+  });
+
+  test("co-located storage is shown separately and never changes the score", () => {
+    const plain = grade(site(), project());
+    const hybrid = grade(site(), project({ storageMw: 50 }));
+    assert.equal(hybrid.overallScoreRaw, plain.overallScoreRaw);
+    assert.ok(hybrid.explanatoryNotes.some((n) => /storage \(50 MW\) is shown separately/.test(n)));
+  });
+});
+
+describe("grid interconnection proximity (G)", () => {
+  test("D(d) = 100 × max(0, 1 − d / 50)", () => {
+    assert.equal(distanceScore(0, 50), 100);
+    assert.equal(distanceScore(25, 50), 50);
+    assert.equal(distanceScore(50, 50), 0);
+    assert.equal(distanceScore(80, 50), 0);
+  });
+
+  test("nearby qualifying assets score high and fully observed", () => {
+    const g = scoreGrid(site(), project(), POLICY);
     assert.equal(g.status, "observed");
+    close(g.score, 0.6 * distanceScore(4, 50) + 0.4 * distanceScore(2, 50)); // 100 MW: the 115 kV tier
+    assert.ok(g.context.some((f) => f.label === "Active voltage-search threshold" && /115 kV/.test(f.value)));
   });
 
-  test("the distance scale reaches 0 at 20 km", () => {
-    assert.equal(GRID_ZERO_KM, 20);
-    assert.equal(distanceScore(0), 100);
-    close(distanceScore(10), 50);
-    assert.equal(distanceScore(20), 0);
-  });
-
-  test("2. both assets far away score 0, never negative", () => {
-    const g = scoreGridProximity(kv230(74), kv230(72));
+  test("qualifying assets farther than 50 km score 0 (observed, not missing)", () => {
+    const g = scoreGrid(site({ grid: { 115: tier(60, 75, 115) } }), project(), POLICY);
     assert.equal(g.score, 0);
     assert.equal(g.status, "observed");
-    assert.equal(distanceScore(50), 0);
-    assert.equal(distanceScore(500), 0);
   });
 
-  test("12. zero distance scores 100", () => {
-    assert.equal(scoreGridProximity(kv230(0), kv230(0)).score, 100);
+  test("capacity changes crossing the voltage thresholds switch the searched assets", () => {
+    assert.equal(voltageTierFor(20, POLICY).minKv, 69);
+    assert.equal(voltageTierFor(20.01, POLICY).minKv, 115);
+    assert.equal(voltageTierFor(100, POLICY).minKv, 115);
+    assert.equal(voltageTierFor(100.01, POLICY).minKv, 220);
+    assert.equal(voltageTierFor(5000, POLICY).minKv, 220);
+    const s = site();
+    const small = scoreGrid(s, project({ capacityMw: 20 }), POLICY);
+    const mid = scoreGrid(s, project({ capacityMw: 50 }), POLICY);
+    const big = scoreGrid(s, project({ capacityMw: 300 }), POLICY);
+    assert.ok(small.score > mid.score && mid.score > big.score, `${small.score} > ${mid.score} > ${big.score}`);
+    assert.match(big.metrics[0].value, /230 kV/);
   });
 
-  test("one missing distance: the other carries the full weight (renormalized)", () => {
-    const g = scoreGridProximity(kv230(10), null);
-    close(g.score, distanceScore(10));
+  test("one missing distance carries the other's full weight and is partial", () => {
+    const g = scoreGrid(site({ grid: { 115: { substation: absent("unavailable", "layer did not load"), line: asset(10, 115) } } }), project(), POLICY);
+    close(g.score, distanceScore(10, 50));
     assert.equal(g.status, "partial");
-    assert.equal(g.metrics.find((m) => m.id === "substation").effectiveWeight, 1);
-    assert.ok(g.missingFields.some((f) => /line/.test(f)));
+    assert.ok(g.missingFields.some((f) => /substation/.test(f)));
   });
 
-  test("12. missing distances are not 0 km: both missing is a neutral 50, not 100", () => {
-    const g = scoreGridProximity(null, null, "substation layer did not load");
-    assert.equal(g.score, NEUTRAL_SCORE);
+  test("both distances missing: neutral 50, unavailable, never 0 km", () => {
+    const g = scoreGrid(site({ grid: {} }), project(), POLICY);
+    assert.equal(g.score, 50);
     assert.equal(g.status, "unavailable");
-    assert.ok(g.missingFields.filter((f) => /Distance/.test(f)).every((f) => f.includes("substation layer did not load")));
-    const nullKm = scoreGridProximity(kv230(null), kv230(undefined));
-    assert.equal(nullKm.score, NEUTRAL_SCORE);
   });
 
-  test("12. negative or non-finite distances are invalid, not 0 km", () => {
-    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, "3"]) {
-      const g = scoreGridProximity(kv230(bad), kv230(bad));
-      assert.equal(g.status, "unavailable", `distance ${bad}`);
-      assert.equal(g.score, NEUTRAL_SCORE);
+  test("unknown voltage, lower voltage or unknown operating status never qualifies", () => {
+    for (const bad of [asset(1, null), asset(1, 66), ok({ name: "x", voltageKv: 230, distanceKm: 1, operatingEstablished: false })]) {
+      const g = scoreGrid(site({ grid: { 115: { substation: bad, line: asset(30, 115) } } }), project(), POLICY);
+      close(g.score, distanceScore(30, 50)); // the bad substation never stands in
+      assert.equal(g.status, "partial");
     }
   });
 
-  test("a lower-voltage asset is never substituted for a 220 kV+ one", () => {
-    const g = scoreGridProximity({ name: "Local", voltageKv: 115, distanceKm: 1 }, kv230(40));
-    assert.equal(g.status, "partial");
-    close(g.score, distanceScore(40));
-    assert.ok(g.missingFields.some((f) => /115 kV/.test(f)));
+  test("negative, NaN and infinite distances are missing, not 0 km", () => {
+    for (const km of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const g = scoreGrid(site({ grid: { 115: { substation: asset(km, 115), line: asset(km, 115) } } }), project(), POLICY);
+      assert.equal(g.status, "unavailable");
+      assert.equal(g.score, 50);
+    }
   });
 
-  test("notes say distances are straight-line and capacity is unverified", () => {
-    const notes = scoreGridProximity(kv230(3), kv230(3)).notes.join(" ");
-    assert.match(notes, /straight-line/i);
-    assert.match(notes, /does not establish spare capacity/i);
+  test("a confirmed absence counts as 0 only over a ≥ 50 km search inside coverage", () => {
+    const none = { state: "confirmed_absent", value: null, searchedKm: Number.POSITIVE_INFINITY };
+    const covered = scoreGrid(site({ grid: { 115: { substation: none, line: asset(10, 115) } } }), project(), POLICY);
+    close(covered.score, 0.6 * 0 + 0.4 * distanceScore(10, 50));
+    assert.equal(covered.status, "observed");
+    const short = scoreGrid(site({ grid: { 115: { substation: { ...none, searchedKm: 20 }, line: asset(10, 115) } } }), project(), POLICY);
+    assert.equal(short.status, "partial"); // a 20 km search can't support a 0
+    const unknown = scoreGrid(site({ inCoverage: null, grid: { 115: { substation: none, line: asset(10, 115) } } }), project(), POLICY);
+    assert.equal(unknown.status, "partial"); // unknown coverage is not confirmed absence
+  });
+
+  test("outside California nothing is read as a distance", () => {
+    const g = scoreGrid(site({ inCoverage: false }), project(), POLICY);
+    assert.equal(g.status, "unavailable");
+    assert.ok(g.missingFields.every((f) => /outside California/.test(f)));
+  });
+
+  test("a closer untagged substation is disclosed, not counted", () => {
+    const g = scoreGrid(site({ grid: { 115: { substation: asset(9, 115, "S", { closerUntaggedKm: 1.5 }), line: asset(3, 115) } } }), project(), POLICY);
+    close(g.score, 0.6 * distanceScore(9, 50) + 0.4 * distanceScore(3, 50));
+    assert.ok(g.context.some((f) => /without a voltage tag/.test(f.label)));
+  });
+
+  test("the county queue is context only", () => {
+    const busy = site({ queue: ok({ county: "Kern", activeMw: 29_000, activeProjects: 300, asOf: "2025" }) });
+    assert.equal(scoreGrid(busy, project(), POLICY).score, scoreGrid(site(), project(), POLICY).score);
+    assert.ok(grade(busy).considerations.some((c) => /Congested county queue/.test(c.text)));
   });
 });
 
-describe("nearby generation", () => {
-  test("3. substantial generation meets 5 x the load; batteries are not generation", () => {
-    const p = scoreGeneration({ plantCount: 12, byFuelMw: { gas: 800, solar: 400, battery: 128 }, totalMw: 1328 }, 100);
-    const [cap, mix] = p.metrics;
-    assert.equal(cap.score, 100);
-    assert.match(cap.value, /^1,200 MW/); // 1,328 MW nameplate minus 128 MW of batteries
-    close(mix.score, (100 * 400) / 1200);
-    close(p.score, 0.8 * 100 + 0.2 * ((100 * 400) / 1200)); // no similarity signal: the 80/20 split
-    assert.equal(p.status, "observed");
-    assert.ok(p.context.some((f) => /Battery/.test(f.label)));
-    assert.match(p.notes.join(" "), /does not establish deliverable capacity/);
+describe("resource and operating prerequisites (R)", () => {
+  test("solar: ATB-range GHI and siting similarity, fully observed", () => {
+    const r = scoreResource(site({ resource: { ghi_annual_mean: ghi(4.75) } }), project(), POLICY);
+    assert.equal(r.status, "observed");
+    close(r.score, 0.6 * 50 + 0.4 * 90); // GHI 4.75 is halfway between 3.75 and 5.75
+    const top = scoreResource(site({ resource: { ghi_annual_mean: ghi(6.5) }, sitingSimilarity: { solar_pv: ml(1) } }), project(), POLICY);
+    close(top.score, 100);
+    const low = scoreResource(site({ resource: { ghi_annual_mean: ghi(3) }, sitingSimilarity: { solar_pv: ml(0) } }), project(), POLICY);
+    close(low.score, 0);
   });
 
-  test("4. no operating plants within 25 km scores 0 and omits the mix", () => {
-    const p = scoreGeneration({ plantCount: 0, byFuelMw: {}, totalMw: 0 });
-    assert.equal(p.score, 0);
-    assert.equal(p.status, "observed");
-    assert.equal(p.metrics[1].state, "not_applicable");
+  test("wind: a compatible hub-height speed is scored on ATB's 110 m classes", () => {
+    const hub = { state: "available", value: (5.9 + 9.01) / 2, unit: "m/s", heightM: 110, gridKm: 2, kind: "observed", source: "WIND Toolkit test" };
+    const r = scoreResource(site({ resource: { wind_speed_hub: hub } }), project({ technology: "onshore_wind" }), POLICY);
+    assert.equal(r.status, "observed");
+    close(r.score, 0.6 * 50 + 0.4 * 80);
   });
 
-  test("storage-only capacity counts as no generation", () => {
-    const p = scoreGeneration({ plantCount: 1, byFuelMw: { battery: 250 }, totalMw: 250 });
-    assert.equal(p.score, 0);
+  test("wind: ERA5 at 100 m on a ~50 km grid is shown but not scored", () => {
+    const r = scoreResource(site(), project({ technology: "onshore_wind" }), POLICY);
+    assert.equal(r.status, "partial");
+    close(r.score, 80); // siting similarity alone, renormalized
+    const shown = r.context.find((f) => /shown, not scored/.test(f.label));
+    assert.ok(shown && /110 m/.test(shown.value) && /5 km/.test(shown.value), shown?.value);
   });
 
-  test("unknown and other fuels count as not lower-carbon", () => {
-    const p = scoreGeneration({ plantCount: 2, byFuelMw: { other: 100, solar: 100 }, totalMw: 200 }, 100);
-    close(p.metrics[1].score, 50);
+  test("missing resource data never reads as favorable", () => {
+    const r = scoreResource(site({ resource: {}, sitingSimilarity: {} }), project(), POLICY);
+    assert.equal(r.status, "unavailable");
+    assert.equal(r.score, 50);
+    const loading = scoreResource(site({ resource: { ghi_annual_mean: { ...ghi(5.5), state: "loading" } }, sitingSimilarity: {} }), project(), POLICY);
+    assert.equal(loading.status, "unavailable");
   });
 
-  test("11. a configurable load changes only the load-dependent capacity term", () => {
-    const gen = { plantCount: 3, byFuelMw: { solar: 500 }, totalMw: 500 };
-    const at100 = calculateFeasibilityScore(site({ generation: gen, ml: null }), 100);
-    const at1000 = calculateFeasibilityScore(site({ generation: gen, ml: null }), 1000);
-    assert.equal(GENERATION_LOAD_MULTIPLE, 5);
-    assert.equal(comp(at100, "generation").metrics[0].score, 100); // 500 MW = 5 x 100 MW
-    close(comp(at1000, "generation").metrics[0].score, 10); // 500 of 5,000 MW
-    close(comp(at1000, "generation").score, 0.8 * 10 + 0.2 * 100);
-    for (const key of COMPONENT_KEYS.filter((k) => k !== "generation")) assert.equal(comp(at100, key).score, comp(at1000, key).score, key);
-    assert.ok(at1000.overallScoreRaw < at100.overallScoreRaw);
-    assert.equal(at1000.targetLoadMw, 1000);
-    invariants(at100);
-    invariants(at1000);
+  test("invalid reference bounds or incompatible units are not scored", () => {
+    const m = POLICY.technologies.solar_pv.submetrics[0].methods[1];
+    assert.ok("reason" in scoreInput({ ...m, reference: { ...m.reference, low: 6, high: 4 } }, ghi(5)));
+    assert.ok("reason" in scoreInput({ ...m, reference: { ...m.reference, high: Number.NaN } }, ghi(5)));
+    assert.ok("reason" in scoreInput(m, ghi(5, { unit: "W/m2" })));
+    assert.ok("reason" in scoreInput(m, ghi(-1)));
+    assert.ok("reason" in scoreInput(m, ghi(Number.NaN)));
+    assert.ok("reason" in scoreInput({ ...m, reference: null }, ghi(5)));
+    assert.ok("score" in scoreInput(m, ghi(5)));
   });
 
-  test("the load defaults to 100 MW and an invalid load falls back to it", () => {
-    const gen = { plantCount: 1, byFuelMw: { gas: 250 }, totalMw: 250 };
-    close(scoreGeneration(gen).metrics[0].score, 50); // 250 of 5 x 100 MW
-    assert.equal(calculateFeasibilityScore(site()).targetLoadMw, DEFAULT_LOAD_MW);
-    for (const bad of [0, -20, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const r = calculateFeasibilityScore(site({ generation: gen }), bad);
-      assert.equal(r.targetLoadMw, DEFAULT_LOAD_MW, `load ${bad}`);
-      assert.ok(r.explanatoryNotes.some((n) => /invalid/.test(n)));
-      invariants(r);
+  test("classifications: documented labels map, unknown ones are never unsuitable", () => {
+    const m = { input: "geothermal_resource", label: "Favorability", kind: "classification", classes: { high: 100, moderate: 70, low: 30, unsuitable: 0 } };
+    const at = (value) => scoreInput(m, { state: "available", value, unit: "class", kind: "observed", source: "t" });
+    assert.deepEqual(at("High"), { score: 100 });
+    assert.deepEqual(at("unsuitable"), { score: 0 });
+    for (const label of ["unknown", "unstudied", "outside coverage"]) assert.ok("reason" in at(label));
+  });
+
+  test("natural gas: pipeline or water proximity is not fuel or water evidence", () => {
+    const near = site({ resource: { ...site().resource, fuel_delivery: { state: "available", value: 0.5, unit: "km", kind: "observed", source: "pipeline distance" }, cooling_water: { state: "available", value: 0.2, unit: "km", kind: "observed", source: "river distance" } } });
+    const r = scoreResource(near, project({ technology: "natural_gas" }), POLICY);
+    assert.equal(r.status, "partial");
+    close(r.score, 70); // siting similarity only: proximity inputs have no supported method
+    assert.ok(r.missingFields.some((f) => /fuel-delivery/.test(f)));
+    assert.ok(r.missingFields.some((f) => /cooling/i.test(f)));
+  });
+
+  test("dry cooling removes the cooling-water prerequisite but not the fuel one", () => {
+    const r = scoreResource(site(), project({ technology: "natural_gas", cooling: "dry" }), POLICY);
+    assert.equal(r.metrics.find((m) => m.id === "cooling_water").state, "not_applicable");
+    assert.equal(r.status, "partial");
+    assert.ok(!r.missingFields.some((f) => /cooling/i.test(f)));
+  });
+
+  for (const technology of ["geothermal", "hydroelectric", "biomass", "nuclear"]) {
+    test(`${technology}: no supported method, so neutral 50 with the missing prerequisites listed`, () => {
+      const r = grade(site({ nearbyFuelMw: ok({ geothermal: 900, hydro: 300, nuclear: 2200 }) }), project({ technology }));
+      const res = comp(r, "resource");
+      assert.equal(res.status, "unavailable");
+      assert.equal(res.score, 50);
+      assert.ok(res.missingFields.length >= 2);
+      assert.ok(r.notices.some((n) => /resource screening unavailable/i.test(n.text)));
+      // Nearby plants are context, never resource evidence.
+      if (technology !== "biomass") assert.ok(res.context.some((f) => /context, not scored/.test(f.label)));
+    });
+  }
+});
+
+describe("environmental and permitting screening (E)", () => {
+  const severe = ok([{ pollutant: "Ozone", naaqs: "2015 8-hour ozone", area: "SJV", classification: "Extreme" }]);
+
+  test("EPA: lowest score across designations", () => {
+    assert.equal(epaSubscore(ok([]), POLICY).score, 100);
+    assert.equal(epaSubscore(ok([{ classification: "Marginal" }]), POLICY).score, 70);
+    const both = epaSubscore(ok([{ naaqs: "ozone", classification: "Moderate" }, { naaqs: "PM2.5", classification: "Serious" }]), POLICY);
+    assert.equal(both.score, 30);
+    assert.equal(both.status, "observed");
+    assert.equal(epaSubscore(ok([{ classification: "Severe 15" }]), POLICY).score, 10);
+  });
+
+  test("EPA: unresolved classifications are never guessed", () => {
+    const mixed = epaSubscore(ok([{ naaqs: "PM2.5", classification: "Serious" }, { naaqs: "ozone", classification: "Section 185A" }]), POLICY);
+    assert.equal(mixed.score, 30);
+    assert.equal(mixed.status, "partial");
+    assert.equal(mixed.warnings.length, 1);
+    const only = epaSubscore(ok([{ naaqs: "ozone", classification: null }]), POLICY);
+    assert.equal(only.score, null);
+    assert.equal(only.status, "unavailable");
+  });
+
+  test("EPA: confirmed attainment differs from failed, missing or outside-coverage queries", () => {
+    assert.equal(epaSubscore(ok([]), POLICY).score, 100);
+    for (const state of ["error", "unavailable", "outside_coverage", "loading"]) assert.equal(epaSubscore(absent(state), POLICY).score, null);
+    const gas = project({ technology: "natural_gas" });
+    assert.equal(scoreEnvironment(site({ designations: absent("error") }), gas, POLICY).score, 50);
+    assert.equal(scoreEnvironment(site(), gas, POLICY).score, 100);
+  });
+
+  test("combustion sources score EPA; noncombustion ones show it as context", () => {
+    const gas = scoreEnvironment(site({ designations: severe }), project({ technology: "natural_gas" }), POLICY);
+    assert.equal(gas.score, 10);
+    assert.equal(gas.status, "partial"); // no other documented screen
+    const solar = scoreEnvironment(site({ designations: severe }), project(), POLICY);
+    assert.equal(solar.score, 50);
+    assert.equal(solar.status, "unavailable"); // regardless of EPA availability
+    assert.ok(solar.context.some((f) => /not scored for solar/.test(f.label)));
+    assert.equal(scoreEnvironment(site(), project(), POLICY).score, solar.score);
+  });
+
+  test("an available technology-applicable screen is used: 60/40 for combustion, alone otherwise", () => {
+    const screen = ok({ score: 40, method: "test screen", source: "test", technologies: "all" });
+    close(scoreEnvironment(site({ environmentalScreen: screen }), project({ technology: "natural_gas" }), POLICY).score, 0.6 * 100 + 0.4 * 40);
+    assert.equal(scoreEnvironment(site({ environmentalScreen: screen }), project({ technology: "natural_gas" }), POLICY).status, "observed");
+    assert.equal(scoreEnvironment(site({ environmentalScreen: screen }), project(), POLICY).score, 40);
+    const notForSolar = ok({ score: 40, method: "t", source: "t", technologies: ["natural_gas"] });
+    assert.equal(scoreEnvironment(site({ environmentalScreen: notForSolar }), project(), POLICY).status, "unavailable");
+  });
+
+  test("AQI changes never change the score", () => {
+    const base = grade(site(), project({ technology: "natural_gas" })).overallScoreRaw;
+    for (const aqi of [null, { aqi: 0, category: "Good", pollutant: "O3" }, { aqi: 300, category: "Hazardous", pollutant: "PM2.5" }]) {
+      assert.equal(grade(site({ aqi }), project({ technology: "natural_gas" })).overallScoreRaw, base);
     }
-  });
-
-  test("8. a missing fuel mix drops out and the component is partial", () => {
-    const p = scoreGeneration({ plantCount: 4, byFuelMw: null, totalMw: 300 }, 100);
-    close(p.score, 60); // capacity only (300 of 500 MW), renormalized
-    assert.equal(p.status, "partial");
-    assert.equal(p.metrics[1].state, "missing");
-  });
-
-  test("12. missing generation data is a neutral 50, not 0 MW", () => {
-    const p = scoreGeneration(null, 100, "plant layer did not load");
-    assert.equal(p.score, NEUTRAL_SCORE);
-    assert.equal(p.status, "unavailable");
-    assert.ok(p.missingFields[0].includes("plant layer did not load"));
-  });
-
-  test("totals from a capped plant list are partial", () => {
-    assert.equal(scoreGeneration({ plantCount: 30, byFuelMw: null, totalMw: 900, incomplete: true }).status, "partial");
-  });
-
-  test("invalid fuel capacities are skipped, not counted", () => {
-    const p = scoreGeneration({ plantCount: 2, byFuelMw: { gas: -50, solar: 200 }, totalMw: 200 }, 100);
-    close(p.metrics[0].score, 40);
-    assert.equal(p.status, "partial");
   });
 });
 
-describe("community impact", () => {
-  test("5. a large nearby population scores low but stays in range", () => {
-    const c = scoreCommunity(338_000);
-    assert.ok(c.score > 0 && c.score < 10, `score ${c.score}`);
-    assert.equal(communityScore(500_000), 0);
-    assert.equal(communityScore(5_000_000), 0);
+describe("community exposure proxy (C)", () => {
+  test("log scale: zero is valid, large populations reach 0", () => {
+    assert.equal(communityScore(0, 500_000), 100);
+    close(communityScore(500_000, 500_000), 0);
+    assert.equal(communityScore(5_000_000, 500_000), 0);
+    assert.ok(communityScore(1000, 500_000) > communityScore(10_000, 500_000));
   });
 
-  test("12. zero population scores 100 and more people always score lower", () => {
-    assert.equal(scoreCommunity(0).score, 100);
-    let prev = Infinity;
-    for (const n of [0, 10, 1_000, 50_000, 200_000, 400_000]) {
-      const s = communityScore(n);
-      assert.ok(s < prev || (s === 0 && prev === 0));
-      prev = s;
-    }
-  });
-
-  test("8, 12. missing or negative population is a neutral 50, not zero people", () => {
-    for (const bad of [null, -5, Number.NaN]) {
-      const c = scoreCommunity(bad);
-      assert.equal(c.score, NEUTRAL_SCORE, `population ${bad}`);
+  test("missing, negative and invalid populations are neutral 50, not zero people", () => {
+    for (const population of [absent(), absent("error"), ok(-5), ok(Number.NaN), ok(Number.POSITIVE_INFINITY), ok("1000")]) {
+      const c = scoreCommunity(site({ population }), POLICY);
+      assert.equal(c.score, 50);
       assert.equal(c.status, "unavailable");
     }
+    assert.equal(scoreCommunity(site({ population: ok(0) }), POLICY).score, 100);
   });
 
-  test("labels it an exposure proxy and states what it does not measure", () => {
-    const c = scoreCommunity(1000);
-    assert.match(c.metrics[0].label, /exposure proxy/i);
-    assert.match(c.notes.join(" "), /consent.*environmental justice/);
-  });
-});
-
-describe("air quality and permitting", () => {
-  const d = (classification, naaqs = "2015 8-hour ozone", pollutant = "Ozone") => ({ pollutant, naaqs, area: "Somewhere, CA", classification });
-
-  test("no listed nonattainment scores 100", () => {
-    const a = scoreAirPermitting([], null);
-    assert.equal(a.score, 100);
-    assert.equal(a.status, "observed");
-  });
-
-  test("6. one designation scores by its classification", () => {
-    assert.equal(scoreAirPermitting([d("Marginal")], null).score, 70);
-    assert.equal(designationScore("Marginal (Rural Transport)"), 70);
-    assert.equal(designationScore("Moderate"), 50);
-    assert.equal(designationScore("Serious"), 30);
-    assert.equal(designationScore("Severe 15"), 10);
-    assert.equal(designationScore("Extreme"), 10);
-    assert.equal(designationScore("toString"), null);
-  });
-
-  test("7. multiple designations count once, at the lowest score", () => {
-    const sjv = [d("Extreme", "2015 8-hour ozone"), d("Serious", "2012 annual PM2.5", "PM2.5"), d("Extreme", "2008 8-hour ozone")];
-    const a = scoreAirPermitting(sjv, null);
-    assert.equal(a.score, 10);
-    assert.equal(scoreAirPermitting([d("Moderate", "2006 24-hour PM2.5", "PM2.5"), d("Marginal")], null).score, 50);
-    const r = calculateFeasibilityScore(site({ designations: sjv }));
-    close(comp(r, "air").weightedContribution, 10 * WEIGHTS.air); // one component, not one per pollutant
-    invariants(r);
-  });
-
-  test("an unrecognized classification is neutral 50 and marks the component partial", () => {
-    const a = scoreAirPermitting([d(null), d("Marginal")], null);
-    assert.equal(a.score, 50);
-    assert.equal(a.status, "partial");
-  });
-
-  test("the current AQI is context only and never changes the score", () => {
-    const clean = scoreAirPermitting([d("Serious")], { aqi: 20, category: "Good", pollutant: "O3" });
-    const smoky = scoreAirPermitting([d("Serious")], { aqi: 180, category: "Unhealthy", pollutant: "PM2.5" });
-    const none = scoreAirPermitting([d("Serious")], null);
-    assert.equal(clean.score, smoky.score);
-    assert.equal(clean.score, none.score);
-    assert.equal(none.status, "observed"); // a missing AQI does not reduce completeness
-    assert.ok(smoky.context.some((f) => /AQI/.test(f.label) && /180/.test(f.value)));
-  });
-
-  test("missing designation data is a neutral 50, not attainment", () => {
-    const a = scoreAirPermitting(null, { aqi: 30, category: "Good", pollutant: "O3" }, "EPA designation data did not load");
-    assert.equal(a.score, NEUTRAL_SCORE);
-    assert.equal(a.status, "unavailable");
-    assert.match(a.notes.join(" "), /does not by itself prohibit/);
-    assert.match(a.notes.join(" "), /Not legal or regulatory advice/);
+  test("the radius is shown and the limits are stated", () => {
+    const c = scoreCommunity(site(), POLICY);
+    assert.match(c.metrics[0].label, /10 km/);
+    assert.ok(c.notes.some((n) => /consent/.test(n) && /Tribal/.test(n)));
   });
 });
 
-describe("local infrastructure support", () => {
-  test("both identified 100, one 60, neither 20", () => {
-    assert.equal(scoreInfrastructure(identified("PG&E"), identified("CAISO"), false).score, 100);
-    assert.equal(scoreInfrastructure(identified("PG&E"), NONE, false).score, 60);
-    assert.equal(scoreInfrastructure(NONE, identified("BANC"), false).score, 60);
-    const neither = scoreInfrastructure(NONE, NONE, false);
-    assert.equal(neither.score, 20);
-    assert.equal(neither.status, "observed");
+describe("administrative and infrastructure context (I)", () => {
+  const admin = (utility, balancingAuthority) => scoreAdministrative(site({ utility, balancingAuthority }), POLICY);
+
+  test("definitive outcomes: both 100, one 60, neither 20", () => {
+    assert.equal(admin(ok("PG&E"), ok("CAISO")).score, 100);
+    assert.equal(admin(ok("PG&E"), absent("confirmed_absent")).score, 60);
+    assert.equal(admin(absent("confirmed_absent"), absent("confirmed_absent")).score, 20);
+    assert.equal(admin(absent("outside_coverage"), absent("outside_coverage")).score, 20); // definitive for this metric
   });
 
-  test("9. confirmed outside coverage scores 20 as observed data", () => {
-    const i = scoreInfrastructure(NONE, NONE, true);
-    assert.equal(i.score, 20);
-    assert.equal(i.status, "observed");
-    assert.ok(i.metrics.every((m) => /outside California/.test(m.value)));
+  test("unresolved lookups: neutral 50, partial or unavailable", () => {
+    const one = admin(ok("PG&E"), absent("error"));
+    assert.equal(one.score, 50);
+    assert.equal(one.status, "partial");
+    const neither = admin(absent("unavailable"), absent("loading"));
+    assert.equal(neither.score, 50);
+    assert.equal(neither.status, "unavailable");
   });
 
-  test("territories that could not be determined are a neutral 50, not 20", () => {
-    const i = scoreInfrastructure(UNKNOWN, UNKNOWN, false, "territory layer did not load");
-    assert.equal(i.score, NEUTRAL_SCORE);
-    assert.equal(i.status, "unavailable");
-    const half = scoreInfrastructure(identified("PG&E"), UNKNOWN, false);
-    assert.equal(half.status, "partial");
-    assert.equal(half.score, 100); // the known lookup carries the weight
+  test("contributes at most 5 points", () => {
+    for (const s of [site(), site({ utility: absent("confirmed_absent") }), NOTHING]) assert.ok(scoreAdministrative(s, POLICY).weightedContribution <= 5 + 1e-9);
+  });
+});
+
+describe("critical constraints", () => {
+  test("missing constraint datasets are not assessed, never 'no constraints'", () => {
+    const c = assessConstraints(site(), project(), POLICY);
+    assert.equal(c.assessment, "not_assessed");
+    assert.ok(c.summary.startsWith(NOT_FULLY_ASSESSED));
+    assert.ok(c.checks.some((k) => k.status === "not_assessed"));
+    assert.ok(grade().notices.some((n) => n.text === NOT_FULLY_ASSESSED));
+  });
+
+  test("a critical constraint keeps the number but replaces a favorable headline", () => {
+    const strong = site({ population: ok(0), designations: ok([]) });
+    const r = grade(strong, project({ technology: "nuclear", capacityMw: 1000 }));
+    assert.equal(r.constraints.assessment, "identified");
+    assert.equal(r.headline, CRITICAL_HEADLINE);
+    assert.notEqual(r.headline, r.category);
+    assert.ok(r.overallScore > 0); // the weighted score is retained
+    const f = r.constraints.critical[0];
+    assert.equal(f.basis, "documented_prohibition");
+    assert.match(f.source, /25524\.2/);
+    assert.deepEqual(f.technologies, ["nuclear"]);
+    assert.equal(grade(strong, project({ technology: "solar_pv" })).constraints.assessment, "not_assessed"); // technology-specific
+  });
+
+  test("protected-area proximity is a screening concern, never a prohibition", () => {
+    const c = assessConstraints(site({ protectedShare: ok(0.4) }), project(), POLICY);
+    assert.equal(c.critical.length, 0);
+    assert.equal(c.screening[0].basis, "screening_concern");
+    assert.notEqual(c.assessment, "identified");
+  });
+
+  test("outside California the statewide statute check is not assessed", () => {
+    const c = assessConstraints(site({ inCoverage: false }), project({ technology: "nuclear" }), POLICY);
+    assert.equal(c.critical.length, 0);
+    assert.equal(c.assessment, "not_assessed");
   });
 });
 
 describe("overall score", () => {
-  test("a fully observed site has full completeness and no qualification", () => {
-    const r = calculateFeasibilityScore(site());
-    invariants(r);
-    assert.equal(r.dataCompletenessPercent, 100);
-    assert.equal(r.completenessLabel, "High");
-    assert.equal(r.qualification, null);
-    assert.ok(COMPONENT_KEYS.every((k) => r.componentStatuses[k] === "observed"));
-    assert.deepEqual(r.missingFields, []);
-  });
-
-  test("10. every component unavailable: neutral 50, 0% complete, qualified", () => {
-    const r = calculateFeasibilityScore(NOTHING);
-    invariants(r);
-    assert.equal(r.overallScore, 50);
+  test("all five components unavailable: 50 with 0% completeness", () => {
+    const r = grade(NOTHING);
+    close(r.overallScoreRaw, 50);
     assert.equal(r.dataCompletenessPercent, 0);
-    assert.equal(r.partialPercent, 0);
     assert.equal(r.completenessLabel, "Low");
-    assert.ok(COMPONENT_KEYS.every((k) => r.componentStatuses[k] === "unavailable"));
-    assert.match(r.qualification, /Low data completeness \(0%\)/);
-    assert.ok(r.missingFields.length >= COMPONENT_KEYS.length);
+    assert.ok(r.notices.some((n) => n.text === LIMITED_EVIDENCE));
+    assert.ok(r.components.every((c) => c.status === "unavailable"));
   });
 
-  test("8. missing population, AQI and fuel mix lower completeness, not the scores", () => {
-    const r = calculateFeasibilityScore(site({ population: null, aqi: null, generation: { plantCount: 4, byFuelMw: null, totalMw: 500 } }));
-    invariants(r);
-    assert.equal(r.componentStatuses.community, "unavailable");
-    assert.equal(r.componentStatuses.generation, "partial");
-    assert.equal(r.componentStatuses.air, "observed"); // the AQI is context only
-    close(r.dataCompletenessPercent, 58); // grid 36 + air 17 + infrastructure 5
-    close(r.partialPercent, 25);
+  test("missing observations never become 0 km, 0 people, attainment or favorable resource", () => {
+    const r = grade(NOTHING, project({ technology: "natural_gas" }));
+    for (const k of COMPONENT_KEYS) assert.equal(comp(r, k).score, 50, k);
+  });
+
+  test("completeness: solar with every exposed dataset is 80% (E has no documented method)", () => {
+    const r = grade();
+    close(r.dataCompletenessPercent, 80);
+    assert.equal(r.completenessLabel, "High");
+    assert.equal(comp(r, "environment").status, "unavailable");
+  });
+
+  test("partially observed components get no completeness", () => {
+    const r = grade(site(), project({ technology: "onshore_wind" }));
+    assert.equal(comp(r, "resource").status, "partial");
+    assert.equal(r.dataCompletenessPercent, 50); // exactly: 0.30 + 0.15 + 0.05 must not round down to Low
     assert.equal(r.completenessLabel, "Moderate");
-    assert.ok(r.qualification);
+    assert.ok(!r.notices.some((n) => n.text === LIMITED_EVIDENCE));
   });
 
-  test("a favorable score resting on little data is visibly qualified", () => {
-    const r = calculateFeasibilityScore({ ...NOTHING, substation: kv230(0), line: kv230(0) });
-    assert.ok(r.overallScore >= 60);
-    assert.equal(r.completenessLabel, "Low");
-    assert.match(r.qualification, /not reliable/);
+  test("text keeps the technology's own capitalization mid-sentence", () => {
+    const r = grade(site({ designations: ok([{ naaqs: "ozone", classification: "Marginal" }]) }));
+    assert.equal(r.technologyNoun, "solar PV");
+    assert.ok(comp(r, "environment").context.some((f) => f.label.includes("not scored for solar PV")));
   });
 
-  test("12. missing values never act as 0 km, 0 people or 0 MW", () => {
-    const missing = calculateFeasibilityScore(NOTHING);
-    const zeros = calculateFeasibilityScore({ ...NOTHING, substation: kv230(0), line: kv230(0), population: 0, generation: { plantCount: 0, byFuelMw: {}, totalMw: 0 } });
-    assert.equal(comp(missing, "grid").score, 50);
-    assert.equal(comp(zeros, "grid").score, 100);
-    assert.equal(comp(missing, "community").score, 50);
-    assert.equal(comp(zeros, "community").score, 100);
-    assert.equal(comp(missing, "generation").score, 50);
-    assert.equal(comp(zeros, "generation").score, 0);
+  test("land data neither changes the score nor completeness, and its exclusion is disclosed", () => {
+    const base = grade();
+    const withLand = grade({ ...site(), land: { slope: 30, usableAreaKm2: 0, parcelAvailable: false }, mean_slope_deg: 25 });
+    assert.equal(withLand.overallScoreRaw, base.overallScoreRaw);
+    assert.equal(withLand.dataCompletenessPercent, base.dataCompletenessPercent);
+    assert.ok(base.exclusions.some((x) => x.id === "land_suitability" && x.text.includes(LAND_DISCLOSURE)));
+    assert.ok(base.considerations.some((c) => c.text === "Land suitability: Not assessed — excluded from this score."));
+    assert.ok(base.explanatoryNotes.some((n) => /does not include land suitability/.test(n)));
   });
 
-  test("a serious constraint stays visible under a favorable overall score", () => {
-    const r = calculateFeasibilityScore(
-      site({
-        substation: kv230(0),
-        line: kv230(0),
-        population: 0,
-        generation: { plantCount: 1, byFuelMw: { solar: 500 }, totalMw: 500 },
-        designations: [{ pollutant: "Ozone", naaqs: "2015 8-hour ozone", area: "San Joaquin Valley, CA", classification: "Extreme" }],
-        ml: mlSignals({ queueMw: 50 }),
-      }),
-    );
-    invariants(r);
-    assert.ok(r.overallScore >= 80, `score ${r.overallScore}`);
-    assert.ok(r.seriousConstraints.some((t) => /Extreme/.test(t)));
+  test("results are deterministic", () => {
+    assert.deepEqual(grade(), grade());
   });
 
-  test("results are deterministic and the input is not mutated", () => {
-    const input = site({ designations: [{ pollutant: "PM2.5", naaqs: "2006 24-hour PM2.5", area: "X", classification: "Moderate" }] });
-    const before = structuredClone(input);
-    assert.deepEqual(calculateFeasibilityScore(input, 250), calculateFeasibilityScore(input, 250));
-    assert.deepEqual(input, before);
+  test("technology and capacity changes update the affected components only", () => {
+    const s = site();
+    const solar = grade(s, project());
+    const gas = grade(s, project({ technology: "natural_gas" }));
+    assert.notEqual(comp(solar, "resource").score, comp(gas, "resource").score);
+    assert.equal(comp(solar, "community").score, comp(gas, "community").score);
+    const big = grade(s, project({ capacityMw: 500 }));
+    assert.notEqual(comp(solar, "grid").score, comp(big, "grid").score);
+    assert.equal(comp(solar, "resource").score, comp(big, "resource").score);
   });
 
-  test("scores stay in range across many input combinations", () => {
-    const kms = [null, 0, 2.5, 19.9, 20, 49.9, 300, -3];
-    const pops = [null, 0, 12, 338_000, 9_000_000];
-    const gens = [null, { plantCount: 0, byFuelMw: {}, totalMw: 0 }, { plantCount: 5, byFuelMw: { wind: 30, gas: 70 }, totalMw: 100 }];
-    const desigs = [null, [], [{ pollutant: "Ozone", naaqs: "x", area: null, classification: "Severe 15" }]];
-    const mls = [
-      null,
-      mlSignals(),
-      mlSignals({ queueMw: 0, cleanBuild: { solar_pv: 1, onshore_wind: 1, battery: 1 } }),
-      mlSignals({ queueMw: 50_000, cleanBuild: { solar_pv: 0, onshore_wind: 0, battery: 0 } }),
-      mlSignals({ queueMw: -5, cleanBuild: { solar_pv: Number.NaN, onshore_wind: null, battery: 2 }, demand: null }),
-    ];
-    for (const km of kms)
-      for (const population of pops)
-        for (const generation of gens)
-          for (const designations of desigs)
-            for (const ml of mls) invariants(calculateFeasibilityScore(site({ substation: kv230(km), line: kv230(km), population, generation, designations, ml }), 75));
-  });
-});
-
-describe("example sites (qualitative)", () => {
-  test("A. Mendocino-like: far from the grid, few people", () => {
-    const r = calculateFeasibilityScore(
-      site({
-        substation: kv230(74),
-        line: kv230(72),
-        generation: { plantCount: 0, byFuelMw: {}, totalMw: 0 },
-        population: 0,
-        ml: mlSignals({ county: "Mendocino", queueMw: 0, cleanBuild: { solar_pv: 0.01, onshore_wind: 0.02, battery: 0.01 } }),
-      }),
-    );
-    invariants(r);
-    assert.ok(comp(r, "grid").score < 30); // an empty queue can't make up for 70 km to the grid
-    assert.ok(comp(r, "generation").score < 10);
-    assert.ok(comp(r, "community").score > 90);
-    assert.equal(r.overallScore, MUST_HAVE_CAP); // capped: high community and air scores don't offset it
-    assert.ok(r.seriousConstraints.length >= 3); // both 220 kV+ assets 20 km or more away, and the cap
-  });
-
-  test("B. Alameda-like: close to the grid, many people, nonattainment", () => {
-    const r = calculateFeasibilityScore(
-      site({
-        substation: kv230(3),
-        line: kv230(3),
-        generation: { plantCount: 25, byFuelMw: { gas: 1100, solar: 150, battery: 78 }, totalMw: 1328 },
-        population: 338_000,
-        designations: [
-          { pollutant: "Ozone", naaqs: "2015 8-hour ozone", area: "San Francisco Bay Area, CA", classification: "Marginal" },
-          { pollutant: "Ozone", naaqs: "2008 8-hour ozone", area: "San Francisco Bay Area, CA", classification: "Marginal" },
-          { pollutant: "PM2.5", naaqs: "2006 24-hour PM2.5", area: "San Francisco Bay Area, CA", classification: "Moderate" },
-        ],
-      }),
-    );
-    invariants(r);
-    assert.ok(comp(r, "grid").score > 60 && comp(r, "grid").score < 90, `grid ${comp(r, "grid").score}`); // close, but a 2.4 GW county queue
-    assert.ok(comp(r, "generation").score > 80);
-    assert.ok(comp(r, "community").score < 10);
-    assert.ok(comp(r, "air").score < 100);
-    assert.ok(r.considerations.some((c) => c.group === "community" && c.tone === "tradeoff" && /people/.test(c.text)));
-    assert.ok(r.considerations.some((c) => c.group === "community" && /nonattainment/.test(c.text)));
-  });
-});
-
-describe("model signals (queue, clean-build similarity, demand pressure)", () => {
-  const scores = (r) => ({ raw: r.overallScoreRaw, components: r.componentScores, statuses: r.componentStatuses, completeness: r.dataCompletenessPercent });
-
-  test("the grade is unchanged when ml is null, absent or from a cell over 5 km away", () => {
-    const noKey = site();
-    delete noKey.ml;
-    const none = scores(calculateFeasibilityScore(site({ ml: null })));
-    assert.deepEqual(scores(calculateFeasibilityScore(noKey)), none);
-    assert.deepEqual(scores(calculateFeasibilityScore(site({ ml: mlSignals({ cellKm: 6 }) }))), none);
-    assert.deepEqual(scores(calculateFeasibilityScore(site({ ml: mlSignals(), outsideCoverage: true }))).components.grid, none.components.grid);
-    // and without them the rules keep their original proportions
-    const r = calculateFeasibilityScore(site({ ml: null }));
-    close(comp(r, "grid").score, 0.6 * distanceScore(3) + 0.4 * distanceScore(3));
-    assert.ok(r.considerations.some((c) => c.group === "data" && /Model signals.*not available/.test(c.text)));
-  });
-
-  test("missing model signals lower neither completeness nor the component status", () => {
-    const r = calculateFeasibilityScore(site({ ml: null }));
-    invariants(r);
-    assert.equal(r.dataCompletenessPercent, 100);
-    assert.equal(comp(r, "grid").status, "observed");
-    assert.equal(comp(r, "generation").status, "observed");
-    assert.equal(comp(r, "grid").metrics.find((m) => m.id === "queue").state, "missing");
-  });
-
-  test("model signals never stand in for a component's own missing data", () => {
-    const r = calculateFeasibilityScore({ ...NOTHING, ml: mlSignals({ queueMw: 0, cleanBuild: { solar_pv: 1, onshore_wind: 1, battery: 1 } }) });
-    invariants(r);
-    assert.equal(comp(r, "grid").score, NEUTRAL_SCORE);
-    assert.equal(comp(r, "grid").status, "unavailable");
-    assert.equal(comp(r, "generation").score, NEUTRAL_SCORE);
-    assert.equal(r.overallScore, 50);
-  });
-
-  test("Q falls from 100 at an empty queue to 0 at 30 GW, never rising", () => {
-    assert.equal(queueScore(0), 100);
-    assert.equal(queueScore(QUEUE_ZERO_MW), 0);
-    assert.equal(queueScore(80_000), 0);
-    let prev = Infinity;
-    for (const q of [0, 10, 100, 458, 2_400, 10_000, 28_895, 40_000]) {
-      const s = queueScore(q);
-      assert.ok(s >= 0 && s <= 100 && s <= prev, `queue ${q} → ${s}`);
-      prev = s;
+  test("display rounding and category agree at a boundary", () => {
+    // Search for a raw score that rounds up across a category boundary.
+    for (let km = 0; km <= 50; km += 0.05) {
+      const r = grade(site({ grid: { 115: tier(km, km, 115) } }));
+      assert.equal(r.category, categoryFor(Math.round(r.overallScoreRaw), POLICY));
     }
   });
 
-  test("more queue congestion never raises the grade", () => {
-    for (const km of [1, 8, 25]) {
-      let prev = Infinity;
-      for (const q of [0, 300, 2_000, 9_999, 10_000, 20_000, 29_000, 60_000]) {
-        const r = calculateFeasibilityScore(site({ substation: kv230(km), line: kv230(km), ml: mlSignals({ queueMw: q }) }));
-        invariants(r);
-        assert.ok(r.overallScoreRaw <= prev + 1e-9, `${km} km, queue ${q}: ${r.overallScoreRaw} > ${prev}`);
-        prev = r.overallScoreRaw;
-      }
+  test("scores stay finite and in range over random inputs", () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const pick = (xs) => xs[Math.floor(rand() * xs.length)];
+    const weird = [Number.NaN, -1, Number.POSITIVE_INFINITY, 0, 3, 1e9];
+    for (let i = 0; i < 300; i++) {
+      const s = site({
+        grid: { [pick([69, 115, 220])]: tier(pick(weird), pick(weird), pick([null, 50, 115, 230])) },
+        resource: { ghi_annual_mean: ghi(pick(weird)) },
+        sitingSimilarity: { solar_pv: ml(pick(weird)), onshore_wind: ml(pick([0, 0.5, 2])), gas_cc: ml(pick(weird)) },
+        population: ok(pick(weird)),
+        designations: pick([ok([]), absent("error"), ok([{ classification: pick(["Marginal", "Extreme", "?", null]) }])]),
+        utility: pick([ok("X"), absent("confirmed_absent"), absent("error")]),
+      });
+      grade(s, project({ technology: pick(POLICY_TECHNOLOGIES), capacityMw: pick([1, 20, 50, 150, 2000]) }));
     }
-  });
-
-  test("the queue only penalizes: an empty one can't lift a far site, a full one takes at most 25%", () => {
-    const g = (km, ml) => comp(calculateFeasibilityScore(site({ substation: kv230(km), line: kv230(km), ml })), "grid");
-    assert.equal(g(40, mlSignals({ queueMw: 0 })).score, 0);
-    assert.equal(g(5, mlSignals({ queueMw: 0 })).score, g(5, null).score); // empty queue: no penalty
-    close(g(0, mlSignals({ queueMw: QUEUE_ZERO_MW })).score, 75);
-    const full = g(0, mlSignals({ queueMw: QUEUE_ZERO_MW }));
-    close(full.metrics.find((m) => m.id === "queue").effectiveWeight, 0.25); // what it took off
-    assert.match(full.explanation, /takes 25% off/);
-  });
-
-  test("a congested queue is a tradeoff that asks for a utility study", () => {
-    const r = calculateFeasibilityScore(site({ ml: mlSignals({ county: "Kern", queueMw: 28_895 }) }));
-    assert.ok(28_895 >= QUEUE_HIGH_MW);
-    assert.ok(r.considerations.some((c) => c.tone === "tradeoff" && /Congested interconnection queue/.test(c.text) && /utility interconnection study/.test(c.text)));
-    const calm = calculateFeasibilityScore(site({ ml: mlSignals({ queueMw: 300 }) }));
-    assert.ok(!calm.considerations.some((c) => /Congested/.test(c.text)));
-  });
-
-  test("clean-build similarity: better resources never lower P, and gas is not part of it", () => {
-    assert.equal(cleanBuildScore({ solar_pv: 0, onshore_wind: 0, battery: 0 }), 0);
-    assert.equal(cleanBuildScore({ solar_pv: 1, onshore_wind: 0, battery: 1 }), 100);
-    close(cleanBuildScore({ solar_pv: 0.2, onshore_wind: 0.8, battery: 0.4 }), 100 * (0.75 * 0.8 + 0.25 * 0.4));
-    assert.equal(cleanBuildScore({ solar_pv: null, onshore_wind: null, battery: null }), null);
-    close(cleanBuildScore({ solar_pv: null, onshore_wind: 0.6, battery: null }), 60); // a missing part drops out
-    let prev = -Infinity;
-    for (const v of [0, 0.1, 0.5, 0.9, 1]) {
-      const p = comp(calculateFeasibilityScore(site({ ml: mlSignals({ cleanBuild: { solar_pv: v, onshore_wind: v, battery: v } }) })), "generation").score;
-      assert.ok(p >= prev, `similarity ${v}`);
-      prev = p;
-    }
-  });
-
-  test("model metrics are labeled with their source, artifact and accuracy", () => {
-    const r = calculateFeasibilityScore(site());
-    const clean = comp(r, "generation").metrics.find((m) => m.id === "clean_build");
-    assert.equal(clean.source.tag, "inferred (ML)");
-    assert.match(clean.source.detail, /sites-model-test/);
-    assert.match(clean.source.detail, /ROC-AUC solar 0\.94/);
-    assert.match(clean.source.detail, /similarity score/i);
-    const queue = comp(r, "grid").metrics.find((m) => m.id === "queue");
-    assert.equal(queue.source.kind, "observed"); // LBNL data, carried by the artifact
-    assert.match(queue.source.detail, /LBNL/);
-    assert.match(comp(r, "generation").notes.join(" "), /not a feasibility/);
-  });
-
-  test("regional demand pressure is context only, from P50, and follows the load", () => {
-    const d = mlSignals().demand;
-    close(demandPressure(d, 100), (d.peakP50Mw - d.basePeakP50Mw + 100) / d.basePeakP50Mw);
-    assert.ok(demandPressure(d, 1000) > demandPressure(d, 100));
-    assert.equal(demandPressure({ ...d, basePeakP50Mw: 0 }, 100), null);
-    const low = calculateFeasibilityScore(site({ ml: mlSignals({ demand: { ...d, peakP50Mw: d.basePeakP50Mw } }) }));
-    const high = calculateFeasibilityScore(site({ ml: mlSignals({ demand: { ...d, peakP50Mw: d.basePeakP50Mw * 2 } }) }));
-    assert.equal(low.overallScoreRaw, high.overallScoreRaw);
-    const fact = comp(high, "grid").context.find((f) => /demand pressure/.test(f.label));
-    assert.match(fact.label, /inferred \(ML\), context only/);
-    assert.match(fact.value, /P50/);
-  });
-});
-
-describe("must-have cap", () => {
-  test("both 220 kV+ assets 20 km or more away cap the grade, whatever C and A score", () => {
-    const far = calculateFeasibilityScore(site({ substation: kv230(25), line: kv230(22), population: 0, ml: mlSignals({ queueMw: 0 }) }));
-    invariants(far);
-    assert.ok(far.cap);
-    assert.equal(far.overallScore, MUST_HAVE_CAP);
-    assert.ok(far.pointsTotal > MUST_HAVE_CAP);
-  });
-
-  test("one asset within reach, or an unknown distance, means no cap", () => {
-    assert.equal(calculateFeasibilityScore(site({ substation: kv230(25), line: kv230(12) })).cap, null);
-    assert.equal(calculateFeasibilityScore(site({ substation: kv230(25), line: null })).cap, null); // missing is not "far"
-    assert.equal(calculateFeasibilityScore(site({ substation: { name: "Local", voltageKv: 115, distanceKm: 1 }, line: kv230(30) })).cap, null);
-  });
-
-  test("a grade already under the cap is left alone", () => {
-    const r = calculateFeasibilityScore(
-      site({ substation: kv230(60), line: kv230(60), population: 2_000_000, generation: { plantCount: 0, byFuelMw: {}, totalMw: 0 }, designations: [{ pollutant: "Ozone", naaqs: "x", area: null, classification: "Extreme" }], ml: mlSignals({ queueMw: 29_000, cleanBuild: { solar_pv: 0, onshore_wind: 0, battery: 0 } }) }),
-    );
-    invariants(r);
-    assert.equal(r.cap, null);
-    assert.ok(r.overallScoreRaw < MUST_HAVE_CAP);
   });
 });
 
 // --- input adapter: A's summary (via readSummary's SiteView) + E's site intel ---
 
-const LOC = { lon: -121.9, lat: 37.6 };
+const LOC = { lon: -119.47, lat: 35.4 };
 
 function view(over = {}) {
   return {
-    county: "Alameda",
+    county: "Kern",
     utility: "PG&E",
     utilityTitle: "Pacific Gas & Electric (IOU)",
     balancingAuthority: "CAISO",
     balancingAuthorityTitle: "California Independent System Operator",
     inCalifornia: true,
     substations: [],
-    hvSubstation: { id: "s1", name: "Newark", voltage_kv: 230, distance_km: 3.2, location: null, operator: "PG&E", osm_url: null },
-    hvLine: { id: "l1", name: "Newark-Ravenswood", owner: "PG&E", voltage_kv: 230, distance_km: 2.9, point: null },
+    hvSubstation: { id: "s1", name: "Midway", voltage_kv: 500, distance_km: 1.64, location: null, operator: "PG&E", osm_url: null },
+    hvLine: { id: "l1", name: "PG&E 500kV", owner: "PG&E", voltage_kv: 500, distance_km: 0.51, point: null },
     anyLine: null,
     plants: [],
     plantsCount: 25,
     plantsTotalMw: 1328,
     plantsByFuel: [["gas", 1100], ["solar", 150], ["battery", 78]],
-    population: 338_000,
+    population: 12_000,
     distanceMethod: null,
     ...over,
   };
@@ -727,7 +627,7 @@ function view(over = {}) {
 
 function summary(extras = {}) {
   return {
-    site: { id: "site", name: "Site in Alameda County, CA", location: LOC },
+    site: { id: "site", name: "Site in Kern County, CA", location: LOC },
     nearest_substations: [],
     nearby_plants: [],
     findings: [],
@@ -738,208 +638,137 @@ function summary(extras = {}) {
       balancing_authority: { short_name: "CAISO", name: "California Independent System Operator" },
       in_california: true,
       missing_data: [],
+      queue_county: { county: "Kern", active_projects: 300, active_mw: 28_894.9, as_of: "2025-12-31" },
       ...extras,
     },
   };
 }
 
-function intel(over = {}, extras = {}) {
+/** extras.grid_tiers as backend/app/site_intel/grid_tiers.py returns it. */
+function gridTiersExtras() {
+  const sub = (kv, km, extra = {}) => ({ id: `s${kv}`, name: `Sub ${kv}`, voltage_kv: kv, distance_km: km, ...extra });
+  const line = (kv, km) => ({ id: `l${kv}`, name: `Line ${kv}`, voltage_kv: kv, distance_km: km });
   return {
-    location: LOC,
-    land_cover: {},
-    mean_slope_deg: 2.1,
-    air_quality: { aqi: 55, category: "Moderate", pollutant: "OZONE" },
-    overlays: [],
-    findings: [
-      { id: "land_protected", module: "site", severity: "warn", title: "Protected land nearby", detail: "" },
-      { id: "land_slope", module: "site", severity: "pass", title: "Flat terrain", detail: "" },
-      { id: "air_nonattainment", module: "site", severity: "warn", title: "Federal nonattainment area", detail: "" },
-    ],
-    provenance: [],
-    extras: {
-      nonattainment: [{ pollutant: "Ozone", naaqs: "2015 8-hour ozone", area: "San Francisco Bay Area, CA", classification: "Marginal" }],
-      nonattainment_available: true,
-      land_tier: "offline_area",
-      ...extras,
+    available: true,
+    thresholds_kv: [69, 115, 220],
+    tiers: {
+      69: { substation_state: "available", substation: sub(70, 0.8, { closer_untagged_km: 0.3 }), line_state: "available", line: line(70, 0.4) },
+      115: { substation_state: "available", substation: sub(115, 1.2), line_state: "available", line: line(115, 0.22) },
+      220: { substation_state: "available", substation: sub(500, 1.64), line_state: "confirmed_absent", line: null },
     },
-    ...over,
   };
 }
 
-/** extras.ml as backend/app/site_intel/ml.py returns it (values from the Alameda cell). */
+/** extras.ml as backend/app/site_intel/ml.py returns it. */
 function mlExtras(over = {}) {
   return {
     available: true,
-    site_artifact: {
-      id: "sites-model-20261024-111437",
-      mode: "model",
-      scenario: "mid",
-      year: 2035,
-      grid_spacing_km: 5,
-      model_metrics: { solar_pv: { roc_auc: 0.937, pr_auc: 0.682 }, onshore_wind: { roc_auc: 0.963, pr_auc: 0.817 }, battery: { roc_auc: 0.959, pr_auc: 0.752 } },
-    },
-    cell: { id: 9564, lon: -121.8878, lat: 37.5789, distance_km: 2.59, county: "Alameda", geoid: "06001", region: "PGAE" },
-    queue_mw: 2389.6,
-    clean_build: {
-      radius_km: 25,
-      solar_pv: { best: 0.896, distance_km: 22.7 },
-      onshore_wind: { best: 0.847, distance_km: 23.8 },
-      battery: { best: 0.971, distance_km: 19.1 },
-    },
-    forecast: {
-      artifact_id: "forecast-2024-20261024-105524",
-      mode: "ml",
-      scenario: "mid",
-      year: 2035,
-      base_year: 2024,
-      region: { id: "PGAE", name: "PG&E area (CAISO)", base_peak_mw_p50: 19584.4, peak_mw_p50: 23437.2, peak_mw_p90: 26351.3 },
-      county: { geoid: "06001", name: "Alameda", peak_mw_p50: 2100 },
-      metrics: { mape_p50_pct: 8.68, p10_p90_coverage: 0.5, split: "test" },
-    },
+    site_artifact: { id: "sites-model-test", mode: "model", scenario: "mid", year: 2035, grid_spacing_km: 5, model_metrics: { solar_pv: { roc_auc: 0.937 }, gas_cc: { roc_auc: 0.924 } } },
+    cell: { id: 1, lon: -119.48, lat: 35.41, distance_km: 1.4, county: "Kern" },
+    site_cell: { suitability: { solar_pv: 0.31, onshore_wind: 0.09, battery: 0.44, gas_cc: 0.54 }, resource: { ghi_kwh_m2_day: 5.49, wind100_ms: 2.71 } },
+    resource_basis: { source: "ERA5 reanalysis via the Open-Meteo archive", period: "2024", years: 1, grid_deg: 0.5, grid_km: 50, ghi_unit: "kWh/m2/day", wind_height_m: 100, wind_unit: "m/s" },
+    queue_mw: 28894.9,
     ...over,
+  };
+}
+
+function intel(extras = {}) {
+  return {
+    location: LOC,
+    land_cover: {},
+    air_quality: { aqi: 55, category: "Moderate", pollutant: "OZONE" },
+    overlays: [],
+    findings: [],
+    provenance: [],
+    extras: {
+      nonattainment: [{ pollutant: "Ozone", naaqs: "2015 8-hour ozone", area: "San Joaquin Valley, CA", classification: "Extreme" }],
+      nonattainment_available: true,
+      ml: mlExtras(),
+      grid_tiers: gridTiersExtras(),
+      ...extras,
+    },
   };
 }
 
 describe("feasibilityInput", () => {
-  test("maps the summary and intel fields Griddy already loads", () => {
-    const input = feasibilityInput({ summary: summary(), view: view(), intel: intel() });
-    assert.deepEqual(input.substation, { name: "Newark", voltageKv: 230, distanceKm: 3.2 });
-    assert.equal(input.line.distanceKm, 2.9);
-    assert.deepEqual(input.generation.byFuelMw, { gas: 1100, solar: 150, battery: 78 });
-    assert.equal(input.generation.incomplete, false);
-    assert.equal(input.population, 338_000);
-    assert.equal(input.designations[0].classification, "Marginal");
-    assert.equal(input.aqi.aqi, 55);
-    assert.deepEqual(input.utility, identified("PG&E"));
-    assert.deepEqual(input.balancingAuthority, identified("CAISO"));
-    assert.equal(input.outsideCoverage, false);
-    const r = calculateFeasibilityScore(input);
-    invariants(r);
-    assert.equal(r.dataCompletenessPercent, 100);
+  test("maps the voltage tiers, model signals and lookups Griddy already loads", () => {
+    const s = feasibilityInput({ summary: summary(), view: view(), intel: intel() });
+    assert.equal(s.grid[115].substation.value.distanceKm, 1.2);
+    assert.equal(s.grid[69].substation.value.closerUntaggedKm, 0.3);
+    assert.equal(s.grid[220].line.state, "confirmed_absent");
+    assert.equal(s.sitingSimilarity.gas_cc.value, 0.54);
+    assert.equal(s.sitingSimilarity.gas_cc.kind, "inferred");
+    assert.equal(s.resource.ghi_annual_mean.value, 5.49);
+    assert.equal(s.resource.wind_speed_hub.heightM, 100);
+    assert.equal(s.resource.ghi_annual_mean.gridKm, 50);
+    assert.equal(s.designations.value[0].classification, "Extreme");
+    assert.equal(s.utility.value, "PG&E");
+    assert.equal(s.queue.value.activeMw, 28_894.9);
+    assert.equal(s.environmentalScreen.state, "unavailable");
+    const r = grade(s, project({ technology: "natural_gas", capacityMw: 50 }));
+    assert.equal(comp(r, "environment").score, 10); // Extreme ozone counts for gas
   });
 
-  test("9. outside California: out-of-coverage data is missing, territories score 20", () => {
-    const outside = view({ inCalifornia: false, utility: null, utilityTitle: null, balancingAuthority: null, balancingAuthorityTitle: null, population: null, plantsCount: 0, plantsByFuel: [] });
-    const input = feasibilityInput({
+  test("while site intel loads, the 220 kV tier comes from A's summary and the rest is loading", () => {
+    const s = feasibilityInput({ summary: summary(), view: view(), intel: null, intelPending: true });
+    assert.equal(s.grid[220].substation.value.distanceKm, 1.64);
+    assert.equal(s.grid[115].substation.state, "loading");
+    assert.equal(s.designations.state, "loading"); // never attainment while loading
+    assert.equal(s.sitingSimilarity.solar_pv.state, "loading");
+    assert.equal(grade(s, project({ capacityMw: 50 })).provisional, true);
+    assert.equal(grade(s, project({ capacityMw: 500 })).components[0].status, "observed");
+  });
+
+  test("failed site intel is an error, not absence", () => {
+    const s = feasibilityInput({ summary: summary(), view: view(), intel: null });
+    assert.equal(s.designations.state, "error");
+    assert.equal(s.grid[69].line.state, "error");
+    assert.equal(grade(s, project({ technology: "natural_gas" })).components[2].score, 50);
+  });
+
+  test("outside California nothing reads as absence, attainment or zero people", () => {
+    const s = feasibilityInput({
       summary: summary({ in_california: false, utility: null, balancing_authority: null }),
-      view: outside,
-      intel: intel({ mean_slope_deg: null, findings: [] }, { nonattainment: [], land_tier: "unavailable" }),
+      view: view({ inCalifornia: false, utility: null, utilityTitle: null, balancingAuthority: null, balancingAuthorityTitle: null }),
+      intel: intel({ nonattainment: [] }),
     });
-    assert.equal(input.outsideCoverage, true);
-    assert.equal(input.substation, null);
-    assert.equal(input.generation, null);
-    assert.equal(input.population, null);
-    assert.equal(input.designations, null); // an empty Green Book list outside CA is not attainment
-    assert.match(input.reasons.air, /outside California/);
-    assert.deepEqual(input.utility, NONE);
-    const r = calculateFeasibilityScore(input);
-    invariants(r);
-    assert.equal(comp(r, "infrastructure").score, 20);
-    assert.equal(comp(r, "infrastructure").status, "observed");
-    for (const key of ["grid", "generation", "community", "air"]) assert.equal(r.componentStatuses[key], "unavailable", key);
-    assert.equal(r.dataCompletenessPercent, 5);
-    assert.equal(r.completenessLabel, "Low");
-    assert.equal(input.ml, null); // no model signals outside California
-    assert.match(input.mlReason, /outside California/);
+    assert.equal(s.grid[220].substation.state, "outside_coverage");
+    assert.equal(s.designations.state, "outside_coverage");
+    assert.equal(s.population.state, "outside_coverage");
+    assert.equal(s.sitingSimilarity.solar_pv.state, "outside_coverage");
+    assert.equal(s.utility.state, "outside_coverage");
+    const r = grade(s);
+    assert.equal(comp(r, "grid").score, 50);
+    assert.equal(comp(r, "administrative").score, 20); // definitive non-identification for this context metric
+    assert.equal(r.constraints.assessment, "not_assessed");
   });
 
-  test("a dataset that failed to load is unknown, not 'none found'", () => {
-    const input = feasibilityInput({ summary: summary({ missing_data: ["substations", "utilities", "plants", "population"] }), view: view({ population: null }), intel: intel() });
-    assert.equal(input.substation, null);
-    assert.match(input.reasons.grid, /substation layer did not load/);
-    assert.equal(input.line.distanceKm, 2.9);
-    assert.deepEqual(input.utility, UNKNOWN);
-    assert.equal(input.generation, null);
-    assert.match(input.reasons.community, /population layer did not load/);
+  test("layers that did not load are unresolved, not none found", () => {
+    const s = feasibilityInput({ summary: summary({ missing_data: ["substations", "utilities", "population"] }), view: view({ population: null }), intel: intel({ grid_tiers: { available: false } }) });
+    assert.equal(s.grid[220].substation.state, "unavailable");
+    assert.equal(s.grid[115].substation.state, "unavailable");
+    assert.equal(s.utility.state, "unavailable");
+    assert.equal(s.population.state, "unavailable");
+    assert.equal(feasibilityInput({ summary: summary(), view: view(), intel: intel({ nonattainment_available: false, nonattainment: [] }) }).designations.state, "unavailable");
   });
 
-  test("missing EPA designation data is unavailable, not attainment", () => {
-    assert.equal(feasibilityInput({ summary: summary(), view: view(), intel: intel({}, { nonattainment_available: false, nonattainment: [] }) }).designations, null);
-    assert.equal(feasibilityInput({ summary: summary(), view: view(), intel: intel({}, { nonattainment: undefined }) }).designations, null);
+  test("an empty territory lookup inside California is a confirmed none", () => {
+    const s = feasibilityInput({ summary: summary({ balancing_authority: null }), view: view({ balancingAuthority: null, balancingAuthorityTitle: null }), intel: intel() });
+    assert.equal(s.balancingAuthority.state, "confirmed_absent");
+    assert.equal(scoreAdministrative(s, POLICY).score, 60);
   });
 
-  test("site intel that failed or is still loading leaves air quality missing", () => {
-    const failed = feasibilityInput({ summary: summary(), view: view(), intel: null });
-    assert.equal(failed.designations, null);
-    assert.equal(failed.reasons.air, "site screening unavailable");
-    const pending = feasibilityInput({ summary: summary(), view: view(), intel: null, intelPending: true });
-    assert.equal(pending.reasons.air, "site screening still loading");
+  test("model signals from a far cell describe somewhere else", () => {
+    const s = feasibilityInput({ summary: summary(), view: view(), intel: intel({ ml: mlExtras({ cell: { distance_km: 8 } }) }) });
+    assert.equal(s.sitingSimilarity.solar_pv.state, "unavailable");
+    assert.match(s.sitingSimilarity.solar_pv.reason, /8\.0 km/);
   });
 
-  test("land screening (slope, land cover, flags) never changes the GriddyGrade", () => {
-    const flat = calculateFeasibilityScore(feasibilityInput({ summary: summary(), view: view(), intel: intel() }));
-    const steep = feasibilityInput({
-      summary: summary(),
-      view: view(),
-      intel: intel({ mean_slope_deg: 25, land_cover: { "Built-up": 0.9 }, findings: [{ id: "land_protected", module: "site", severity: "fail", title: "Protected land", detail: "" }] }),
-    });
-    assert.ok(!("meanSlopeDeg" in steep) && !("landFlags" in steep));
-    assert.deepEqual(calculateFeasibilityScore(steep), flat);
-  });
-
-  test("an older summary without the 25 km aggregate is partial", () => {
-    const input = feasibilityInput({
-      summary: summary({ plants_within_25km: undefined }),
-      view: view({ plants: [{ id: "p", name: "P", fuel: "gas", capacity_mw: 300, distance_km: 4 }], plantsCount: 1, plantsTotalMw: 300, plantsByFuel: [["gas", 300]] }),
-      intel: intel(),
-    });
-    assert.equal(input.generation.byFuelMw, null);
-    assert.equal(input.generation.incomplete, true);
-    assert.equal(scoreGeneration(input.generation).status, "partial");
-  });
-
-  test("an unmapped balancing authority is 'none' (assumed CAISO does not count)", () => {
-    const input = feasibilityInput({ summary: summary({ balancing_authority: null }), view: view({ balancingAuthority: null, balancingAuthorityTitle: null }), intel: intel() });
-    assert.deepEqual(input.balancingAuthority, NONE);
-    assert.equal(calculateFeasibilityScore(input).componentScores.infrastructure, 60);
-  });
-
-  test("maps E's extras.ml onto the model signals", () => {
-    const input = feasibilityInput({ summary: summary(), view: view(), intel: intel({}, { ml: mlExtras() }) });
-    assert.equal(input.ml.artifactId, "sites-model-20261024-111437");
-    assert.equal(input.ml.queueMw, 2389.6);
-    assert.equal(input.ml.county, "Alameda");
-    assert.equal(input.ml.cleanBuild.onshore_wind, 0.847);
-    assert.equal(input.ml.rocAuc.solar_pv, 0.937);
-    assert.equal(input.ml.demand.basePeakP50Mw, 19584.4);
-    assert.equal(input.ml.demand.coverage, 0.5);
-    const r = calculateFeasibilityScore(input);
-    invariants(r);
-    assert.equal(comp(r, "grid").metrics.find((m) => m.id === "queue").state, "observed");
-  });
-
-  test("model signals are null when absent, unavailable, out of state, too far or not loaded", () => {
-    const cases = [
-      [intel(), /not in the site screening/],
-      [intel({}, { ml: { available: false, reason: "site-location artifact not found" } }), /artifact not found/],
-      [intel({}, { ml: mlExtras({ cell: { ...mlExtras().cell, distance_km: 6.2 } }) }), /6\.2 km away/],
-      [intel({}, { ml: mlExtras({ site_artifact: null }) }), /incomplete/],
-      [null, /site screening unavailable/],
-    ];
-    const rulesOnly = calculateFeasibilityScore(feasibilityInput({ summary: summary(), view: view(), intel: intel() })).overallScoreRaw;
-    for (const [i, reason] of cases) {
-      const input = feasibilityInput({ summary: summary(), view: view(), intel: i });
-      assert.equal(input.ml, null);
-      assert.match(input.mlReason, reason);
-      if (i) assert.equal(calculateFeasibilityScore(input).overallScoreRaw, rulesOnly); // missing drops out: the rules alone
-    }
-    const outside = feasibilityInput({ summary: summary({ in_california: false }), view: view({ inCalifornia: false }), intel: intel({}, { ml: mlExtras() }) });
-    assert.equal(outside.ml, null);
-  });
-
-  test("a forecast without P50 values leaves the demand context out", () => {
-    const f = mlExtras().forecast;
-    const input = feasibilityInput({ summary: summary(), view: view(), intel: intel({}, { ml: mlExtras({ forecast: { ...f, region: { ...f.region, base_peak_mw_p50: null } } }) }) });
-    assert.equal(input.ml.demand, null);
-    assert.ok(input.ml.queueMw !== null);
-  });
-
-  test("without a site summary every summary-based input is unknown", () => {
-    const input = feasibilityInput({ summary: null, view: null, intel: intel() });
-    assert.equal(input.substation, null);
-    assert.equal(input.generation, null);
-    assert.deepEqual(input.utility, UNKNOWN);
-    assert.equal(input.reasons.grid, "site summary not loaded");
-    invariants(calculateFeasibilityScore(input));
+  test("a late site-intel answer for an earlier click is ignored", () => {
+    const old = intel();
+    assert.equal(intelFor(old, LOC), old);
+    assert.equal(intelFor(old, { lon: LOC.lon + 0.2, lat: LOC.lat }), null);
+    assert.equal(intelFor(null, LOC), null);
+    assert.equal(intelFor(old, null), null);
   });
 });

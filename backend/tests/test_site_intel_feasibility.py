@@ -1,7 +1,7 @@
 """Runs the GriddyGrade's tests inside pytest.  OWNER: workstream E.
 
-The score is computed in the browser (frontend/components/site_intel/feasibility.ts) so it can
-follow the scenario's load without a round trip. Its tests (the score, its percentile and the
+The power plant score is computed in the browser (frontend/components/site_intel/feasibility.ts)
+so a technology or capacity change needs no round trip. Its tests (the score, its percentile and the
 California placement region) are node:test files that Node 22.18+ runs directly (type stripping,
 no extra packages); skipped when no such Node is on PATH.
 """

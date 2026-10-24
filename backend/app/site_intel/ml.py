@@ -1,17 +1,21 @@
-"""Model signals for the GriddyGrade: B's site artifact and A's demand forecast.  OWNER: workstream E.
+"""Model signals for the power plant GriddyGrade: B's site-location artifact.  OWNER: workstream E.
 
-ml_context(location) answers three questions the rule-based grade can't, from artifacts
-already committed under ml/artifacts/ (read-only, no network, a few ms):
+ml_context(location) reads the site's own 5 km cell of B's site artifact (ml/site_location,
+committed under ml/artifacts/; read-only, no network, a few ms) for two things the rule-based
+grade can't compute itself:
 
-  - How congested is the interconnection queue? The county's active requests (queue_mw,
-    LBNL Queued Up), from the nearest 5 km cell of B's site artifact.
-  - Could clean supply be built nearby? The best solar, wind and battery suitability among
-    cells within 25 km. Gas is left out: its scores are optimistic and mostly repeat the
-    grid-distance signal. The cell's in_nonattainment flag is not used either (E already
-    scores EPA designations), nor its line / substation distances (A's summary has them).
-  - How much demand pressure is the region under? A's forecast ("mid", 2035) for the cell's
-    region and county, P50 first: the P10-P90 band covered only about half of actual hours
-    in testing (the runbook asks for 0.6-0.95), so P90 values are too narrow.
+  - Siting similarity per technology (site_cell.suitability): the trained model's probability
+    that the cell resembles where operating plants of that technology were built (EIA-860, 5 MW
+    and up, online since 2000): solar_pv, onshore_wind, battery, gas_cc (all gas plants). The
+    grade scores it as an inferred submetric of the technology's resource prerequisites.
+  - The cell's annual solar and wind resource (site_cell.resource): ERA5 reanalysis 2024 means
+    from the Open-Meteo archive, sampled on a 0.5 degree grid and interpolated to the 5 km cells
+    (ml/site_location/fetch_resource.py). resource_basis says so, so the grade can check that a
+    value is compatible with its reference range before scoring it.
+
+Plus the county's active interconnection requests (queue_mw, LBNL Queued Up), shown as context.
+The cell's grid distances, population and nonattainment flag are not passed on: A's summary and
+E's EPA layer have them, so nothing is read twice.
 
 The result goes in SiteIntel.extras["ml"]; the browser maps it onto the grade
 (feasibilityInput.ts), so this needs no contract change and no new request.
@@ -27,18 +31,28 @@ from typing import Any
 
 import numpy as np
 
-from app.contract import Finding, ForecastRequest, LngLat, Provenance
+from app.contract import Finding, LngLat, Provenance
 from app.ml_bridge import latest
 
 log = logging.getLogger(__name__)
 
 MAX_CELL_KM = 5.0  # a California point is at most ~3.5 km from a 5 km cell center
-CLEAN_RADIUS_KM = 25.0
-CLEAN_KINDS = ("solar_pv", "onshore_wind", "battery")
-FORECAST_SCENARIO, FORECAST_YEAR = "mid", 2035
 QUEUE_HIGH_MW = 10_000  # a county queue this large gets a needs_utility_study finding
 QUEUED_UP_URL = "https://emp.lbl.gov/queues"
 EARTH_KM = 6371.0088
+# How B's resource columns were made (ml/site_location/fetch_resource.py: STEP_DEG, the default
+# --year and the Open-Meteo variables it asks for). Update with a re-fetch.
+RESOURCE_BASIS = {
+    "source": "ERA5 reanalysis via the Open-Meteo archive",
+    "url": "https://open-meteo.com/en/docs/historical-weather-api",
+    "period": "2024",
+    "years": 1,
+    "grid_deg": 0.5,
+    "grid_km": 50.0,  # 0.5 degree is ~45-55 km in California; the IDW to 5 km cells adds no detail
+    "ghi_unit": "kWh/m2/day",
+    "wind_height_m": 100,
+    "wind_unit": "m/s",
+}
 
 
 @dataclass(frozen=True)
@@ -55,10 +69,14 @@ class _Table:
     lat: np.ndarray
     cell: np.ndarray
     county: np.ndarray
-    geoid: np.ndarray
-    region: np.ndarray
     queue_mw: np.ndarray
+    ghi: np.ndarray | None
+    wind100: np.ndarray | None
     p: dict[str, np.ndarray]
+
+
+def _col(c, name: str) -> np.ndarray | None:
+    return c[name].to_numpy(float) if name in c.columns else None
 
 
 @lru_cache(maxsize=2)
@@ -78,10 +96,10 @@ def _load(path: str, mtime: float) -> _Table:
         lat=c["lat"].to_numpy(float),
         cell=c["cell"].to_numpy(int),
         county=c["county"].astype(str).to_numpy(),
-        geoid=c["geoid"].astype(str).to_numpy(),
-        region=c["region"].astype(str).to_numpy(),
         queue_mw=c["queue_mw"].to_numpy(float),
-        p={k: c[f"p_{k}"].to_numpy(float) for k in CLEAN_KINDS if k in m.kinds},
+        ghi=_col(c, "ghi_kwh_m2_day"),
+        wind100=_col(c, "wind100_ms"),
+        p={k: c[f"p_{k}"].to_numpy(float) for k in m.kinds if f"p_{k}" in c.columns},
     )
 
 
@@ -104,39 +122,9 @@ def _km(t: _Table, loc: LngLat) -> np.ndarray:
     return 2 * EARTH_KM * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
 
 
-def _r(v: float, nd: int = 3) -> float:
-    return round(float(v), nd)
-
-
-def _forecast(region: str, geoid: str) -> dict[str, Any] | None:
-    """A's forecast for the cell's region and county: P50 first, P90 only with its caveat."""
-    from app.forecast.service import forecast
-
-    f = forecast(ForecastRequest(scenario=FORECAST_SCENARIO, year=FORECAST_YEAR))
-    if not f.available:
-        return None
-    reg = next((r for r in f.regions if r.region == region), None)
-    county = next((c for c in f.counties if c.geoid == geoid), None)
-    base = reg.trajectory[0] if reg and reg.trajectory else None
-    if reg is None or base is None or not base.get("peak_mw_p50"):
-        return None
-    metrics = f.metrics or {}
-    return {
-        "artifact_id": f.artifact_id,
-        "mode": f.mode,
-        "scenario": f.scenario,
-        "year": f.year,
-        "base_year": f.base_year,
-        "region": {
-            "id": reg.region,
-            "name": reg.name,
-            "base_peak_mw_p50": _r(base["peak_mw_p50"], 1),
-            "peak_mw_p50": _r(reg.peak_mw_p50, 1),
-            "peak_mw_p90": _r(reg.peak_mw_p90, 1),
-        },
-        "county": {"geoid": county.geoid, "name": county.county, "peak_mw_p50": _r(county.peak_mw_p50, 1)} if county else None,
-        "metrics": {k: metrics.get(k) for k in ("mape_p50_pct", "p10_p90_coverage", "split") if k in metrics},
-    }
+def _r(v: float, nd: int = 3) -> float | None:
+    v = float(v)
+    return round(v, nd) if np.isfinite(v) else None
 
 
 def ml_context(loc: LngLat) -> dict[str, Any]:
@@ -149,18 +137,10 @@ def ml_context(loc: LngLat) -> dict[str, Any]:
     if km[i] > MAX_CELL_KM:
         return {"available": False, "reason": f"no {t.spacing_km:g} km grid cell within {MAX_CELL_KM:g} km (outside California)"}
 
-    near = km <= CLEAN_RADIUS_KM
-    clean: dict[str, Any] = {"radius_km": CLEAN_RADIUS_KM}
-    for kind, p in t.p.items():
-        j = int(np.argmax(np.where(near, p, -1.0)))
-        clean[kind] = {"best": _r(p[j]), "distance_km": _r(km[j], 1), "lon": _r(t.lon[j], 4), "lat": _r(t.lat[j], 4)}
-
-    try:
-        demand = _forecast(str(t.region[i]), str(t.geoid[i]))
-    except Exception:  # noqa: BLE001 - the forecast is context; the other signals still apply
-        log.exception("demand forecast unavailable for the GriddyGrade")
-        demand = None
-
+    resource = {
+        "ghi_kwh_m2_day": _r(t.ghi[i]) if t.ghi is not None else None,
+        "wind100_ms": _r(t.wind100[i]) if t.wind100 is not None else None,
+    }
     return {
         "available": True,
         "site_artifact": {
@@ -181,12 +161,13 @@ def ml_context(loc: LngLat) -> dict[str, Any]:
             "lat": _r(t.lat[i], 4),
             "distance_km": _r(km[i], 2),
             "county": str(t.county[i]),
-            "geoid": str(t.geoid[i]),
-            "region": str(t.region[i]),
         },
+        "site_cell": {
+            "suitability": {k: _r(p[i], 4) for k, p in t.p.items()},
+            "resource": resource,
+        },
+        "resource_basis": RESOURCE_BASIS,
         "queue_mw": _r(t.queue_mw[i], 1),
-        "clean_build": clean,
-        "forecast": demand,
     }
 
 
@@ -195,7 +176,8 @@ def ml_provenance(ctx: dict[str, Any]) -> list[Provenance]:
         return []
     art = ctx["site_artifact"]
     auc = " · ".join(f"{k.replace('_', ' ')} {v['roc_auc']:.2f}" for k, v in art["model_metrics"].items())
-    out = [
+    b = ctx.get("resource_basis") or RESOURCE_BASIS
+    return [
         Provenance(
             kind="observed",
             source="LBNL Queued Up: active interconnection requests by county",
@@ -205,28 +187,25 @@ def ml_provenance(ctx: dict[str, Any]) -> list[Provenance]:
         Provenance(
             kind="inferred",
             source=f"Griddy site-location model (B), {art['id']}",
-            note=f"Clean-build similarity: how much nearby cells look like where solar, wind and batteries were built (spatial-CV ROC-AUC {auc}). A similarity score, not feasibility.",
+            note=(
+                f"Siting similarity: how much the site's 5 km cell resembles where solar, wind, battery and gas plants were built "
+                f"(spatial-CV ROC-AUC {auc}). A similarity score, not a resource measurement or a feasibility finding."
+            ),
+        ),
+        Provenance(
+            kind="observed",
+            source=f"{b['source']}: {b['period']} mean solar irradiance and {b['wind_height_m']} m wind",
+            url=b.get("url"),
+            note=f"{b['grid_deg']} degree grid interpolated to 5 km cells (ml/site_location); one year, not a long-term mean.",
         ),
     ]
-    if (f := ctx.get("forecast")) is not None:
-        m = f.get("metrics") or {}
-        acc = f"P50 MAPE {m['mape_p50_pct']:.1f}%" if isinstance(m.get("mape_p50_pct"), (int, float)) else "accuracy not reported"
-        cov = f"; the P10-P90 band covered {m['p10_p90_coverage']:.0%} of test hours (target 60-95%), so P90 is too narrow" if isinstance(m.get("p10_p90_coverage"), (int, float)) else ""
-        out.append(
-            Provenance(
-                kind="inferred",
-                source=f"Griddy demand forecast (A), {f['artifact_id']}",
-                note=f"Scenario '{f['scenario']}', {f['year']}, P50: {acc}{cov}. A scenario, not a prediction.",
-            )
-        )
-    return out
 
 
 def ml_findings(ctx: dict[str, Any]) -> list[Finding]:
     if not ctx.get("available"):
         return []
     q, county = ctx["queue_mw"], ctx["cell"]["county"]
-    if q < QUEUE_HIGH_MW:
+    if q is None or q < QUEUE_HIGH_MW:
         return []
     return [
         Finding(
@@ -236,8 +215,8 @@ def ml_findings(ctx: dict[str, Any]) -> list[Finding]:
             title="Congested interconnection queue",
             detail=(
                 f"{county} County has {q:,.0f} MW of active interconnection requests (LBNL Queued Up). "
-                "New large loads here are likely to wait on cluster studies and network upgrades: "
-                "ask the utility for a large-load interconnection study early."
+                "New projects here are likely to wait on cluster studies and network upgrades, and queued "
+                "projects compete for the same transmission headroom: ask the utility for an interconnection study early."
             ),
             metric=q,
             threshold=QUEUE_HIGH_MW,
