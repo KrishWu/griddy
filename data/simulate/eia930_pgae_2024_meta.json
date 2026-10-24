@@ -1,0 +1,106 @@
+{
+  "source": "EIA-930 Hourly Electric Grid Monitor, six-month SUBREGION bulk files",
+  "provenance": {
+    "kind": "observed",
+    "source": "EIA-930 2024, CAISO subregion PGAE",
+    "url": "https://www.eia.gov/electricity/gridmonitor/",
+    "note": "Hourly PG&E-area demand; gaps/outliers filled (see counts)."
+  },
+  "urls": [
+    "https://www.eia.gov/electricity/gridmonitor/sixMonthFiles/EIA930_SUBREGION_2024_Jan_Jun.csv",
+    "https://www.eia.gov/electricity/gridmonitor/sixMonthFiles/EIA930_SUBREGION_2024_Jul_Dec.csv"
+  ],
+  "raw_files": [
+    {
+      "name": "EIA930_SUBREGION_2024_Jan_Jun.csv",
+      "bytes": 26103351,
+      "sha256": "f9a436ffff0dea7c24efa4049fb3527e5ce2e7dba7340fdee73f1185840edf51"
+    },
+    {
+      "name": "EIA930_SUBREGION_2024_Jul_Dec.csv",
+      "bytes": 26409065,
+      "sha256": "e757ca8d30dd486f131fc85d746c86aeda2d5567aa2e953051ca4f601a50374c"
+    }
+  ],
+  "balancing_authority": "CISO",
+  "sub_region": "PGAE",
+  "time_convention": "row i = hour beginning 2024-01-01T00:00-08:00 + i h (Etc/GMT+8, no DST)",
+  "rows": 8784,
+  "raw_rows": 8784,
+  "raw_rows_outside_year": 0,
+  "duplicate_timestamps_averaged": 0,
+  "absent_hours": 0,
+  "missing_hours_filled": 48,
+  "outliers_replaced": 0,
+  "outlier_rule": "<= 0, < 0.2 x median or > 3.0 x median (median 10905 MW)",
+  "gap_runs": [
+    {
+      "start": "2024-10-31T23:00:00-08:00",
+      "hours": 48
+    }
+  ],
+  "filled_linear_hours": 0,
+  "filled_diurnal_hours": 48,
+  "mean_mw": 11239.6,
+  "peak_mw": 21155.0,
+  "peak_timestamp": "2024-07-11T19:00:00-08:00",
+  "min_mw": 5907.0,
+  "min_timestamp": "2024-03-17T14:00:00-08:00",
+  "annual_energy_twh": 98.73,
+  "shape_mean": 1.0,
+  "shape_min": 0.5256,
+  "shape_max": 1.8822,
+  "monthly_mean_mw": {
+    "1": 10724.5,
+    "2": 10237.3,
+    "3": 9731.3,
+    "4": 9586.1,
+    "5": 10317.5,
+    "6": 12105.2,
+    "7": 14191.2,
+    "8": 12775.9,
+    "9": 12084.3,
+    "10": 11542.9,
+    "11": 10619.4,
+    "12": 10877.0
+  },
+  "hour_of_day_mean_shape": [
+    0.9657,
+    0.9327,
+    0.9059,
+    0.8901,
+    0.886,
+    0.9029,
+    0.9469,
+    1.0007,
+    1.0192,
+    0.9922,
+    0.9562,
+    0.9258,
+    0.912,
+    0.9188,
+    0.9419,
+    0.9851,
+    1.0392,
+    1.1116,
+    1.1764,
+    1.1938,
+    1.1744,
+    1.1382,
+    1.0757,
+    1.0088
+  ],
+  "daily_min_hour_counts": {
+    "2": 4,
+    "3": 63,
+    "4": 92,
+    "5": 37,
+    "6": 3,
+    "11": 14,
+    "12": 52,
+    "13": 53,
+    "14": 38,
+    "15": 8,
+    "16": 2
+  }
+}
