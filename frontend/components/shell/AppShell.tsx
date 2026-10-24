@@ -22,6 +22,7 @@ import { SitePanel } from "@/components/explore/SitePanel";
 import { SettingsButton } from "@/components/settings/SettingsButton";
 import { SimulatePanel } from "@/components/simulate/SimulatePanel";
 import { StressPanel } from "@/components/simulate/StressPanel";
+import { GriddyGradeCard } from "@/components/site_intel/GriddyGradeCard";
 import { SiteIntelPanel } from "@/components/site_intel/SiteIntelPanel";
 import type { Mode, ScenarioResult } from "@/lib/contract";
 import { updateSettings, useSettings } from "@/lib/settings";
@@ -94,8 +95,10 @@ export function AppShell() {
       hint: "The selected site: grid context, nearby plants, site intelligence",
       content: (
         <>
+          {/* E's GriddyGrade: the score viewers should see first, above every other site card. */}
+          <PanelGuard key={`grade-${v}`} name="GriddyGrade"><GriddyGradeCard /></PanelGuard>
           <PanelGuard key={`site-${v}`} name="Site"><SitePanel /></PanelGuard>
-          <PanelGuard key={`intel-${v}`} name="Site intelligence"><SiteIntelPanel /></PanelGuard>
+          <PanelGuard key={`intel-${v}`} name="Site intelligence"><SiteIntelPanel showGrade={false} /></PanelGuard>
         </>
       ),
     },

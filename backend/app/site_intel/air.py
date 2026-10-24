@@ -60,6 +60,7 @@ class AirContext(BaseModel):
     distance_km: float | None = None
     source: Literal["airnow_live", "airnow_snapshot"] | None = None
     nonattainment: list[dict[str, Any]] = Field(default_factory=list, description="[{pollutant, naaqs, area, classification}]")
+    nonattainment_loaded: bool = Field(default=False, description="The Green Book layer loaded, so an empty list means none listed")
     provenance: list[Provenance] = Field(default_factory=list)
 
 
@@ -193,6 +194,7 @@ def air_context(loc: LngLat) -> AirContext:
     ctx = AirContext()
     try:
         ctx.nonattainment = nonattainment_at(loc)
+        ctx.nonattainment_loaded = isinstance((_load(NONATTAINMENT) or {}).get("features"), list)
         ctx.provenance.append(_greenbook_prov())
     except Exception:  # noqa: BLE001
         log.exception("nonattainment lookup failed")

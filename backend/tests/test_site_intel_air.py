@@ -52,6 +52,16 @@ def test_snapshot_fallback_without_key(no_key):
     assert {p.source for p in ctx.provenance} >= {"EPA Green Book nonattainment areas", "AirNow (U.S. EPA and partners), preliminary data"}
 
 
+def test_greenbook_layer_availability_is_reported(no_key, monkeypatch, tmp_path):
+    # An empty list only means "attainment" when the layer loaded (the feasibility score checks this).
+    assert air.air_context(BUTTONWILLOW).nonattainment_loaded is True
+    assert air.air_context(LngLat(lon=-120.5, lat=41.5)).nonattainment_loaded is True  # Modoc: loaded, none listed
+    monkeypatch.setattr(air, "NONATTAINMENT", tmp_path / "missing.geojson")
+    ctx = air.air_context(BUTTONWILLOW)
+    assert ctx.nonattainment == [] and ctx.nonattainment_loaded is False
+    assert "nonattainment_loaded" not in (air.air_quality_dict(ctx) or {})
+
+
 def test_far_from_any_monitor(no_key):
     ctx = air.air_context(LngLat(lon=-100.0, lat=40.0))
     assert ctx.aqi is None and air.air_quality_dict(ctx) is None

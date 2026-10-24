@@ -3,11 +3,13 @@
 import { Term } from "@/components/glossary/Term";
 import { FindingsList } from "@/components/shell/FindingsList";
 import { Panel, Stat } from "@/components/shell/Panel";
+import { PanelGuard } from "@/components/shell/PanelGuard";
 import type { Provenance, SiteIntel } from "@/lib/contract";
 import { pct } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
 import { CarbonAwarePanel } from "./CarbonAwarePanel";
+import { GriddyGradeCard } from "./GriddyGradeCard";
 
 // ESA WorldCover's own legend colors, so the bar matches the dataset's maps.
 const LAND_COLOR: Record<string, string> = {
@@ -188,10 +190,18 @@ function Screening({ intel }: { intel: SiteIntel }) {
   );
 }
 
-export function SiteIntelPanel() {
+/** `showGrade={false}` when AppShell mounts <GriddyGradeCard /> itself, above A's Site card. */
+export function SiteIntelPanel({ showGrade = true }: { showGrade?: boolean }) {
   const { siteIntel } = useGridForge();
   return (
     <>
+      {/* The GriddyGrade (a number, details on expand), with its own guard so a scoring error
+          can't hide the screening below. */}
+      {showGrade && (
+        <PanelGuard name="GriddyGrade">
+          <GriddyGradeCard />
+        </PanelGuard>
+      )}
       <Panel title="Site intelligence" owner="E · Site intel">
         {siteIntel ? (
           <Screening intel={siteIntel} />

@@ -112,6 +112,8 @@ def _site_intel(loc: LngLat) -> SiteIntel:
         findings += air.air_findings(ctx)
         provenance += ctx.provenance
         extras["nonattainment"] = ctx.nonattainment
+        # Without the Green Book layer an empty list would read as attainment; the feasibility score checks this.
+        extras["nonattainment_available"] = ctx.nonattainment_loaded
     else:
         findings.append(_finding("air_quality_unavailable", "info", "Air quality unavailable", "AirNow data could not be loaded for this site."))
 
