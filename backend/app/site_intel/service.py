@@ -21,7 +21,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, TypeVar
 
 from app.contract import EvaluationResult, Finding, LngLat, MapOverlay, Provenance, Scenario, SimulationResult, SiteIntel
-from app.site_intel import imagery, land
+from app.site_intel import air, imagery, land
 from app.site_intel.config import BUFFER_KM, key_center, site_key
 from app.site_intel.earthengine import status as ee_status
 from app.site_intel.geo import circle_feature
@@ -69,8 +69,10 @@ def _site_intel(loc: LngLat) -> SiteIntel:
     deadline = time.monotonic() + DEADLINE_S
     f_land = _pool.submit(land.get_land_stats, loc)
     f_img = _pool.submit(imagery.imagery_overlays, loc)
+    f_air = _pool.submit(air.air_context, loc)
     stats, tier = _wait(f_land, deadline, (None, "unavailable"), "land screening")
     overlays, img_prov, img_findings = _wait(f_img, deadline, ([], [], []), "imagery")
+    ctx = _wait(f_air, deadline, None, "air quality")
 
     findings: list[Finding] = []
     provenance: list[Provenance] = []
@@ -106,6 +108,12 @@ def _site_intel(loc: LngLat) -> SiteIntel:
 
     findings += img_findings
     provenance += img_prov
+    if ctx is not None:
+        findings += air.air_findings(ctx)
+        provenance += ctx.provenance
+        extras["nonattainment"] = ctx.nonattainment
+    else:
+        findings.append(_finding("air_quality_unavailable", "info", "Air quality unavailable", "AirNow data could not be loaded for this site."))
 
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 9))
     return SiteIntel(
@@ -113,6 +121,7 @@ def _site_intel(loc: LngLat) -> SiteIntel:
         land_cover=stats.land_cover if stats else {},
         mean_slope_deg=stats.mean_slope_deg if stats else None,
         solar_ghi_kwh_m2_day=stats.solar_ghi_kwh_m2_day if stats else None,
+        air_quality=air.air_quality_dict(ctx) if ctx is not None else None,
         overlays=overlays,
         findings=findings,
         provenance=provenance,
@@ -131,7 +140,9 @@ def site_findings(scenario: Scenario, sim: SimulationResult, evaluation: Evaluat
     Cached data only (no network): AIR_PERMIT_RISK when on-site gas adds NOx in a
     nonattainment area, and the carbon-aware saving when the demand has a flexible share.
     """
-    checks: list[Callable[[], list[Finding]]] = []
+    checks: list[Callable[[], list[Finding]]] = [
+        lambda: [f] if (f := air.air_permit_risk(scenario, sim, evaluation)) else [],
+    ]
     out: list[Finding] = []
     for check in checks:
         try:

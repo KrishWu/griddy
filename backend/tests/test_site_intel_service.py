@@ -5,9 +5,11 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.builder.service import list_presets
 from app.contract import LngLat
 from app.main import app
-from app.site_intel import imagery, land, service
+from app.pipeline import run_scenario
+from app.site_intel import air, imagery, land, service
 from app.site_intel.config import DEMO_SITES, TILES
 
 client = TestClient(app)
@@ -29,6 +31,9 @@ def test_demo_site_screens_offline(offline):
     kinds = {o.id: o for o in intel.overlays}
     assert kinds["site-buffer"].type == "geojson" and kinds["site-buffer"].data["type"] == "FeatureCollection"
     assert kinds["satellite"].url == "/api/site/tiles/{z}/{x}/{y}.png"
+    assert intel.air_quality is not None and {"aqi", "pollutant", "category"} <= intel.air_quality.keys()
+    assert any(f.id == "air_nonattainment" for f in intel.findings)
+    assert intel.extras["nonattainment"]
     assert intel.provenance and all(p.source for p in intel.provenance)
     order = {"fail": 0, "warn": 1, "pass": 2, "info": 3}
     assert [order[f.severity] for f in intel.findings] == sorted(order[f.severity] for f in intel.findings)
@@ -45,10 +50,10 @@ def test_site_intel_never_raises_when_every_source_breaks(offline, monkeypatch):
     def boom(*_):
         raise RuntimeError("all sources down")
 
-    for mod, name in ((land, "get_land_stats"), (imagery, "imagery_overlays")):
+    for mod, name in ((land, "get_land_stats"), (imagery, "imagery_overlays"), (air, "air_context")):
         monkeypatch.setattr(mod, name, boom)
     intel = service.site_intel(KERN)
-    assert "land_screening_unavailable" in {f.id for f in intel.findings}
+    assert {f.id for f in intel.findings} >= {"land_screening_unavailable", "air_quality_unavailable"}
 
 
 def test_endpoints(offline):
@@ -62,3 +67,18 @@ def test_endpoints(offline):
     z, x, y = int(png.parent.parent.name), int(png.parent.name), int(png.stem)
     r = client.get(f"/api/site/tiles/{z}/{x}/{y}.png")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png" and r.content[:4] == b"\x89PNG"
+
+
+def test_site_findings_adds_air_permit_risk_from_c_numbers(offline, monkeypatch):
+    hybrid = next(p for p in list_presets() if p.id == "hybrid")
+    res = run_scenario(hybrid)
+    assert any(f.id == "AIR_PERMIT_RISK" for f in res.findings)  # wired into every /api/run via the pipeline
+    res.evaluation.extras["nox_t_per_yr"] = 120.0
+    got = service.site_findings(hybrid, res.simulation, res.evaluation)
+    assert [f.id for f in got] == ["AIR_PERMIT_RISK"] and got[0].metric == 120.0
+
+    def boom(*_):
+        raise RuntimeError("air data corrupt")
+
+    monkeypatch.setattr(air, "air_permit_risk", boom)
+    assert service.site_findings(hybrid, res.simulation, res.evaluation) == []  # logged, never raised

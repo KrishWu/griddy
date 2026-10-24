@@ -41,6 +41,14 @@ const TIER_LABEL: Record<string, string> = {
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
+// The app's clock is fixed UTC-8 (PST) all year, like every hourly array.
+function pst(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const fmt = { timeZone: "Etc/GMT+8", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false } as const;
+  return `${d.toLocaleString("en-US", fmt)} PST`;
+}
+
 function LandCoverBar({ landCover }: { landCover: Record<string, number> }) {
   const parts = Object.entries(landCover)
     .filter(([, v]) => v > 0)
@@ -136,7 +144,8 @@ function Screening({ intel }: { intel: SiteIntel }) {
   const aqi = num(aq?.aqi);
   const category = str(aq?.category);
   const tier = str(intel.extras?.land_tier);
-  const aqSource = str(aq?.source) === "airnow_live" ? "live" : str(aq?.observed_at) ? `snapshot ${str(aq?.observed_at)}` : null;
+  const observed = str(aq?.observed_at);
+  const aqSource = str(aq?.source) === "airnow_live" ? "live" : observed ? `snapshot ${pst(observed)}` : null;
   return (
     <>
       <div className="mb-3 grid grid-cols-3 gap-3">
