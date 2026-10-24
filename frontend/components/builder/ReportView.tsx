@@ -200,7 +200,7 @@ export function ReportView() {
               ["Weather / price year", String(a.weather_year ?? 2024)],
               ["Analysis period", `${a.analysis_years ?? 20} years`],
               ["Discount rate", `${((a.discount_rate ?? 0.07) * 100).toFixed(1)}%`],
-              ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 4).toFixed(2)}/MMBtu`],
+              ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 3.65).toFixed(2)}/MMBtu`],
               ["Carbon price (on-site combustion)", `$${(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t`],
               ["Grid prices", syntheticPrices ? "Synthetic hourly placeholder (CAISO 2024 pending)" : "Hourly, per the simulation sources below"],
               ["Import delivery adder", `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
