@@ -15,7 +15,7 @@
   "2024-05-01",
   "2024-10-01"
  ],
- "attribution": "Contains modified Copernicus Sentinel data 2024",
+ "attribution": "Contains modified Copernicus Sentinel data 2024, processed in Google Earth Engine",
  "license": "Copernicus Sentinel data terms (free and open)",
  "captured": "2026-10-24"
 }

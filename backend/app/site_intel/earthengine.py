@@ -88,6 +88,12 @@ def run(fn: Callable[[], T], timeout: float = TIMEOUT_S) -> T:
         raise EEUnavailable(_last_error) from exc
 
 
+def warm_up() -> None:
+    """Log in to Earth Engine in the background (~3 s), so the first click on the map is fast."""
+    if env("EE_PROJECT"):
+        threading.Thread(target=get_ee, name="earthengine-warmup", daemon=True).start()
+
+
 def status() -> dict[str, Any]:
     cooling = time.monotonic() - _failed_at < RETRY_AFTER_S
     return {"configured": bool(env("EE_PROJECT")), "ready": _ready and not cooling, "last_error": _last_error}

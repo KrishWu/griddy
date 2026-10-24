@@ -21,7 +21,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, TypeVar
 
 from app.contract import EvaluationResult, Finding, LngLat, MapOverlay, Provenance, Scenario, SimulationResult, SiteIntel
-from app.site_intel import air, imagery, land
+from app.site_intel import air, carbon, imagery, land
 from app.site_intel.config import BUFFER_KM, key_center, site_key
 from app.site_intel.earthengine import status as ee_status
 from app.site_intel.geo import circle_feature
@@ -142,6 +142,7 @@ def site_findings(scenario: Scenario, sim: SimulationResult, evaluation: Evaluat
     """
     checks: list[Callable[[], list[Finding]]] = [
         lambda: [f] if (f := air.air_permit_risk(scenario, sim, evaluation)) else [],
+        lambda: carbon.carbon_findings(scenario, sim),
     ]
     out: list[Finding] = []
     for check in checks:

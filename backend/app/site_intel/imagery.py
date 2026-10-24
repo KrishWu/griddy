@@ -42,7 +42,7 @@ MAX_Z = 22
 TILE_URL = "/api/site/tiles/{z}/{x}/{y}.png"  # literal placeholders; A's MapView makes it absolute
 LABEL = "Sentinel-2 2024 true color"
 ATTRIBUTION_LIVE = "Contains modified Copernicus Sentinel data 2024, processed in Google Earth Engine"
-ATTRIBUTION_CACHED = "Contains modified Copernicus Sentinel data 2024"
+ATTRIBUTION_CACHED = ATTRIBUTION_LIVE  # prep/imagery.py saves the live Earth Engine layer's tiles
 EE_URL = "https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED"
 STYLE = f"SCL cloud-masked median of B4/B3/B2, stretch {VIS['min']:g}-{VIS['max']:g}, gamma {VIS['gamma']:g}"
 
