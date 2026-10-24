@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Printable report (/report): plain paper, sensible margins.  OWNER: workstream D. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+}
