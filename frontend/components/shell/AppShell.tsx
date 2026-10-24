@@ -2,7 +2,7 @@
 // Page layout. Every workstream's panel is already mounted here, so feature
 // branches edit their own components, not this file.  OWNER: workstream D.
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
@@ -41,6 +41,21 @@ function Toggle<T extends string>({ value, options, onChange }: { value: T; opti
   );
 }
 
+const LARGE = "(min-width: 1024px)";
+
+/** True on lg+ screens, so the site cards mount once (over the map) instead of twice. */
+function useIsLarge(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const m = window.matchMedia(LARGE);
+      m.addEventListener("change", onChange);
+      return () => m.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(LARGE).matches,
+    () => false,
+  );
+}
+
 function SiteCards({ epoch }: { epoch: number }) {
   return (
     <>
@@ -59,6 +74,7 @@ export function AppShell() {
   // so panel-local state like B's selected day survives edits.
   const { error, result, panelEpoch: v, running, view, setView, scenario, setMode, retry } = useGridForge();
   const placeholder = useMemo(() => usesPlaceholderData(result), [result]);
+  const large = useIsLarge();
   const mode: Mode = scenario?.mode ?? "industrial";
 
   return (
@@ -116,9 +132,7 @@ export function AppShell() {
             <AssumptionsPanel />
           </PanelGuard>
           {/* On small screens the site cards live here; on large screens they float over the map. */}
-          <div className="space-y-3 lg:hidden">
-            <SiteCards epoch={v} />
-          </div>
+          {!large && <SiteCards epoch={v} />}
         </aside>
         {view === "compare" ? (
           <main className="min-h-0 lg:col-span-2 lg:overflow-y-auto">
@@ -133,9 +147,11 @@ export function AppShell() {
                 <MapView />
               </PanelGuard>
               {/* Site results appear next to where you clicked, not three screens down the sidebar. */}
-              <div className="absolute bottom-8 left-3 z-10 hidden max-h-[55%] w-80 space-y-2 overflow-y-auto lg:block">
-                <SiteCards epoch={v} />
-              </div>
+              {large && (
+                <div className="absolute bottom-8 left-3 z-10 max-h-[55%] w-80 space-y-2 overflow-y-auto">
+                  <SiteCards epoch={v} />
+                </div>
+              )}
             </main>
             <aside className="space-y-3 border-l border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
               {result ? (
