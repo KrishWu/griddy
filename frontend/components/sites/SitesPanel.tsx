@@ -79,7 +79,7 @@ function SiteRow({ s, onUse }: { s: SiteCandidate; onUse: (s: SiteCandidate) => 
               {s.capex_usd != null && `CAPEX ${usd(s.capex_usd)}`}
               {s.gen_tie_usd != null && s.gen_tie_usd > 0 && ` + gen-tie ${usd(s.gen_tie_usd)}`}
             </span>
-            <button type="button" onClick={() => onUse(s)} className="font-medium text-emerald-700 underline hover:text-emerald-900 dark:text-emerald-400">
+            <button type="button" disabled={!Number.isFinite(s.mw) || s.mw <= 0 || s.mw > 20000} onClick={() => onUse(s)} className="font-medium text-emerald-700 underline hover:text-emerald-900 dark:text-emerald-400">
               Use this site
             </button>
           </div>
@@ -98,7 +98,7 @@ export function SitesPanel({
   recommendation?: SiteRecommendation | null;
   onRequestChange?: (r: SiteRequest) => void;
 }) {
-  const { selectSite } = useGridForge();
+  const { selectRecommendedSite } = useGridForge();
   const [localMix, setLocalMix] = useState<Partial<Mix> | null>(null);
   const mix: Mix = { ...DEFAULT_MIX, ...(request.mix ?? {}), ...(onRequestChange ? {} : (localMix ?? {})) };
   const effective = useMemo<SiteRequest>(() => (onRequestChange || !localMix ? request : { ...request, mix: { ...(request.mix ?? {}), ...localMix } }), [request, localMix, onRequestChange]);
@@ -110,7 +110,7 @@ export function SitesPanel({
     if (onRequestChange) onRequestChange({ ...request, mix: { ...mix, ...patch } });
     else setLocalMix((m) => ({ ...(m ?? {}), ...patch }));
   };
-  const pickSite = (s: SiteCandidate) => void selectSite(s.location);
+  const pickSite = (s: SiteCandidate) => void selectRecommendedSite(s);
 
   const totals = useMemo(() => {
     const t = new Map<string, number>();

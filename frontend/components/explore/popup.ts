@@ -248,7 +248,7 @@ export function demandCard(p: Props, info: DemandInfo | null): HTMLElement {
 }
 
 /** A recommended site (B's ranking) with a button that makes it the scenario site. */
-export function recSiteCard(p: Props, onUse: () => void): HTMLElement {
+export function recSiteCard(p: Props, onUse: (() => void) | null): HTMLElement {
   const kind = str(p.kind);
   const label = isAssetKind(kind) ? ASSET_LABEL[kind] : (kind ?? "Site");
   const capex = num(p.capex_usd);
@@ -267,7 +267,8 @@ export function recSiteCard(p: Props, onUse: () => void): HTMLElement {
   });
   const button = el("button", "mt-2 w-full rounded bg-zinc-900 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700", "Use this site");
   button.type = "button";
-  button.addEventListener("click", onUse);
+  button.disabled = !onUse;
+  if (onUse) button.addEventListener("click", onUse);
   // Before the source line, right under the facts.
   root.insertBefore(button, root.lastElementChild);
   return root;

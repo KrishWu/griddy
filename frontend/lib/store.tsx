@@ -9,7 +9,7 @@ import { useProjectPlanning, type ProjectPlanningState } from "@/components/buil
 import { allowSitePlacement } from "@/components/site_intel/regionGuard";
 
 import { api } from "./api";
-import { SCHEMA_VERSION, type LngLat, type MapOverlay, type Mode, type Scenario, type ScenarioResult, type SiteIntel, type SiteSummary } from "./contract";
+import { SCHEMA_VERSION, type LngLat, type MapOverlay, type Mode, type Scenario, type ScenarioResult, type SiteCandidate, type SiteIntel, type SiteSummary } from "./contract";
 
 export type View = "single" | "compare";
 type ErrorSource = "presets" | "run" | "compare";
@@ -61,6 +61,7 @@ interface GridForgeState {
   comparing: boolean;
   runCompare: () => Promise<void>;
   selectSite: (p: LngLat) => Promise<void>;
+  selectRecommendedSite: (site: SiteCandidate) => Promise<void>;
   siteSummary: SiteSummary | null;
   siteIntel: SiteIntel | null;
   overlays: MapOverlay[];
@@ -398,26 +399,47 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     else void run();
   }, [presets.length, errorSource, loadPresets, runCompare, run]);
 
-  const selectSite = useCallback(async (p: LngLat) => {
+  const selectSite = useCallback(async (p: LngLat, recommended?: SiteCandidate) => {
     if (!allowSitePlacement(p)) return; // Griddy is California-only for now (E's guard shows why)
-    // A clicked point is a new site: fresh id/name, never the preset's Kern labels.
+    if (recommended && (!Number.isFinite(recommended.mw) || recommended.mw <= 0 || recommended.mw > 20000)) return;
+    if (recommended) {
+      runSeq.current++;
+      runAbort.current?.abort();
+      setResult(null); // Hide the previous site's numbers until this selection has been simulated.
+      setError(null);
+      setErrorSource(null);
+    }
+    // A clicked point is a new site: fresh id/name, never the preset's labels.
     // Modules that cache per site should key on location rounded to 0.01 deg, not id.
     const id = `site-${p.lon.toFixed(3)}-${p.lat.toFixed(3)}`;
-    setScenario((s) =>
-      s
-        ? { ...s, site: { id, name: `Site at ${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}`, location: p, balancing_authority: s.site.balancing_authority } }
-        : s,
-    );
+    setScenario((current) => {
+      if (!current) return current;
+      const next = recommended ? withPeak(current, recommended.mw, scaleWithDemand) : current;
+      const label = recommended ? (recommended.county ? recommended.county + " County" : recommended.region) : null;
+      return {
+        ...next,
+        ...(recommended ? {
+          preset: null,
+          name: label + " recommended project",
+          options: { ...next.options, recommended_site: { id: recommended.id, kind: recommended.kind, mw: recommended.mw,
+            basis: "Facility peak demand uses the recommended site's nameplate MW." } },
+        } : {}),
+        site: { id, name: label ? label + " recommended site" : `Site at ${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}`,
+          location: p, county: recommended?.county, balancing_authority: next.site.balancing_authority },
+      };
+    });
     const summary = await fetchSiteCards(p, id);
     if (!summary) return; // failed, or a newer click won
     // Hand A's grid context to the scenario: B's stress test reads poi_voltage_kv,
     // C costs the tie line from interconnection_km. Industrial scenarios only.
     setScenario((s) =>
       s && s.site.id === id
-        ? withLineContext({ ...s, site: { ...s.site, county: summary.site.county, utility_territory: summary.site.utility_territory } }, summary)
+        ? withLineContext({ ...s, site: { ...s.site, county: summary.site.county, utility_territory: summary.site.utility_territory, balancing_authority: summary.site.balancing_authority } }, summary)
         : s,
     );
-  }, [fetchSiteCards]);
+  }, [fetchSiteCards, scaleWithDemand]);
+
+  const selectRecommendedSite = useCallback((site: SiteCandidate) => selectSite(site.location, site), [selectSite]);
 
   const compareStale = useMemo(
     () => compareResults !== null && scenario !== null && compareKey !== designKey(scenario),
@@ -459,6 +481,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       comparing,
       runCompare,
       selectSite,
+      selectRecommendedSite,
       siteSummary,
       siteIntel,
       overlays: siteIntel?.overlays ?? [],
@@ -492,6 +515,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       comparing,
       runCompare,
       selectSite,
+      selectRecommendedSite,
       siteSummary,
       siteIntel,
     ],

@@ -25,7 +25,7 @@ export function ProjectSummary() {
     : issues.length ? "border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300"
     : "border-emerald-200 text-emerald-800 dark:text-emerald-300";
   return <Panel title="Project at a glance">
-    <p className="mb-3 text-xs text-zinc-500">{result.scenario.name} · simulated design year</p>
+    <p className="mb-3 text-xs text-zinc-500">{result.scenario.site.name} · {result.scenario.demand.peak_mw.toLocaleString()} MW facility peak</p>
     <div className="grid grid-cols-2 gap-3">
       {([
         ["Power delivered, average", `${(p?.production.average_power_served_mw ?? served / result.simulation.hourly.demand_mw.length).toFixed(1)} MW`],
