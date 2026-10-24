@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
+import { RecommendedSites } from "@/components/sites/RecommendedSites";
 import { RunFeedback } from "@/components/builder/RunFeedback";
 import { AreaToolsProvider } from "@/components/explore/areaTools";
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
@@ -17,7 +18,7 @@ import { CompareView } from "@/components/builder/CompareView";
 import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
 import { ReportPanel } from "@/components/builder/ReportPanel";
 import { EvaluatePanel } from "@/components/evaluate/EvaluatePanel";
-import { ProjectDetails, ProjectSummary } from "@/components/evaluate/ProjectSummary";
+import { ProjectSummary } from "@/components/evaluate/ProjectSummary";
 import { AreaPanel } from "@/components/explore/AreaPanel";
 import { LayerControl } from "@/components/explore/LayerControl";
 import { LayerStateProvider } from "@/components/explore/layerState";
@@ -98,6 +99,7 @@ export function AppShell() {
       hint: "Plan a project: design, demand, highlighted area",
       content: (
         <>
+          <PanelGuard name="Recommended sites"><RecommendedSites /></PanelGuard>
           <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
           <PanelGuard name="Optimizer"><OptimizePanel advanced={advanced} onReveal={showPanel} /></PanelGuard>
           <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>
@@ -174,13 +176,8 @@ export function AppShell() {
           id: "report",
           label: "Report",
           icon: <ReportIcon className={ICON} />,
-          hint: "Project impacts and the printable report",
-          content: withResult(
-            <>
-              <PanelGuard name="Project impacts">{result && <ProjectDetails result={result} />}</PanelGuard>
-              <PanelGuard key={`report-${v}`} name="Report"><ReportPanel /></PanelGuard>
-            </>,
-          ),
+          hint: "The printable report and CSV export",
+          content: withResult(<PanelGuard key={`report-${v}`} name="Report"><ReportPanel /></PanelGuard>),
         },
       ]
     : [
@@ -188,11 +185,10 @@ export function AppShell() {
           id: "summary",
           label: "Summary",
           icon: <SummaryIcon className={ICON} />,
-          hint: "Project at a glance, impacts and the report",
+          hint: "Project at a glance and the report",
           content: withResult(
             <>
               <PanelGuard name="Project summary"><ProjectSummary /></PanelGuard>
-              <PanelGuard name="Project impacts">{result && <ProjectDetails result={result} />}</PanelGuard>
               <PanelGuard key={`report-${v}`} name="Report"><ReportPanel /></PanelGuard>
             </>,
           ),
@@ -241,8 +237,9 @@ export function AppShell() {
               { value: "community", label: "Community" },
             ]}
           />
-          <div className="ml-auto flex items-center gap-2 text-xs">
-            {(running || projectPlanning.busy) && <span className="text-zinc-500 dark:text-zinc-400" role="status">{projectPlanning.busy ? "Updating project…" : "Simulating..."}</span>}
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs">
+            <RunFeedback />
+            {projectPlanning.busy && <span className="text-zinc-500 dark:text-zinc-400" role="status">Updating project…</span>}
             {placeholder && (
               <span
                 className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
@@ -262,7 +259,6 @@ export function AppShell() {
             <SettingsButton />
           </div>
         </header>
-        <RunFeedback />
         {error && (
           <div data-chrome className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             <span className="truncate">{error}</span>
