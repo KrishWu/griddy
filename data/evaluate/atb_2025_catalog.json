@@ -1,0 +1,903 @@
+{
+  "source": {
+    "name": "NLR Annual Technology Baseline 2025 (Electricity)",
+    "version": "v1.0.0",
+    "url": "https://oedi-data-lake.s3.amazonaws.com/ATB/electricity/csv/2025/v1.0.0/ATBe.csv",
+    "docs_url": "https://atb.nlr.gov/electricity/2025/data",
+    "retrieved": "2026-10-23",
+    "dollar_year": 2023,
+    "dollar_year_quote": "All monetary values are in 2023 USD based on the Consumer Price Index for All Urban Consumers (BLS, 2025a) for dollar year conversions",
+    "dollar_year_doc": {
+      "source": "NLR ATB 2025, Definitions page",
+      "url": "https://atb.nlr.gov/electricity/2025/definitions",
+      "quote": "All monetary values are in 2023 USD based on the Consumer Price Index for All Urban Consumers (BLS, 2025a) for dollar year conversions",
+      "verified": true,
+      "verification_note": "Verified 2026-10-23: Sentence found verbatim on the Definitions page."
+    },
+    "generated_by": "backend/app/evaluate/prep_atb.py",
+    "verified": true,
+    "verification_note": "Verified 2026-10-23 with independent pandas code (not this script's functions). All rows for the four technologies were re-read from ATBe_2025_v1.0.0.csv, whose size, 320,606,895 bytes, equals the OEDI Content-Length; OEDI lists only v1.0.0 for 2025 and no 2026 ATB exists yet. Every parameter in the JSON matched the CSV row for scenario Moderate, COD 2027, crpyears '30', empty tax_credit_case, case Exp (PV, wind, battery) or R&D (gas), one row each. That covers all five technology kinds, all 5 battery durations, and every trajectory year 2027-2060. CAPEX = OCC + GCC + CFC holds within 1e-12 $/kW for every row used. capex_ex_gcc and the battery fits were recomputed and matched. CAPEX, O&M and CF are identical for crpyears 20 and 30; only LCOE and FCR differ."
+  },
+  "selection": {
+    "scenario": "Moderate",
+    "cod_year": 2027,
+    "crpyears": "30",
+    "tax_credits": "none",
+    "cases": {
+      "solar_pv": "Exp",
+      "onshore_wind": "Exp",
+      "battery": "Exp",
+      "gas_cc": "R&D",
+      "gas_ct": "R&D"
+    },
+    "case_definitions": {
+      "source": "NLR ATB 2025, Utility-Scale PV page (case definitions); Fossil Energy Technologies page",
+      "url": "https://atb.nlr.gov/electricity/2025/utility-scale_pv",
+      "quote": "R&D cost drivers case: Estimates costs based on R&D-driven improvements only, as applied to technologies and conditions existing during the most recent year with historical data. Expanded cost drivers case: Estimates costs based on R&D-driven improvements plus other cost drivers, such as changing market and supply chain conditions.",
+      "verified": true,
+      "verification_note": "Verified 2026-10-23: Both case definitions found verbatim on the Utility-Scale PV page. The fossil sentence was found verbatim on the Fossil Energy Technologies page. In the v1.0.0 CSV, Exp/'Exp + TC' exist only for UtilityPV, CommPV, ResPV, LandbasedWind, DistributedWind, Utility-Scale/Commercial/Residential Battery Storage and Utility-Scale PV-Plus-Battery. NaturalGas_FE has only R&D and 'R&D + TC'. Note that gas 'R&D + TC' rows have an empty tax_credit_case, so the case filter, not the tax-credit filter, is what excludes them."
+    },
+    "fossil_case_quote": {
+      "url": "https://atb.nlr.gov/electricity/2025/fossil_energy_technologies",
+      "quote": "Fossil technologies are not among the limited set of technologies explored in the pilot Expanded Cost Drivers Case, and therefore 2025 ATB technology innovation scenarios do not capture supply chain constraints or other cost factor assumptions for these technologies.",
+      "verified": true,
+      "verification_note": "Verified 2026-10-23: Both case definitions found verbatim on the Utility-Scale PV page. The fossil sentence was found verbatim on the Fossil Energy Technologies page. In the v1.0.0 CSV, Exp/'Exp + TC' exist only for UtilityPV, CommPV, ResPV, LandbasedWind, DistributedWind, Utility-Scale/Commercial/Residential Battery Storage and Utility-Scale PV-Plus-Battery. NaturalGas_FE has only R&D and 'R&D + TC'. Note that gas 'R&D + TC' rows have an empty tax_credit_case, so the case filter, not the tax-credit filter, is what excludes them."
+    },
+    "gcc_definition": {
+      "source": "NLR ATB 2025, Definitions page (Grid Connection Costs)",
+      "url": "https://atb.nlr.gov/electricity/2025/definitions",
+      "quote": "The ATB assumes grid connection cost (GCC) of $104/kilowatt (kW), in 2023 USD, for utility-scale technologies. The default GCC includes typical costs for a spur line (short, radial transmission lines from generator to the bulk grid), point of interconnection, and nominal network upgrades.",
+      "verified": true,
+      "verification_note": "Verified 2026-10-23: Found verbatim on the Definitions page. The CSV agrees: GCC = 104.12 $/kW for LandbasedWind, NaturalGas_FE and battery rows (2027 COD), and 162.4031 $/kW for UtilityPV."
+    },
+    "note": "ATB 2025 publishes no 'Market' case. The Expanded Cost Drivers case ('Exp', R&D improvements plus market and supply-chain conditions) is a pilot published only for PV, land-based and distributed wind (not offshore), and battery storage. It is used where published. R&D is used for NaturalGas_FE, the only case ATB publishes for fossil plants. No '+ TC' (tax credit) case is used: GridForge defaults to no incentives. crpyears is ATB's cost recovery period, which drives only its LCOE/CRF/FCR. CAPEX, O&M and CF rows are identical for 20 and 30. Rows with scenario '*' are scenario-independent. Values are 2023 USD. capex_ex_gcc removes ATB's generic grid-connection cost (GCC) and GCC's share of construction finance (CFC), because GridForge costs each site's interconnection explicitly. This avoids counting it twice."
+  },
+  "techs": {
+    "solar_pv": {
+      "label": "Utility-scale PV, single-axis tracking (ATB UtilityPV Class 2)",
+      "atb": {
+        "technology": "UtilityPV",
+        "techdetail": "Class2",
+        "techdetail2": "Tracking PV",
+        "display_name": "Utility PV - Class 2",
+        "core_metric_case": "Exp",
+        "scenario": "Moderate",
+        "crpyears": "30",
+        "cod_year": 2027
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 1367.9149,
+          "units": "$/kW",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "OCC": {
+          "value": 1161.2845,
+          "units": "$/kW",
+          "ref_summary": "Lawrence Berkeley National Laboratory, National Laboratory of the Rockies, and Sandia National Laboratories. “PV System Cost Model.” LBNL, NLR, SNL, n.d. https://www.energy.gov/eere/solar/solar-photovoltaic-system-cost-benchmarks.",
+          "ref_evidence_type": "Bottom-up analysis: Future"
+        },
+        "GCC": {
+          "value": 162.4031,
+          "units": "$/kW",
+          "ref_summary": "Lawrence Berkeley National Laboratory, National Laboratory of the Rockies, and Sandia National Laboratories. “PV System Cost Model.” LBNL, NLR, SNL, n.d. https://www.energy.gov/eere/solar/solar-photovoltaic-system-cost-benchmarks.",
+          "ref_evidence_type": "Bottom-up analysis: Future"
+        },
+        "CFC": {
+          "value": 44.2273,
+          "units": "$/kW",
+          "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "Fixed O&M": {
+          "value": 22.6296,
+          "units": "$/kW-yr",
+          "ref_summary": "Lawrence Berkeley National Laboratory, National Laboratory of the Rockies, and Sandia National Laboratories. “PV System Cost Model.” LBNL, NLR, SNL, n.d. https://www.energy.gov/eere/solar/solar-photovoltaic-system-cost-benchmarks.",
+          "ref_evidence_type": "Bottom-up analysis: Future"
+        },
+        "CF": {
+          "value": 0.3085,
+          "units": "fraction",
+          "units_note": "Blank in the ATB CSV. Net AC capacity factor, 0-1.",
+          "ref_summary": "Ramasamy, Vignesh, Jarett Zuboy, Michael Woodhouse, Eric O’Shaughnessy, David Feldman, Jal Desai, Andy Walker, Robert Margolis, and Paul Basore. “U.S. Solar Photovoltaic System and Energy Storage Cost Benchmarks, With Minimum Sustainable Price Analysis: Q1 2023.” Golden, CO: National Laboratory of the Rockies, 2023. https://www.nlr.gov/docs/fy23osti/87303.pdf.",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "LCOE": {
+          "value": 35.652,
+          "units": "$/MWh",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        }
+      },
+      "derived": {
+        "capex_ex_gcc_usd_per_kw": 1200.0855,
+        "formula": "OCC + CFC*OCC/(OCC+GCC)"
+      },
+      "capex_ex_gcc_trajectory_usd_per_kw": {
+        "2027": 1200.0855,
+        "2028": 1152.1086,
+        "2029": 1104.1317,
+        "2030": 1056.1547,
+        "2031": 1038.3654,
+        "2032": 1020.5761,
+        "2033": 1002.7868,
+        "2034": 984.9975,
+        "2035": 967.2082,
+        "2036": 949.4189,
+        "2037": 931.6296,
+        "2038": 913.8403,
+        "2039": 896.051,
+        "2040": 878.2617,
+        "2041": 867.4769,
+        "2042": 856.6921,
+        "2043": 845.9074,
+        "2044": 835.1226,
+        "2045": 824.3378,
+        "2046": 813.553,
+        "2047": 802.7683,
+        "2048": 791.9835,
+        "2049": 781.1987,
+        "2050": 770.414,
+        "2051": 766.832,
+        "2052": 763.25,
+        "2053": 759.6681,
+        "2054": 756.0861,
+        "2055": 752.5042,
+        "2056": 748.9222,
+        "2057": 745.3402,
+        "2058": 741.7583,
+        "2059": 738.1763,
+        "2060": 734.5944
+      },
+      "lifetime_years": 30,
+      "lifetime_source": {
+        "source": "NLR ATB 2025, Definitions page, table 'Technical Lifetimes for Technologies'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions",
+        "quote": "| Solar: Utility-scale PV | 30",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim."
+      },
+      "class_rationale": "ATB bins utility PV by mean GHI. The Kern County site (lat 35.4, lon -119.47) has GHI 5.53 kWh/m2/day in NLR's NSRDB PSM V3 TMY (PVWatts v8, horizontal array), inside the Class 2 bin (5.5-5.75 kWh/m2/day). It sits near the lower edge, and the legacy Perez-SUNY 2012 model gives 5.33 (Class 3). ATB itself bins whole counties by county-mean GHI; this is the site's point value, and the Kern County mean was not computed. ATB 2025 CAPEX and O&M are identical across PV classes, so the class only sets the reference capacity factor. GridForge's simulation uses hourly weather, not this CF.",
+      "class_evidence": {
+        "site_ghi_kwh_m2_day": 5.53,
+        "class_bin_kwh_m2_day": [
+          5.5,
+          5.75
+        ],
+        "ghi_source": "NLR PVWatts v8 API, dataset=nsrdb (weather_data_source 'NSRDB PSM V3 GOES tmy-2020 3.2.0', cell 35.41, -119.46), horizontal fixed array (tilt 0), Kern County site",
+        "ghi_url": "https://developer.nlr.gov/api/pvwatts/v8.json?lat=35.40&lon=-119.47&system_capacity=1&module_type=0&losses=14&array_type=0&tilt=0&azimuth=180&dataset=nsrdb&timeframe=monthly",
+        "ghi_note": "solrad_annual = 5.527 kWh/m2/day (PVWatts' mean of the 12 monthly daily averages; the day-weighted mean, sum of poa_monthly 2,020.3 kWh/m2/yr / 365, is 5.535). With tilt 0 the plane of array is horizontal, so plane-of-array irradiance = GHI. Cross-check: the NLR solar_resource v1 API at the same point (legacy 'Perez-SUNY/NREL, 2012' model) returns avg_ghi annual 5.33, which would be Class 3. ATB's classes come from NSRDB 1998-2021 data, so the PSM V3 value is the closer match. The site sits 0.03 above the Class 2/3 edge (5.50). Caveat: ATB bins whole counties by county-mean GHI ('The county-level mean GHI is calculated by aggregating each NSRDB point's multiyear mean GHI'), and this is a single point. The Kern County mean was not computed.",
+        "bins_source": "NLR ATB 2025, Utility-Scale PV page, table 'Utility-Scale PV Resource Classes'",
+        "bins_url": "https://atb.nlr.gov/electricity/2025/utility-scale_pv",
+        "bins_quote": "Capacity factor is estimated for 10 resource classes, binned by mean global horizontal irradiance (GHI) in the United States. ... | 1 | >5.75 | 33.5% | 285,955 | 2 | 5.5–5.75 | 32.4% | 405,147 | 3 | 5.25–5.5 | 30.9% | 351,716",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: All 10 rows of 'Utility-Scale PV Resource Classes' on the PV page match the bins (1 >5.75, 2 5.5-5.75, ..., 10 <3.75). The page builds classes from county-level means of NSRDB 1998-2021 data. Verified 2026-10-23: Re-queried PVWatts v8 (dataset nsrdb, tilt 0) at 35.40, -119.47: solrad_annual 5.5273, station 35.41/-119.46, weather_data_source 'NSRDB PSM V3 GOES tmy-2020 3.2.0'. Re-queried solar_resource v1: avg_ghi annual 5.33 ('Perez-SUNY/NREL, 2012'). A second valley point (Bakersfield, 35.37, -119.02) also gives 5.527. NOT verified: whether ATB's county-mean method puts Kern County in Class 2. Kern also spans the Tehachapi Mountains and Mojave Desert. Sampling those points hit the API's DEMO_KEY rate limit."
+      },
+      "pv_ilr": {
+        "value": 1.32,
+        "units": "DC/AC",
+        "source": "NLR ATB 2025, Utility-Scale PV page (Representative Technology)",
+        "url": "https://atb.nlr.gov/electricity/2025/utility-scale_pv",
+        "quote": "Utility-scale PV systems in the 2025 ATB represent 100-megawatts direct current (MWDC/ 75.8-MWAC [alternating current]) one-axis tracking systems with performance and pricing characteristics consistent with bifacial modules and a DC-to-AC ratio, or inverter loading ratio (ILR), of 1.32 for the Base Year and future years (DOE, 2024).",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: Found verbatim on the Utility-Scale PV page, which also says 'ILR is assumed to remain at a constant 1.32' and 'starting with the 2020 ATB, we use $/kWAC for utility-scale PV'."
+      },
+      "capacity_basis": "ATB PV $/kW and capacity factor are per kW AC (inverter rating)."
+    },
+    "onshore_wind": {
+      "label": "Land-based wind (ATB LandbasedWind Class 4, Technology 1)",
+      "atb": {
+        "technology": "LandbasedWind",
+        "techdetail": "Class4",
+        "techdetail2": "Wind Turbine Technology 1",
+        "display_name": "Land-Based Wind - Class 4 - Technology 1",
+        "core_metric_case": "Exp",
+        "scenario": "Moderate",
+        "crpyears": "30",
+        "cod_year": 2027
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 1775.3956,
+          "units": "$/kW",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "OCC": {
+          "value": 1578.6604,
+          "units": "$/kW",
+          "ref_summary": null,
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "GCC": {
+          "value": 104.12,
+          "units": "$/kW",
+          "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+          "ref_evidence_type": "Empirical Market Data"
+        },
+        "CFC": {
+          "value": 92.6152,
+          "units": "$/kW",
+          "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "Fixed O&M": {
+          "value": 38.4749,
+          "units": "$/kW-yr",
+          "ref_summary": "Eberle, Annika, Trieu Mai, Owen Roberts, Travis Williams, Pavlo Pinchuk, Anthony Lopez, Matthew Mowers, Joseph Mowers, Tyler Stehly, and Eric Lantz. “Incorporating Wind Turbine Choice in High-Resolution Geospatial Supply Curve and Capacity Expansion Models.” Technical. NLR, January 2024. https://www.nlr.gov/docs/fy24osti/87161.pdf.",
+          "ref_evidence_type": "Bottom-up analysis: Modeled"
+        },
+        "CF": {
+          "value": 0.4481,
+          "units": "fraction",
+          "units_note": "Blank in the ATB CSV. Net AC capacity factor, 0-1.",
+          "ref_summary": null,
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "LCOE": {
+          "value": 34.5045,
+          "units": "$/MWh",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        }
+      },
+      "derived": {
+        "capex_ex_gcc_usd_per_kw": 1665.5452,
+        "formula": "OCC + CFC*OCC/(OCC+GCC)"
+      },
+      "capex_ex_gcc_trajectory_usd_per_kw": {
+        "2027": 1665.5452,
+        "2028": 1617.3768,
+        "2029": 1569.2085,
+        "2030": 1521.0401,
+        "2031": 1472.8717,
+        "2032": 1424.7034,
+        "2033": 1376.535,
+        "2034": 1328.3667,
+        "2035": 1280.1983,
+        "2036": 1263.6555,
+        "2037": 1247.1126,
+        "2038": 1230.5697,
+        "2039": 1214.0269,
+        "2040": 1197.484,
+        "2041": 1180.9411,
+        "2042": 1164.3983,
+        "2043": 1147.8554,
+        "2044": 1131.3125,
+        "2045": 1114.7697,
+        "2046": 1098.2268,
+        "2047": 1081.6839,
+        "2048": 1065.1411,
+        "2049": 1048.5982,
+        "2050": 1032.0553,
+        "2051": 1028.3137,
+        "2052": 1024.5721,
+        "2053": 1020.8305,
+        "2054": 1017.0889,
+        "2055": 1013.3472,
+        "2056": 1009.6056,
+        "2057": 1005.864,
+        "2058": 1002.1224,
+        "2059": 998.3808,
+        "2060": 994.6391
+      },
+      "lifetime_years": 30,
+      "lifetime_source": {
+        "source": "NLR ATB 2025, Definitions page, table 'Technical Lifetimes for Technologies'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions",
+        "quote": "| Land-based wind | 30",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim."
+      },
+      "class_rationale": "ATB bins land-based wind by mean wind speed at 110 m. 312 NLR WIND Toolkit sites in the Tehachapi area of Kern County average 8.252 m/s at 100 m (2007-2013; median 8.295). ATB's 0.14 shear exponent scales that to 8.36 m/s at 110 m, inside the Class 4 bin (8.35-8.57 m/s). Class 4 is also ATB's representative class. The value is at the Class 4/5 edge: the capacity-weighted mean gives 8.33 m/s (Class 5). In 2027, ATB CAPEX and O&M are identical for Classes 1-7, so the class only sets the reference capacity factor. GridForge's simulation uses hourly weather, not this CF.",
+      "class_evidence": {
+        "area_mean_wind_speed_100m_m_s": 8.252,
+        "area_median_wind_speed_100m_m_s": 8.295,
+        "area_capacity_weighted_mean_100m_m_s": 8.219,
+        "n_wtk_sites": 312,
+        "site_filter": {
+          "State": "California",
+          "County": "Kern",
+          "lat_min": 34.9,
+          "lat_max": 35.25,
+          "lon_min": -118.6,
+          "lon_max": -118.0
+        },
+        "shear_exponent": 0.14,
+        "mean_wind_speed_110m_m_s": 8.3628,
+        "class_bin_m_s_at_110m": [
+          8.35,
+          8.57
+        ],
+        "wind_speed_source": "NLR WIND Toolkit 'Techno-Economic Summary and Index' (wtk_site_metadata.csv, column wind_speed, m/s): WTK sites in Kern County within a box around Tehachapi Pass and the Tehachapi-Mojave wind area (lat 34.90-35.25, lon -118.60 to -118.00)",
+        "wind_speed_url": "https://nrel-pds-wtk.s3.amazonaws.com/wtk-techno-economic/pywtk-data/wtk_site_metadata.csv",
+        "wind_speed_doc_url": "https://www.nlr.gov/grid/wind-toolkit",
+        "wind_speed_doc_quote": "calculated turbine power for more than 126,000 sites in the continental United States for the years 2007–2013. ... The power dataset was created using wind data at 100-meter hub height ... Techno-Economic Summary and Index This 10-MB subset contains summarized statistics for 120,000 points within the continental U.S. selected for their wind resource.",
+        "wind_speed_note": "The WTK page does not define the metadata columns. wind_speed is read as the 2007-2013 mean at the dataset's 100 m hub height (inferred). WTK sites were 'selected for their wind resource', so the sample leans toward windy cells. The site box is a GridForge choice, not an official resource-area boundary. The spread is wide: ridgeline sites exceed 9 m/s (Class 1), and sites on the pass floor fall in Classes 7-9.",
+        "bins_source": "NLR ATB 2025, Land-Based Wind page, table 'Land-Based Wind Resource and Technology Classes'",
+        "bins_url": "https://atb.nlr.gov/electricity/2025/land-based_wind",
+        "bins_quote": "| 4 | T1 | 8.45 | 8.35 | 8.57 | 0.22 | 4%–8% | 5 | T1 | 8.20 | 8.07 | 8.35 | 0.28 | 8%–16% ... Values are for wind speeds 110 meters above the ground.",
+        "shear_quote": "The hub height of each representative wind turbine is considered by extrapolating the wind speed at hub height from a reference point 110 m above ground level, assuming a power law shear exponent of 0.14.",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: All 10 rows of 'Land-Based Wind Resource and Technology Classes' on the Land-Based Wind page match the bins. 'Values are for wind speeds 110 meters above the ground.' and the 0.14 shear-exponent sentence were found verbatim. Verified 2026-10-23: Re-downloaded wtk_site_metadata.csv (SHA-1 756fe9b58bf64c732e2c01054968d00e150c1347, identical to the copy in raw/wind/) and recomputed with independent pandas code: 312 sites in the box, mean 8.2518, median 8.295, capacity-weighted mean 8.2188 m/s. Scaling by (110/100)^0.14 = 1.01343 gives 8.3627 (Class 4) and 8.3292 (Class 5) m/s. The WIND Toolkit page quotes were found verbatim. Still inferred: neither the WIND Toolkit page nor the pywtk README defines the wind_speed column. The spread is wide: at 110 m, 108 of the 312 sites fall in Class 1 and 136 in Classes 6-10."
+      },
+      "reference_unit": {
+        "value": 3.4,
+        "units": "MW",
+        "description": "ATB 2023 market-average land-based wind turbine (134 m rotor, 103 m hub, 200 MW plant)",
+        "atb_2035_turbine_mw": 6.0,
+        "atb_2035_turbine": "T1 (Wind Speed Classes 1-7, 2035-2060): 6 MW, 170 m rotor, 115 m hub",
+        "source": "NLR ATB 2025, Land-Based Wind page, table 'Representative Wind Turbine and Plant Characteristics'",
+        "url": "https://atb.nlr.gov/electricity/2025/land-based_wind",
+        "quote": "| Turbine rating (MW) | 3.4 | 6 | 8.3 | 3.3 | 6 ... Turbine characteristics in the Base Year (2023) correspond to a 2023 market average turbine across all wind classes (1–10) ... Future projections assume distinct wind turbine technologies will become market standards by 2035",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: The 'Representative Wind Turbine and Plant Characteristics' table on the Land-Based Wind page gives the 2023 market-average turbine as 3.4 MW, 134 m rotor, 103 m hub, 200 MW plant (58 turbines), and T1 as 6 MW, 170 m rotor, 115 m hub. The class table assigns T1 to Classes 1-7. Using 3.4 MW for a 2027 COD is a GridForge choice, not an ATB value.",
+        "note": "ATB publishes no turbine rating for a 2027 COD: its 2027 costs interpolate between the 2023 market-average turbine (3.4 MW) and T1 in 2035 (6 MW). GridForge uses 3.4 MW, the documented market turbine, for turbine counts. Using T1 would cut the count by about 43%."
+      }
+    },
+    "gas_cc": {
+      "label": "Natural gas combined cycle, 2-on-1 H-frame (ATB NaturalGas_FE)",
+      "atb": {
+        "technology": "NaturalGas_FE",
+        "techdetail": "NG 2-on-1 Combined Cycle (H-Frame)",
+        "techdetail2": "H-Frame CC",
+        "display_name": "NG 2-on-1 Combined Cycle (H-Frame)",
+        "core_metric_case": "R&D",
+        "scenario": "Moderate",
+        "crpyears": "30",
+        "cod_year": 2027
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 1341.7003,
+          "units": "$/kW",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "OCC": {
+          "value": 1117.5,
+          "units": "$/kW",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "GCC": {
+          "value": 104.12,
+          "units": "$/kW",
+          "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+          "ref_evidence_type": "Empirical Market Data"
+        },
+        "CFC": {
+          "value": 120.0803,
+          "units": "$/kW",
+          "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "Fixed O&M": {
+          "value": 29.9,
+          "units": "$/kW-yr",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "Variable O&M": {
+          "value": 1.98,
+          "units": "$/MWh",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "Heat Rate": {
+          "value": 6.087,
+          "units": "MMBtu/MWh",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        }
+      },
+      "derived": {
+        "capex_ex_gcc_usd_per_kw": 1227.3457,
+        "formula": "OCC + CFC*OCC/(OCC+GCC)"
+      },
+      "capex_ex_gcc_trajectory_usd_per_kw": {
+        "2027": 1227.3457,
+        "2028": 1221.1952,
+        "2029": 1215.0448,
+        "2030": 1208.8943,
+        "2031": 1202.634,
+        "2032": 1196.4836,
+        "2033": 1190.3331,
+        "2034": 1184.1827,
+        "2035": 1178.0322,
+        "2036": 1172.1014,
+        "2037": 1166.1706,
+        "2038": 1160.2398,
+        "2039": 1154.309,
+        "2040": 1148.3782,
+        "2041": 1142.4474,
+        "2042": 1136.6264,
+        "2043": 1130.6957,
+        "2044": 1124.7649,
+        "2045": 1118.8341,
+        "2046": 1112.9033,
+        "2047": 1106.9725,
+        "2048": 1101.0417,
+        "2049": 1095.1109,
+        "2050": 1089.2899,
+        "2051": 1086.5442,
+        "2052": 1083.7984,
+        "2053": 1081.1625,
+        "2054": 1078.4168,
+        "2055": 1075.671,
+        "2056": 1072.9253,
+        "2057": 1070.2894,
+        "2058": 1067.5436,
+        "2059": 1064.7979,
+        "2060": 1062.162
+      },
+      "lifetime_years": 30,
+      "lifetime_source": {
+        "source": "NLR ATB 2025, Definitions page, table 'Technical Lifetimes for Technologies'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions",
+        "quote": "| Natural gas* | 30. Table footnote: '* Although LCOE is not computed for energy storage or fossil technologies, design technical life is included here for comparison.'",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim."
+      },
+      "reference_unit": {
+        "value": 1118,
+        "units": "MW",
+        "description": "ATB NGCC H-class 2x1 block (two CT/HRSG trains feeding one steam turbine), full-load net output",
+        "gts_per_block": 2,
+        "sts_per_block": 1,
+        "source": "NLR ATB 2025, Fossil Energy Technologies page",
+        "url": "https://atb.nlr.gov/electricity/2025/fossil_energy_technologies",
+        "quote": "NGCC power plants are configured in a 2x1 configuration using two SOA combustion turbine/heat recovery steam generator (HRSG) trains. Steam generated in the HRSG is combined to feed a common steam turbine. ... H-class NGCC power plants without carbon capture can provide full-load power output of approximately 1,118 MW-net in the 2x1 configuration",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: Found verbatim on the Fossil Energy Technologies page: a 2x1 configuration with two CT/HRSG trains feeding a common steam turbine, about 1,118 MW-net for H-class without capture."
+      }
+    },
+    "gas_ct": {
+      "label": "Natural gas combustion turbine, F-frame simple cycle (ATB NaturalGas_FE)",
+      "atb": {
+        "technology": "NaturalGas_FE",
+        "techdetail": "NG Combustion Turbine (F-Frame)",
+        "techdetail2": "F-Frame CT",
+        "display_name": "NG Combustion Turbine (F-Frame)",
+        "core_metric_case": "R&D",
+        "scenario": "Moderate",
+        "crpyears": "30",
+        "cod_year": 2027
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 1313.6937,
+          "units": "$/kW",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "OCC": {
+          "value": 1092.0,
+          "units": "$/kW",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "GCC": {
+          "value": 104.12,
+          "units": "$/kW",
+          "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+          "ref_evidence_type": "Empirical Market Data"
+        },
+        "CFC": {
+          "value": 117.5737,
+          "units": "$/kW",
+          "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "Fixed O&M": {
+          "value": 26.4,
+          "units": "$/kW-yr",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "Variable O&M": {
+          "value": 8.5,
+          "units": "$/MWh",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        },
+        "Heat Rate": {
+          "value": 9.717,
+          "units": "MMBtu/MWh",
+          "ref_summary": "Multiple References - See Documentation",
+          "ref_evidence_type": "Calculated: Interpolation"
+        }
+      },
+      "derived": {
+        "capex_ex_gcc_usd_per_kw": 1199.3391,
+        "formula": "OCC + CFC*OCC/(OCC+GCC)"
+      },
+      "capex_ex_gcc_trajectory_usd_per_kw": {
+        "2027": 1199.3391,
+        "2028": 1191.7609,
+        "2029": 1184.1827,
+        "2030": 1176.6044,
+        "2031": 1169.0262,
+        "2032": 1161.5578,
+        "2033": 1153.9795,
+        "2034": 1146.4013,
+        "2035": 1138.823,
+        "2036": 1131.2448,
+        "2037": 1123.6666,
+        "2038": 1116.0883,
+        "2039": 1108.5101,
+        "2040": 1101.0417,
+        "2041": 1093.4634,
+        "2042": 1085.8852,
+        "2043": 1078.3069,
+        "2044": 1070.7287,
+        "2045": 1063.1505,
+        "2046": 1055.5722,
+        "2047": 1047.994,
+        "2048": 1040.5256,
+        "2049": 1032.9473,
+        "2050": 1025.3691,
+        "2051": 1021.9644,
+        "2052": 1018.5596,
+        "2053": 1015.1549,
+        "2054": 1011.7502,
+        "2055": 1008.3455,
+        "2056": 1004.9408,
+        "2057": 1001.5361,
+        "2058": 998.1313,
+        "2059": 994.7266,
+        "2060": 991.3219
+      },
+      "lifetime_years": 30,
+      "lifetime_source": {
+        "source": "NLR ATB 2025, Definitions page, table 'Technical Lifetimes for Technologies'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions",
+        "quote": "| Natural gas* | 30",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim."
+      },
+      "reference_unit": {
+        "value": 233,
+        "units": "MW",
+        "description": "ATB NGCT: one F-class combustion turbine, simple cycle, full-load net output",
+        "source": "NLR ATB 2025, Fossil Energy Technologies page",
+        "url": "https://atb.nlr.gov/electricity/2025/fossil_energy_technologies",
+        "quote": "The NGCT F-class technology option represents a single SOA F-class turbine capable of providing full-load power output of approximately 233-MW net output (MW-net).",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: Found verbatim on the Fossil Energy Technologies page: one F-class CT, about 233 MW-net."
+      }
+    },
+    "battery": {
+      "label": "Utility-scale Li-ion (LFP) battery storage (ATB, 4 h reference)",
+      "atb": {
+        "technology": "Utility-Scale Battery Storage",
+        "techdetail": "4Hr Battery Storage",
+        "techdetail2": "Lithium Ion - 4 Hr",
+        "display_name": "Utility-Scale Battery Storage - 4Hr",
+        "core_metric_case": "Exp",
+        "scenario": "Moderate",
+        "crpyears": "30",
+        "cod_year": 2027
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 1315.4943,
+          "units": "$/kW",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "OCC": {
+          "value": 1168.2555,
+          "units": "$/kW",
+          "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+          "ref_evidence_type": "Multiple References - See Documentation"
+        },
+        "GCC": {
+          "value": 104.12,
+          "units": "$/kW",
+          "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+          "ref_evidence_type": "Empirical Market Data"
+        },
+        "CFC": {
+          "value": 43.1187,
+          "units": "$/kW",
+          "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+          "ref_summary": null,
+          "ref_evidence_type": null
+        },
+        "Fixed O&M": {
+          "value": 46.7302,
+          "units": "$/kW-yr",
+          "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+          "ref_evidence_type": "Literature Fit"
+        },
+        "Round-Trip Efficiency": {
+          "value": 0.85,
+          "units": "fraction",
+          "units_note": "Blank in the ATB CSV. 0-1.",
+          "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+          "ref_evidence_type": "Literature Fit",
+          "doc": {
+            "source": "NLR ATB 2025, Utility-Scale Battery Storage page (Roundtrip Efficiency)",
+            "url": "https://atb.nlr.gov/electricity/2025/utility-scale_battery_storage",
+            "quote": "Based on Cole et al. (Cole et al., 2025), the 2025 ATB assumes a roundtrip efficiency of 85%.",
+            "verified": true,
+            "verification_note": "Verified 2026-10-23: Found verbatim on the Utility-Scale Battery Storage page. The CSV gives Round-Trip Efficiency 0.85 on every battery row (all durations, cases, scenarios and years)."
+          }
+        }
+      },
+      "parameters_by_duration_h": {
+        "2": {
+          "CAPEX": {
+            "value": 891.689,
+            "units": "$/kW",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "OCC": {
+            "value": 758.3415,
+            "units": "$/kW",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Multiple References - See Documentation"
+          },
+          "GCC": {
+            "value": 104.12,
+            "units": "$/kW",
+            "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+            "ref_evidence_type": "Empirical Market Data"
+          },
+          "CFC": {
+            "value": 29.2274,
+            "units": "$/kW",
+            "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "Fixed O&M": {
+            "value": 30.3337,
+            "units": "$/kW-yr",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Literature Fit"
+          },
+          "capex_ex_gcc_usd_per_kw": {
+            "value": 784.0405,
+            "units": "$/kW"
+          }
+        },
+        "4": {
+          "CAPEX": {
+            "value": 1315.4943,
+            "units": "$/kW",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "OCC": {
+            "value": 1168.2555,
+            "units": "$/kW",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Multiple References - See Documentation"
+          },
+          "GCC": {
+            "value": 104.12,
+            "units": "$/kW",
+            "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+            "ref_evidence_type": "Empirical Market Data"
+          },
+          "CFC": {
+            "value": 43.1187,
+            "units": "$/kW",
+            "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "Fixed O&M": {
+            "value": 46.7302,
+            "units": "$/kW-yr",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Literature Fit"
+          },
+          "capex_ex_gcc_usd_per_kw": {
+            "value": 1207.8458,
+            "units": "$/kW"
+          }
+        },
+        "6": {
+          "CAPEX": {
+            "value": 1739.2996,
+            "units": "$/kW",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "OCC": {
+            "value": 1578.1695,
+            "units": "$/kW",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Multiple References - See Documentation"
+          },
+          "GCC": {
+            "value": 104.12,
+            "units": "$/kW",
+            "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+            "ref_evidence_type": "Empirical Market Data"
+          },
+          "CFC": {
+            "value": 57.0101,
+            "units": "$/kW",
+            "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "Fixed O&M": {
+            "value": 63.1268,
+            "units": "$/kW-yr",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Literature Fit"
+          },
+          "capex_ex_gcc_usd_per_kw": {
+            "value": 1631.6511,
+            "units": "$/kW"
+          }
+        },
+        "8": {
+          "CAPEX": {
+            "value": 2163.1049,
+            "units": "$/kW",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "OCC": {
+            "value": 1988.0835,
+            "units": "$/kW",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Multiple References - See Documentation"
+          },
+          "GCC": {
+            "value": 104.12,
+            "units": "$/kW",
+            "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+            "ref_evidence_type": "Empirical Market Data"
+          },
+          "CFC": {
+            "value": 70.9014,
+            "units": "$/kW",
+            "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "Fixed O&M": {
+            "value": 79.5233,
+            "units": "$/kW-yr",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Literature Fit"
+          },
+          "capex_ex_gcc_usd_per_kw": {
+            "value": 2055.4564,
+            "units": "$/kW"
+          }
+        },
+        "10": {
+          "CAPEX": {
+            "value": 2586.9102,
+            "units": "$/kW",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "OCC": {
+            "value": 2397.9975,
+            "units": "$/kW",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Multiple References - See Documentation"
+          },
+          "GCC": {
+            "value": 104.12,
+            "units": "$/kW",
+            "ref_summary": "Seel, Joachim, Julie Mulvaney Kemp, Joseph Rand, Will Gorman, Dev Millstein, Fritz Kahrl, and Ryan H. Wiser. “Generator Interconnection Costs to the Transmission System.” Lawrence Berkeley National Laboratory, 2023. https://eta-publications.lbl.gov/sites/default/files/berkeley_lab_interconnection_cost_webinar.pdf.",
+            "ref_evidence_type": "Empirical Market Data"
+          },
+          "CFC": {
+            "value": 84.7927,
+            "units": "$/kW",
+            "units_note": "Blank in the ATB CSV. $/kW because CAPEX = OCC + GCC + CFC holds for this row.",
+            "ref_summary": null,
+            "ref_evidence_type": null
+          },
+          "Fixed O&M": {
+            "value": 95.9199,
+            "units": "$/kW-yr",
+            "ref_summary": "Cole, Wesley, Vignesh Ramasamy, and Merve Olmez Turan. “Cost Projections for Utility-Scale Battery Storage: 2025 Update.” Golden, CO: National Laboratory of the Rockies, 2025. https://www.nlr.gov/docs/fy25osti/93281.pdf.",
+            "ref_evidence_type": "Literature Fit"
+          },
+          "capex_ex_gcc_usd_per_kw": {
+            "value": 2479.2617,
+            "units": "$/kW"
+          }
+        }
+      },
+      "derived": {
+        "capex_ex_gcc_usd_per_kw": 1207.8458,
+        "formula": "OCC + CFC*OCC/(OCC+GCC)",
+        "power_usd_per_kw": 360.2352,
+        "energy_usd_per_kwh": 211.9027,
+        "fit_r2": 1.0,
+        "fit_max_abs_residual_usd_per_kw": 0.0,
+        "fit_formula": "capex_ex_gcc(d) = power_usd_per_kw + energy_usd_per_kwh * d, least squares over d = 2,4,6,8,10 h",
+        "fit_points": [
+          {
+            "duration_h": 2,
+            "capex_ex_gcc_usd_per_kw": 784.0405
+          },
+          {
+            "duration_h": 4,
+            "capex_ex_gcc_usd_per_kw": 1207.8458
+          },
+          {
+            "duration_h": 6,
+            "capex_ex_gcc_usd_per_kw": 1631.6511
+          },
+          {
+            "duration_h": 8,
+            "capex_ex_gcc_usd_per_kw": 2055.4564
+          },
+          {
+            "duration_h": 10,
+            "capex_ex_gcc_usd_per_kw": 2479.2617
+          }
+        ],
+        "fixed_om_power_usd_per_kw_yr": 13.9371,
+        "fixed_om_energy_usd_per_kwh_yr": 8.1983,
+        "fixed_om_fit_r2": 1.0
+      },
+      "capex_ex_gcc_trajectory_usd_per_kw": {
+        "2027": 1207.8458,
+        "2028": 1178.8844,
+        "2029": 1149.9229,
+        "2030": 1120.9615,
+        "2031": 1092.0001,
+        "2032": 1063.0387,
+        "2033": 1034.0772,
+        "2034": 1005.1158,
+        "2035": 976.1544,
+        "2036": 958.8966,
+        "2037": 941.6388,
+        "2038": 924.381,
+        "2039": 907.1232,
+        "2040": 889.8654,
+        "2041": 872.6076,
+        "2042": 855.3498,
+        "2043": 838.092,
+        "2044": 820.8342,
+        "2045": 803.5764,
+        "2046": 786.3186,
+        "2047": 769.0609,
+        "2048": 751.8031,
+        "2049": 734.5453,
+        "2050": 717.2875,
+        "2051": 708.6586,
+        "2052": 700.0297,
+        "2053": 691.4008,
+        "2054": 682.7719,
+        "2055": 674.143,
+        "2056": 665.5141,
+        "2057": 656.8852,
+        "2058": 648.2563,
+        "2059": 639.6274,
+        "2060": 630.9985
+      },
+      "trajectory_basis": "4 h configuration, total $/kW",
+      "lifetime_years": 15,
+      "lifetime_source": {
+        "source": "NLR ATB 2025, Definitions page, table 'Technical Lifetimes for Technologies'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions",
+        "quote": "| Utility-scale battery storage* | 15. Battery page: 'The FOM costs include battery augmentation costs, which enables the system to operate at its rated capacity throughout its 15-year lifetime.'",
+        "verified": true,
+        "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim.",
+        "battery_url": "https://atb.nlr.gov/electricity/2025/utility-scale_battery_storage"
+      }
+    }
+  }
+}

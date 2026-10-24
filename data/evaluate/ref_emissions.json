@@ -1,0 +1,160 @@
+{
+  "_meta": {
+    "description": "Reference emission factors, GHG metrics, upstream-methane inputs and carbon price used by workstream C (Evaluate). Each entry uses the common shape {value, units, kind, source, url, note, retrieved, verified, verification_note}. Unit constant used throughout: 1 lb = 0.45359237 kg (exact). Raw source downloads are kept in data/evaluate/raw/emissions/ (research) and data/evaluate/raw/emissions_verify/ (independent verifier copies), both git-ignored. All 12 values were independently verified on 2026-10-23 (see each verification_note). Two entries were added afterwards from facts quoted in verified entries: carb_transmission_loss_factor (from carb_unspecified_import_t_co2_per_mwh) and nox_lb_per_mmbtu_gas_ct_scr_bact (from nox_lb_per_mmbtu_gas_turbine_scr_bact).",
+    "retrieved": "2026-10-23"
+  },
+  "co2_kg_per_mmbtu_natural_gas": {
+    "value": 53.06,
+    "units": "kg CO2/MMBtu (HHV)",
+    "kind": "observed",
+    "source": "U.S. EPA, 40 CFR Part 98 Subpart C, Table C-1 'Default CO2 Emission Factors and High Heat Values for Various Types of Fuel' (eCFR, current as of 2026-10-22)",
+    "url": "https://www.ecfr.gov/current/title-40/chapter-I/subchapter-C/part-98/subpart-C/appendix-Table%20C-1%20to%20Subpart%20C%20of%20Part%2098",
+    "note": "Table C-1 row, quoted: 'Natural gas | mmBtu/scf | kg CO2/mmBtu' / '(Weighted U.S. Average) | 1.026 x 10^-3 | 53.06'. Used as-is. Lb conversion for reference: 53.06 / 0.45359237 = 116.98 lb CO2/MMBtu. For comparison, AP-42 Table 3.1-2a lists 110 lb/MMBtu for uncontrolled natural-gas turbines (its footnote f assumes 99.5% carbon conversion, 75 wt% carbon, density 4.1E+04 lb/10^6 scf). We use the Part 98 value because it is the current regulatory default. Direct CO2 (metric t) = fuel MMBtu x 53.06 / 1000. Covers combustion CO2 only: combustion CH4 and N2O (Part 98 Table C-2) and upstream methane are not included.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened the cited eCFR Table C-1 page ('Displaying title 40, up to date as of 10/22/2026'): row 'Natural gas | mmBtu/scf | kg CO2/mmBtu | (Weighted U.S. Average) | 1.026 x 10^-3 | 53.06'. Units kg CO2/MMBtu (HHV) confirmed. AP-42 3.1 Table 3.1-2a CO2 '110' lb/MMBtu and footnote f (99.5% conversion, C 75%, D 4.1 E+04 lb/10^6 scf) confirmed in the April 2000 PDF. 53.06/0.45359237 = 116.98 lb recomputed."
+  },
+  "nox_lb_per_mmbtu_gas_turbine_lean_premix": {
+    "value": 0.099,
+    "units": "lb NOx/MMBtu (HHV fuel input)",
+    "kind": "observed",
+    "source": "U.S. EPA AP-42, 5th ed., Vol. I, Section 3.1 Stationary Gas Turbines (Supplement F, 4/2000), Table 3.1-1",
+    "url": "https://www.epa.gov/sites/default/files/2020-10/documents/c03s01.pdf",
+    "note": "Table 3.1-1 (NOx and CO from stationary gas turbines), natural gas-fired rows, quoted: 'Uncontrolled 3.2 E-01 A' / 'Water-Steam Injection 1.3 E-01 A' / 'Lean-Premix 9.9 E-02 D' (NOx lb/MMBtu fuel input, emission factor rating). Footnote a: 'Factors are derived from units operating at high loads (>=80 percent load) only.' Footnote c: 'Emission factors based on an average natural gas heating value (HHV) of 1020 Btu/scf at 60F.' Section 3.1.4: 'Emission factors in this section have been determined from gas turbines with no add-on control devices (uncontrolled emissions).' Section 3.1.3: 'If the HRSG is not supplementary fuel fired, the simple cycle input-specific emission factors (pounds per million British thermal units [lb/MMBtu]) will also apply to cogeneration/combined cycle systems.' Metric conversion: 0.099 lb/MMBtu x 0.45359237 kg/lb = 0.04491 kg NOx/MMBtu, so NOx (metric t/yr) = fuel MMBtu/yr x 0.099 x 0.45359237 / 1000. This is the primary (conservative) case: dry low-NOx combustion with no SCR. A new California turbine would almost certainly be permitted with SCR (see nox_lb_per_mmbtu_gas_turbine_scr_bact, about 13x lower). AP-42 rates the lean-premix factor 'D', versus 'A' for the uncontrolled and water-steam injection factors.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened the cited AP-42 PDF (EPA Ch. 3 page lists it as 'AP-42 3.1 Final Section - Supplement F, April 2000', the only version). Table 3.1-1, Natural Gas-Fired Turbines, NOx (lb/MMBtu, fuel input): Uncontrolled 3.2 E-01 A, Water-Steam Injection 1.3 E-01 A, Lean-Premix 9.9 E-02 D. Correct row (lean-premix, natural gas, NOx not CO 1.5 E-02). Footnotes a (>=80% load) and c (HHV 1020 Btu/scf at 60F), the 3.1.3 HRSG sentence and the 3.1.4 'no add-on control devices' sentence were all found. 0.099 x 0.45359237 = 0.04491 kg recomputed."
+  },
+  "nox_lb_per_mmbtu_gas_turbine_scr_bact": {
+    "value": 0.00737,
+    "units": "lb NOx/MMBtu (HHV fuel input)",
+    "kind": "inferred",
+    "source": "Bay Area AQMD BACT Guideline 89.1.6, Gas Turbine, Combined Cycle (>= 40 MW), Revision 2, dated 07/18/03 (listed on the BAAQMD BACT/TBACT Workbook as 'revised 12/21/2020'), converted to lb/MMBtu with EPA Method 19 (40 CFR Part 60 Appendix A-7) Eq. 19-1, Table 19-1 and Table 19-2",
+    "url": "https://www.baaqmd.gov/~/media/files/engineering/bact-tbact-workshop/combustion/89-1-6.pdf?rev=1a8ca31ab5f2494299e6bb7907f734d9&sc_lang=en",
+    "note": "BAAQMD 89.1.6, NOx row, quoted: '1. 2.0 ppm, Dry @ 15% O2' (BACT category '1. Technologically Feasible/Cost Effective'; typical technology 'SCR+ Low NOx Combustors, or Water or Steam Injection, or a SCONOX System') and '2. 2.5 ppm, Dry @ 15% O2 (2.0 ppm achieved in practice for 50 MW LM6000 combined cycle unit.)' (typical technology 'SCR+ Dry Low-NOx Combustors'). Corroborating (draft-watermarked) SCAQMD BACT determination, App. No. 579955 (Pasadena Glenarm GT-5, 56.1 MW LM6000 combined cycle with SCR, dated March 8, 2018): NOx limit '2 PPMV', 1-hour average, '@ 15% O2', with a source test of '1.84 PPMV NOx @15% O2' (https://www.aqmd.gov/docs/default-source/bact/laer-bact-determinations/aqmd-laer-bact/part-b-section_1-2-1-19-combined-cycle-gas-turbine.pdf?sfvrsn=10becf61_14). CONVERSION (EPA Method 19, https://www.epa.gov/sites/default/files/2017-08/documents/method_19.pdf; same text on eCFR 40 CFR 60 App. A-7): Eq. 19-1 'E = Cd Fd 20.9/(20.9 - %O2d)'. Table 19-1: 'ppm NOX | lb/scf | 1.194 x 10^-7'. Table 19-2: 'Gas: Natural | ... | 8,710' dscf/10^6 Btu (Fd, standard conditions 20C (68F) and 760 mm Hg). Cd = 2.0 ppm x 1.194e-7 = 2.388e-7 lb/scf. O2 correction = 20.9/(20.9 - 15) = 3.5424. E = 2.388e-7 x 8710 x 3.5424 = 7.368e-3 lb NOx/MMBtu (HHV, since Method 19 F factors are per gross heat input), about 0.00334 kg/MMBtu. Gas CT (simple cycle) alternative: BAAQMD 89.1.3, Simple Cycle (>= 40 MW), quoted: 'NOx ... 2. 2.5 ppmv, Dry @ 15%O2' ('High Temperature SCR + Water or Steam Injection'), which gives 2.5 x 1.194e-7 x 8710 x 3.5424 = 9.21e-3 lb/MMBtu (https://www.baaqmd.gov/~/media/files/engineering/bact-tbact-workshop/combustion/89-1-3.pdf?rev=57f31d07ea51454587124a64e8349bab&sc_lang=en). This is a steady-state permit limit, and such limits typically exclude transients. For example, the SCAQMD determination states 'The emission limits shall not apply during turbine commissioning, start-up, shutdown ...'. Actual annual emissions per MMBtu would therefore be somewhat higher.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened BAAQMD 89.1.6 (Revision 2, 07/18/03): NOx '1. 2.0 ppm, Dry @ 15% O2' (Technologically Feasible/Cost Effective; 'SCR+ Low NOx Combustors, or Water or Steam Injection, or a SCONOX System') and '2. 2.5 ppm, Dry @ 15% O2 (2.0 ppm achieved in practice for 50 MW LM6000 combined cycle unit.)'. The PDF heading reads 'Combined Cycle (> 40 Megawatts)'; the BAAQMD BACT/TBACT Workbook page lists it as 'Combined Cycle (>= 40 MW) ... revised 12/21/2020'. 89.1.3 (Simple Cycle >= 40 MW) NOx '2.5 ppmv, Dry @ 15%O2' confirmed. SCAQMD App. 579955 (Glenarm GT-5, LM6000, 56.1 MW, March 8, 2018) '2 PPMV', 1 HOUR, '@ 15% O2', source test '1.84 PPMV NOx @15% O2' and the start-up/shutdown exclusion confirmed. Method 19 PDF: Eq. 19-1 'E = Cd Fd 20.9/(20.9 - %O2d)' (equation image viewed), Table 19-1 'ppm NOX ... lb/scf ... 1.194 x 10^-7', Table 19-2 Gas: Natural Fd 8,710 dscf/10^6 Btu at 20C (68F); Fd is per gross calorific value (HHV). Recomputed 2.0 x 1.194e-7 x 8710 x 3.54237 = 7.368e-3 lb/MMBtu (0.00334 kg); 2.5 ppm gives 9.21e-3."
+  },
+  "nox_lb_per_mmbtu_gas_ct_scr_bact": {
+    "value": 0.00921,
+    "units": "lb NOx/MMBtu (HHV fuel input)",
+    "kind": "inferred",
+    "source": "Bay Area AQMD BACT Guideline 89.1.3, Gas Turbine, Simple Cycle (>= 40 MW), NOx 2.5 ppmv dry @ 15% O2, converted to lb/MMBtu with EPA Method 19 (40 CFR Part 60 Appendix A-7) Eq. 19-1, Table 19-1 and Table 19-2",
+    "url": "https://www.baaqmd.gov/~/media/files/engineering/bact-tbact-workshop/combustion/89-1-3.pdf?rev=57f31d07ea51454587124a64e8349bab&sc_lang=en",
+    "note": "Simple-cycle counterpart of nox_lb_per_mmbtu_gas_turbine_scr_bact (combined cycle, 2.0 ppm), derived the same way from the facts quoted in that entry's note. BAAQMD 89.1.3, Simple Cycle (>= 40 MW), quoted there: 'NOx ... 2. 2.5 ppmv, Dry @ 15%O2' ('High Temperature SCR + Water or Steam Injection'). CONVERSION (EPA Method 19, https://www.epa.gov/sites/default/files/2017-08/documents/method_19.pdf): Eq. 19-1 'E = Cd Fd 20.9/(20.9 - %O2d)'; Table 19-1 1 ppm NOx = 1.194 x 10^-7 lb/scf; Table 19-2 natural gas Fd = 8,710 dscf/10^6 Btu. Cd = 2.5 ppm x 1.194e-7 = 2.985e-7 lb/scf. O2 correction = 20.9/(20.9 - 15) = 3.5424. E = 2.985e-7 x 8710 x 3.5424 = 9.210e-3 lb NOx/MMBtu (HHV), about 0.00418 kg/MMBtu (equivalently 2.5/2.0 x 7.368e-3). Used for gas_ct in GridForge's NOx SCR/BACT alternative; the primary NOx case stays AP-42 lean-premix (0.099 lb/MMBtu). This is a steady-state permit limit that excludes start-up and shutdown, so actual annual emissions per MMBtu would be somewhat higher.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "The 89.1.3 limit ('2.5 ppmv, Dry @ 15%O2') and the 2.5 ppm result (9.21e-3) are confirmed in nox_lb_per_mmbtu_gas_turbine_scr_bact's verification_note; 2.5 x 1.194e-7 x 8710 x 3.54237 = 9.210e-3 recomputed."
+  },
+  "pm25_lb_per_mmbtu_gas_turbine": {
+    "value": 0.0066,
+    "units": "lb PM2.5/MMBtu (HHV fuel input)",
+    "kind": "inferred",
+    "source": "U.S. EPA AP-42, 5th ed., Vol. I, Section 3.1 Stationary Gas Turbines (Supplement F, 4/2000), Table 3.1-2a (total PM, natural gas-fired turbines)",
+    "url": "https://www.epa.gov/sites/default/files/2020-10/documents/c03s01.pdf",
+    "note": "Table 3.1-2a, natural gas-fired turbines, quoted: 'PM (condensible) 4.7 E-03 C' / 'PM (filterable) 1.9 E-03 C' / 'PM (total) 6.6 E-03 C' (lb/MMBtu). Footnote l: 'Emission factors are based on combustion turbines using water-steam injection.' Section 3.1.3.3: 'Condensable PM is composed of organic and inorganic compounds and is generally considered to be all less than 1.0 micrometers in aerodynamic diameter.' Section 3.1.5 (Supplement A): 'condensables and all PM from oil- and gas-fired turbines are considered PM-10.' INFERENCE: AP-42 gives no separate PM2.5 factor in this table, so total PM is used as PM2.5. The condensable 4.7E-03 (71%) is below 1 um per AP-42. The filterable 1.9E-03 is only stated to be PM-10, so this is a conservative upper bound that overstates PM2.5 by at most the filterable share (29%). Metric conversion: 0.0066 x 0.45359237 = 0.002994 kg/MMBtu, so PM2.5 (metric t/yr) = fuel MMBtu/yr x 0.0066 x 0.45359237 / 1000.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened the AP-42 3.1 PDF. Table 3.1-2a natural gas: PM (condensible) 4.7 E-03 C, PM (filterable) 1.9 E-03 C, PM (total) 6.6 E-03 C (lb/MMBtu), footnote l 'based on combustion turbines using water-steam injection'. Total row used (not filterable-only). Section 3.1.3.3 sentence 'Condensable PM ... generally considered to be all less than 1.0 micrometers' and the 3.1.5 Supplement A note ('condensables and all PM from oil- and gas-fired turbines are considered PM-10') confirmed. Section 3.1 does not itself state that all PM is <1 um, so using total PM as PM2.5 is an upper bound (kind inferred is right). 4.7/6.6 = 71% and 0.0066 x 0.45359237 = 0.002994 kg recomputed."
+  },
+  "carb_unspecified_import_t_co2_per_mwh": {
+    "value": 0.428,
+    "units": "metric t CO2e/MWh",
+    "kind": "observed",
+    "source": "CARB Regulation for the Mandatory Reporting of Greenhouse Gas Emissions (MRR), Cal. Code Regs. tit. 17, section 95111(b)(1) 'Calculating GHG Emissions from Unspecified Sources' (codified text via Cornell LII)",
+    "url": "https://www.law.cornell.edu/regulations/california/17-CCR-95111",
+    "note": "17 CCR 95111(b)(1), quoted: 'For electricity from unspecified sources, the electric power entity must calculate the annual CO2 equivalent mass emissions using the following equation: CO2e = MWh x TL x EFunsp ... EFunsp = Default emission factor for unspecified electricity imports. EFunsp = 0.428 MT of CO2e/MWh. TL = Transmission loss correction factor. TL = 1.02 to account for transmission losses between the busbar and measurement at the first point of receipt in California.' The regulation therefore applies 0.428 x 1.02 = 0.43656 t/MWh to MWh measured at the CA point of receipt. Per the spec, we use 0.428 (multiply by 1.02 to match MRR reporting exactly). Equivalents: 428 kg/MWh = 943.6 lb/MWh. Current status: CARB's MRR amendment Appendix B (released January 20, 2026; https://ww2.arb.ca.gov/sites/default/files/barcu/regact/2026/mrr/app_b.pdf), quoted: 'The current default emission factor of 0.428 MT CO2e/MWh was introduced in the 2010 MRR' and 'Staff performed that same analysis using EIA data from 2017-2022 data ... This analysis yielded a value of 0.440 MT CO2e/MWh, within 3% of 0.428 MT/CO2e. Due to the relatively small change in the value, CARB staff are not proposing to revise the default emission factor in this amendment process.' The factor represents marginal (capacity factor < 60%) dispatchable WECC resources outside California, so it is a regulatory proxy for marginal imports, not CAISO's average grid.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened LII 17 CCR 95111 ('Data Requirements and Calculation Methods for Electric Power Entities'): (b)(1) 'EF unsp = 0.428 MT of CO2e/MWh' and 'TL = 1.02' confirmed verbatim; units metric t CO2e/MWh. Opened the CARB 2026 MRR Appendix B (Release Date: January 20, 2026): 'The current default emission factor of 0.428 MT CO2e/MWh was introduced in the 2010 MRR', '0.440 MT CO2e/MWh, within 3% of 0.428' and 'staff are not proposing to revise' confirmed. Fixed the bracketed paraphrase in the note to the verbatim passage. 428/0.45359237 = 943.6 lb and 0.428 x 1.02 = 0.43656 recomputed."
+  },
+  "carb_transmission_loss_factor": {
+    "value": 1.02,
+    "units": "dimensionless multiplier on MWh measured at the first point of receipt in California",
+    "kind": "observed",
+    "source": "CARB Regulation for the Mandatory Reporting of Greenhouse Gas Emissions (MRR), Cal. Code Regs. tit. 17, section 95111(b)(1) 'Calculating GHG Emissions from Unspecified Sources' (codified text via Cornell LII)",
+    "url": "https://www.law.cornell.edu/regulations/california/17-CCR-95111",
+    "note": "17 CCR 95111(b)(1), quoted (from the carb_unspecified_import_t_co2_per_mwh note): 'CO2e = MWh x TL x EFunsp ... TL = Transmission loss correction factor. TL = 1.02 to account for transmission losses between the busbar and measurement at the first point of receipt in California.' GridForge's CARB unspecified-import alternative therefore uses CO2e = imports MWh x 1.02 x 0.428 = imports MWh x 0.43656 t CO2e/MWh, matching MRR reporting.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "quoted in carb_unspecified_import_t_co2_per_mwh note; same regulation section"
+  },
+  "egrid_camx_co2_lb_per_mwh": {
+    "value": 428.464,
+    "units": "lb CO2/MWh (total output emission rate)",
+    "kind": "observed",
+    "source": "U.S. EPA eGRID2023 (data year 2023), revision 2 released 2025-06-12: Summary Tables Table 1 'Subregion Output Emission Rates (eGRID2023)' and data file sheet SRL23, subregion CAMX (WECC California)",
+    "url": "https://www.epa.gov/egrid/summary-data",
+    "note": "eGRID2023 is the latest official release as of 2026-10-23. EPA's eGRID Detailed Data page (https://www.epa.gov/egrid/download-data, 'Last updated on September 22, 2026') reads 'eGRID with 2023 Data Released: 1/15/2025 Revision 1 Released: 1/17/2025 Revision 2 Released: 6/12/2025' and links only eGRID2023 rev2 files; no eGRID2024 (2024 data) is posted on epa.gov/egrid, and the release notes read '06/12/2025 eGRID2023 revision 2 Data Release'. Summary Tables Table 1 row (https://www.epa.gov/system/files/documents/2025-06/summary_tables_rev2.xlsx), quoted: 'CAMX | WECC California | 428.464 | 0.025 | 0.003 | 429.983 | 0.332 | 0.304 | 0.02 | 958.303 ...' (total output CO2, CH4, N2O, CO2e, annual NOx, ozone-season NOx, SO2 in lb/MWh, then non-baseload CO2). Data file (https://www.epa.gov/system/files/documents/2025-06/egrid2023_data_rev2.xlsx) sheet SRL23: 'SRCO2RTA | eGRID subregion annual CO2 total output emission rate (lb/MWh) | 428.464'; 'SRC2ERTA | ... CO2 equivalent total output emission rate (lb/MWh) | 429.983'. Metric: 428.464 x 0.45359237 = 194.35 kg CO2/MWh (CO2e: 195.04 kg/MWh). Caveats: eGRID rates are generation-based (emissions from plants located in CAMX divided by their net generation, 220,986,983 MWh in 2023), so imports into California are excluded. This makes it a cross-check on B's hourly grid intensity, not a substitute for it.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Checked vintage: epa.gov/egrid, Detailed Data (last updated September 22, 2026) and Summary Data (last updated May 20, 2026) pages list only eGRID2023 (released 1/15/2025, rev1 1/17/2025, rev2 6/12/2025); no eGRID2024 on EPA's site, and a web search found only unofficial third-party 2024 runs. Downloaded summary_tables_rev2.xlsx myself; it is byte-identical to the researcher's copy. 'Table 1' row 'CAMX | WECC California | 428.464 | 0.025 | 0.003 | 429.983 ...' under 'Total output emission rates', CO2 column in lb/MWh. This is the total output rate, not CO2e (429.983) and not non-baseload (958.303). egrid2023_data_rev2.xlsx SRL23 CAMX: SRCO2RTA 428.464, SRC2ERTA 429.983, SRNGENAN 220,986,983.331 MWh, and SRCO2AN 47,342,486.547 (short) tons, giving x2000/MWh = 428.46. 428.464 x 0.45359237 = 194.35 kg recomputed."
+  },
+  "egrid_camx_gas_co2_lb_per_mwh": {
+    "value": 870.757,
+    "units": "lb CO2/MWh (gas-fired output emission rate)",
+    "kind": "observed",
+    "source": "U.S. EPA eGRID2023 (data year 2023), revision 2 released 2025-06-12, data file sheet SRL23, field SRGCO2RT, subregion CAMX (WECC California)",
+    "url": "https://www.epa.gov/system/files/documents/2025-06/egrid2023_data_rev2.xlsx",
+    "note": "eGRID publishes a gas-specific subregion output rate. Sheet SRL23, CAMX row, quoted: 'SRGCO2RT | eGRID subregion annual CO2 gas output emission rate (lb/MWh) | 870.757'; 'SRGC2ERT | ... CO2 equivalent gas output emission rate (lb/MWh) | 871.588'; 'SRGCO2R | ... CO2 gas input emission rate (lb/MMBtu) | 117.996'; 'SRGENAGS | ... annual gas net generation (MWh) | 94784061.273'. Implied fleet heat rate = 870.757 / 117.996 = 7.38 MMBtu/MWh. Metric: 870.757 x 0.45359237 = 394.97 kg CO2/MWh. This is the average of all CAMX gas units (combined cycle, peakers, steam, CHP) in 2023. cfe.py uses it only as the fallback denominator for inferring the hourly clean share of imports (g_h = 1 - grid_co2_h / gas rate), and that use is an inference.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened egrid2023_data_rev2.xlsx (downloaded myself, identical SHA-1 to the researcher's copy) sheet SRL23, CAMX row: SRGCO2RT 'eGRID subregion annual CO2 gas output emission rate (lb/MWh)' = 870.757; SRGC2ERT 871.588; SRGCO2R 117.996 lb/MMBtu; SRGENAGS 94,784,061.273 MWh. Recomputed 870.757/117.996 = 7.38 MMBtu/MWh and 870.757 x 0.45359237 = 394.97 kg/MWh. eGRID2023 rev2 is the latest release (see egrid_camx_co2_lb_per_mwh)."
+  },
+  "upstream_methane_leak_rate": {
+    "value": 0.023,
+    "units": "fraction (CH4 emitted / CH4 in gross U.S. natural gas production)",
+    "kind": "assumption",
+    "source": "Alvarez, R.A. et al. (2018) 'Assessment of methane emissions from the U.S. oil and gas supply chain', Science 361(6398):186-188, doi:10.1126/science.aar7204 (PMID 29930092, PMCID PMC6223263)",
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6223263/",
+    "note": "Abstract, quoted: 'When scaled up nationally, our facility-based estimate of 2015 supply chain emissions is 13+/-2 Tg/y, equivalent to 2.3% of gross U.S. gas production. This value is ~60% higher than the U.S. Environmental Protection Agency inventory estimate'. Main text, quoted: 'Our national BU estimate of total CH4 emissions in 2015 from the U.S. O/NG supply chain is 13 (+2.1/-1.6, 95% confidence interval) Tg CH4/y ... This estimate of O/NG CH4 emissions can also be expressed as a production-normalized emission rate of 2.3% (+0.4%/-0.3%) by normalizing by gross natural gas production (33 tcf/y, (13) with average CH4 content of 90 vol%).' 95% CI is 2.0% to 2.7%. Labeled an assumption because a 2015 U.S.-average rate is applied to gas delivered to a Kern County plant. The estimate also includes oil-production and refining emissions (Table 1 'U.S. O/NG total'), and the denominator is CH4 in gross withdrawals, not delivered gas. Denominator check (EIA, opened 2026-10-23): 'U.S. Natural Gas Gross Withdrawals (Million Cubic Feet)' 2015 = 32,914,647 (https://www.eia.gov/dnav/ng/hist/n9010us2a.htm) and 'U.S. Dry Natural Gas Production (Million Cubic Feet)' 2015 = 27,065,460 (https://www.eia.gov/dnav/ng/hist/n9070us2a.htm). 13 Tg / (32.915e12 ft3 x 0.90 x 0.0192 kg/ft3) = 2.29%, reproducing the paper's 2.3%. Normalized instead to CH4 in 2015 dry production at 95% CH4: 13 Tg / (27.065e12 x 0.95 x 0.0192) = 2.63% of delivered CH4, about 12% above the 0.023/0.977 = 2.35% that the spec formula implies. Used only when scenario.options['include_upstream_methane'] is true (default false).",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened the PMC author manuscript PMC6223263 (Science 361(6398):186-188, doi:10.1126/science.aar7204). Abstract '13+/-2 Tg/y, equivalent to 2.3% of gross U.S. gas production' (I corrected the quote wording to match this source) and main text '2.3% (+0.4%/-0.3%) by normalizing by gross natural gas production (33 tcf/y ... average CH4 content of 90 vol%)' confirmed. Table 1 includes 'Oil Refining and Transportation 0.034' and 'U.S. O/NG total 13'. The denominator is CH4 in gross withdrawals: EIA 2015 gross withdrawals 32,914,647 MMcf reproduce 2.29%. I added the dry-production normalization (2.63%) to the note. The value 0.023 is confirmed at the source. Kind stays 'assumption' because it is applied to Kern County gas."
+  },
+  "ch4_gwp100": {
+    "value": 29.8,
+    "units": "kg CO2e per kg CH4 (GWP-100, fossil methane)",
+    "kind": "observed",
+    "source": "IPCC AR6 WG1 (2021), Chapter 7 'The Earth's Energy Budget, Climate Feedbacks, and Climate Sensitivity' (Forster, P., T. Storelvmo et al.), Table 7.15 'Emissions metrics for selected species'",
+    "url": "https://www.ipcc.ch/report/ar6/wg1/chapter/chapter-7/",
+    "note": "Table 7.15 columns: Lifetime (years) | Radiative efficiency (W m-2 ppb-1) | GWP-20 | GWP-100 | GWP-500 | GTP-50 | GTP-100 | CGTP-50 | CGTP-100. Rows, quoted: 'CH4-fossil | 11.8 +/- 1.8 | 5.7 +/- 1.4 x10^-4 | 82.5 +/- 25.8 | 29.8 +/- 11 | 10.0 +/- 3.8 | 13.2 +/- 6.1 | 7.5 +/- 2.9 | 2823 +/- 1060 | 3531 +/- 1385' and 'CH4-non fossil | 11.8 +/- 1.8 | 5.7 +/- 1.4 x10^-4 | 79.7 +/- 25.8 | 27.0 +/- 11 | ...'. Caption: 'All values include carbon cycle responses ... Chemical effects of CH4 and N2O are included'. The fossil value is used because pipeline gas is fossil methane. The 100-year horizon is a reporting convention. On a 20-year horizon the fossil GWP is 82.5 (about 2.8x).",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened IPCC AR6 WG1 Chapter 7 web page, Table 7.15 'Emissions metrics for selected species': 'CH4-fossil | 11.8 +/- 1.8 | 5.7 +/- 1.4 x10^-4 | 82.5 +/- 25.8 | 29.8 +/- 11 | 10.0 +/- 3.8 | ...' and 'CH4-non fossil | ... | 79.7 +/- 25.8 | 27.0 +/- 11 | ...'. Fossil GWP-100 = 29.8 is the right value for leaked fossil pipeline methane, whose carbon is not otherwise counted."
+  },
+  "ch4_kg_per_mmbtu_gas": {
+    "value": 17.78,
+    "units": "kg CH4 contained per MMBtu (HHV) of pipeline natural gas",
+    "kind": "inferred",
+    "source": "Derived from 40 CFR Part 98: 98.233(u)(2)(iii) default 95 mol% CH4 in transmission pipeline gas, 98.233(v) CH4 density 0.0192 kg/ft3, and Subpart C Table C-1 natural gas HHV 1.026e-3 MMBtu/scf",
+    "url": "https://www.ecfr.gov/current/title-40/chapter-I/subchapter-C/part-98/subpart-W/section-98.233",
+    "note": "Inputs, quoted. (1) 40 CFR 98.233(u)(2)(iii): 'GHG mole fraction in transmission pipeline natural gas ... You may use either a default 95 percent methane and 1 percent carbon dioxide fraction for GHG mole fraction in natural gas or site specific engineering estimates based on best available data.' (2) 40 CFR 98.233(v), Eq. W-36: 'Use 0.0526 kg/ft3 for CO2 and N2O, and 0.0192 kg/ft3 for CH4 at 60 F and 14.7 psia.' (3) Table C-1: 'Natural gas ... (Weighted U.S. Average) | 1.026 x 10^-3 [mmBtu/scf] | 53.06'. MATH: 1 MMBtu / 1.026e-3 MMBtu/scf = 974.66 scf of gas. CH4 volume = 0.95 x 974.66 = 925.93 scf. CH4 mass = 925.93 scf x 0.0192 kg/scf = 17.78 kg CH4/MMBtu (equivalently 0.95 x 0.0192 / 1.026e-3 = 17.778). Carbon cross-check (Part 98 only): combustion CO2 of 53.06 kg/MMBtu / 0.0526 kg/scf = 1008.7 scf of CO2. Each scf of CH4 yields one scf of CO2, so CH4 supplies 925.93 / 1008.7 = 91.8% of the fuel carbon. The rest comes from ethane and heavier hydrocarbons plus the ~1% CO2, which is consistent with 95% CH4 pipeline gas. Caveats: 40 CFR 98.6 defines standard conditions as 'either 60 or 68 degrees Fahrenheit and 14.7 pounds per square inch absolute'. If the Table C-1 HHV were at 68 F, the result would be about 1.5% lower (17.51; ideal gas, 519.67 R / 527.67 R). Site-specific PG&E gas composition is not used.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened 40 CFR 98.233 via the eCFR API (up to date as of 2026-10-22): (u)(2)(iii) 'default 95 percent methane and 1 percent carbon dioxide' for transmission pipeline gas and (v) '0.0192 kg/ft3 for CH4 at 60 F and 14.7 psia' confirmed verbatim. Also checked 98.6 'either 60 or 68 degrees Fahrenheit' and Table C-1 HHV 1.026e-3 MMBtu/scf. Recomputed 0.95 x 0.0192 / 1.026e-3 = 17.778 kg/MMBtu, the carbon share 925.93/1008.75 = 91.8% and the 68F variant 17.51. An independent ideal-gas check (16.043 g/mol / 379.38 scf/lbmol at 60F) gives 0.01918 kg/scf, so the density is consistent."
+  },
+  "upstream_methane_kg_co2e_per_mmbtu": {
+    "value": 12.47,
+    "units": "kg CO2e per MMBtu (HHV) of gas burned on site",
+    "kind": "inferred",
+    "source": "Derived: upstream_methane_leak_rate (Alvarez et al. 2018, Science) x ch4_kg_per_mmbtu_gas (40 CFR Part 98) x ch4_gwp100 (IPCC AR6 WG1 Table 7.15)",
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6223263/",
+    "note": "Formula (spec): upstream = leak/(1 - leak) x ch4_kg_per_mmbtu x GWP100. If a fraction 'leak' of produced CH4 escapes, then CH4 emitted per unit of CH4 delivered = leak/(1 - leak). MATH: 0.023 / (1 - 0.023) = 0.023 / 0.977 = 0.023541. CH4 emitted = 0.023541 x 17.778 kg CH4/MMBtu = 0.41851 kg CH4/MMBtu. CO2e = 0.41851 x 29.8 = 12.47 kg CO2e/MMBtu (computed with the unrounded 17.7778). That is 23.5% on top of the 53.06 kg/MMBtu combustion CO2. Sensitivity: Alvarez 95% CI 2.0% to 2.7% gives 10.81 to 14.70 kg CO2e/MMBtu. Using GWP-20 (82.5) instead gives 34.53 kg CO2e/MMBtu. Simplifications: the denominator mismatch between gross production at 90 vol% CH4 and delivered 95% CH4 gas is ignored (normalizing Alvarez's 13 Tg to CH4 in EIA 2015 dry production instead gives 2.63% of delivered CH4 and 0.02633 x 17.778 x 29.8 = 13.95 kg CO2e/MMBtu, about 12% higher; see upstream_methane_leak_rate), as are lease, plant and pipeline fuel use. Optional and off by default. emissions.py always reports the would-be value in extras.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Recomputed with the spec formula from the three verified inputs: 0.023/0.977 x 17.7778 x 29.8 = 12.4717, which rounds to 12.47. Also recomputed the 95% CI 2.0% and 2.7% (10.81 and 14.70), GWP-20 82.5 (34.53) and 12.47/53.06 = 23.5%. I added a quantified denominator caveat to the note: about 13.95 kg if Alvarez's 13 Tg is normalized to EIA 2015 dry production. The value is kept per the spec formula."
+  },
+  "ca_allowance_price_usd_per_t": {
+    "value": 32.48,
+    "units": "USD (nominal 2026) per metric t CO2e allowance",
+    "kind": "observed",
+    "source": "CARB and Quebec MELCCFP, California Cap-and-Invest Program and Quebec Cap-and-Trade System, August 2026 Joint Auction #48 (held August 19, 2026) Summary Results Report, published August 26, 2026, Table 4",
+    "url": "https://ww2.arb.ca.gov/sites/default/files/2026-08/nc-aug_2026_summary_results_report.pdf",
+    "note": "Latest quarterly auction with published results as of 2026-10-23. CARB's auction page (https://ww2.arb.ca.gov/our-work/programs/cap-and-trade-program/auction-information) lists 'August 2026 Joint Auction # 48 - August 19, 2026' with a Summary Results Report, and the next auction is 'November 2026 Joint Auction # 49 - November 18, 2026'. Report text, quoted: 'The auction included a Current Auction of 2017, 2024, and 2026 vintage allowances and an Advance Auction of 2029 vintage allowances.' Table 4, quoted: 'Auction Reserve Price | $27.94 | $38.81 | $27.94 | $38.81' and 'Settlement Price | $32.48 | $45.11 | $32.75 | $45.49' (Current Auction USD | Current CAD | Advance USD | Advance CAD). Settlement price definition, quoted: 'The Current Auction allowance price, in USD and CAD per metric ton as determined by the auction settlement process, that all successful bidders will pay for awarded allowances.' Current-auction allowances sold: 49,016,180 (mostly 2026 vintage). CARB's pages now call the program the 'California Cap-and-Invest Program'. The value is in nominal 2026 dollars and is not deflated to the model's 2024$. For reference, 32.48 x 53.06/1000 = $1.72 per MMBtu of gas burned. Used only as a UI hint and for the optional carbon price, which applies to on-site combustion CO2 only.",
+    "retrieved": "2026-10-23",
+    "verified": true,
+    "verification_note": "Opened CARB's auction information page: it lists 'November 2026 Joint Auction # 49 - November 18, 2026' (upcoming, after 2026-10-23) and 'August 2026 Joint Auction # 48 - August 19, 2026' with a Summary Results Report, so #48 is the latest auction with results. Opened the report (dated August 26, 2026): Table 4 'Settlement Price' Current Auction USD $32.48 (CAD $45.11; Advance $32.75 USD), Auction Reserve Price $27.94; Current Auction of 2017, 2024 and 2026 vintages; Table 2 total current allowances sold 49,016,180 (2026 vintage 49,002,838). Header 'California Cap-and-Invest Program'. Nominal 2026 USD per metric ton. 32.48 x 53.06/1000 = $1.72/MMBtu recomputed."
+  }
+}

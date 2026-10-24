@@ -1,1 +1,2 @@
 # Workstream C (Evaluate)
+pypdf==6.21.2  # prep scripts only (app/evaluate/prep_gas.py reads the CAISO DMM report PDF)
