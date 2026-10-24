@@ -20,6 +20,7 @@ backend contract: hour-beginning, fixed UTC-8 (PST) all year, 8760 or 8784 hours
 
 from __future__ import annotations
 
+import calendar
 import json
 import shutil
 import tempfile
@@ -181,7 +182,7 @@ def _validate(manifest: Manifest, county: pd.DataFrame, hourly: pd.DataFrame | N
         if ((q[:, 0] > q[:, 1] + 1e-6) | (q[:, 1] > q[:, 2] + 1e-6)).any():
             raise ArtifactError(f"{HOURLY_FILE}: quantiles must satisfy p10 <= p50 <= p90")
         for (region, scenario, year), g in hourly.groupby(["region", "scenario", "year"]):
-            n = 8784 if pd.Timestamp(year=int(year), month=12, day=31).dayofyear == 366 else 8760
+            n = 8784 if calendar.isleap(int(year)) else 8760
             if len(g) != n or g["hour"].min() != 0 or g["hour"].max() != n - 1:
                 raise ArtifactError(f"{HOURLY_FILE}: {region}/{scenario}/{year} must have hours 0..{n - 1}")
     return county, hourly
