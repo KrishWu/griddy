@@ -19,7 +19,7 @@ small artifact folders through git.
 **Machine A:**
 
 > You are training the Griddy Phase 2 **demand forecast** (workstream A) on this machine.
-> Repo: https://github.com/heruirayli/cleantech-hacks, branch `ws/a-ml-demand`. Read
+> Repo: https://github.com/KrishWu/griddy, branch `ws/a-ml-demand`. Read
 > `CLAUDE.md` and `ml/TRAINING.md`, then do "Setup" and "Machine A" exactly as written. Check
 > every acceptance check and stop at any stop condition. Commit only what the guide says to
 > commit, and finish with the report described in "Report back".
@@ -27,7 +27,7 @@ small artifact folders through git.
 **Machine B:**
 
 > You are training the Griddy Phase 2 **site-location model** (workstream B) on this machine.
-> Repo: https://github.com/heruirayli/cleantech-hacks, branch `ws/b-ml-site`. Read
+> Repo: https://github.com/KrishWu/griddy, branch `ws/b-ml-site`. Read
 > `CLAUDE.md` and `ml/TRAINING.md`, then do "Setup" and "Machine B" exactly as written. Check
 > every acceptance check and stop at any stop condition. Commit only what the guide says to
 > commit, and finish with the report described in "Report back".
@@ -52,7 +52,7 @@ small artifact folders through git.
 
 ```bash
 nvidia-smi                                   # an NVIDIA GPU and driver must show up
-git clone https://github.com/heruirayli/cleantech-hacks.git && cd cleantech-hacks   # skip if already cloned
+git clone https://github.com/KrishWu/griddy.git && cd griddy   # skip if already cloned
 python --version                             # 3.11-3.14
 python -m venv .venv-ml
 source .venv-ml/bin/activate                 # Windows: .venv-ml\Scripts\activate
