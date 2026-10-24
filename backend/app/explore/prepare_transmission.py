@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
@@ -30,6 +31,11 @@ SOURCE = "CEC California Electric Transmission Lines"
 TOLERANCE_M = 10.0  # sub-pixel at z10 (~60 m/px in CA), ~3 px at z14; 25 m would save only 0.2 MB
 MAX_BYTES = 6_000_000
 PRECISION = 5
+# The Trans Bay Cable (Pittsburg - SF Potrero) is a +/-200 kV HVDC link, but the CEC labels it
+# "200", not "200DC" like the 500 kV DC interties. Its label gets the suffix so the service
+# never reports it as a tappable AC line.
+HVDC_OWNERS = {"TRANS BAY CABLE"}
+_NAME_KV_RE = re.compile(r"(\d+(?:\.\d+)?)\s*kV", re.IGNORECASE)
 
 DEMO_SITES = {
     "Kern placeholder": (-119.47, 35.40),
@@ -86,10 +92,23 @@ def _has_geometry(f: dict[str, Any]) -> bool:
 def _name(p: dict[str, Any], owner: str | None, kv: float) -> str:
     # CEC "Name" is always the generic "<Owner> <kV>kV" label, so prefer the real circuit
     # name (TLine_Name, e.g. "Tracy - Lawrence Livermore Lab") where the CEC has one.
-    name = _str_or_none(p.get("TLine_Name")) or _str_or_none(p.get("Name"))
+    name = _str_or_none(p.get("TLine_Name"))
     if name:
         return name
+    # A few generic Names contradict kV_Sort (e.g. "PG&E 115kV" on 230 kV SF cables): rebuild those.
+    name = _str_or_none(p.get("Name"))
+    m = _NAME_KV_RE.search(name or "")
+    if name and (m is None or float(m.group(1)) == kv):
+        return name
     return f"{owner} {kv:g} kV line" if owner else f"{kv:g} kV line"
+
+
+def _voltage_label(p: dict[str, Any], owner: str | None, kv: float) -> str | None:
+    """CEC kV label; HVDC lines the CEC labels as plain numbers get a "DC" suffix like "500DC"."""
+    label = _str_or_none(p.get("kV"))
+    if (owner or "").upper() in HVDC_OWNERS and "DC" not in (label or "").upper():
+        return f"{kv:g}DC"
+    return label
 
 
 def _is_operational(status: str | None) -> bool:
@@ -154,7 +173,7 @@ def build_features(raw: dict[str, Any], tolerance_m: float) -> tuple[list[dict[s
                     "id": f"cec-{int(row['OBJECTID'])}",
                     "name": _name(row, owner, kv),
                     "voltage_kv": kv,
-                    "voltage_label": _str_or_none(row.get("kV")),
+                    "voltage_label": _voltage_label(row, owner, kv),
                     "owner": owner,
                     "status": status,
                     "operational": _is_operational(status),

@@ -47,6 +47,9 @@ _TECH_FUEL = {
 }
 _ENERGY_SOURCE_FUEL = {"SUN": "solar", "WND": "wind", "NG": "gas", "WAT": "hydro", "GEO": "geothermal", "MWH": "battery", "NUC": "nuclear"}
 FUELS = ("solar", "wind", "gas", "hydro", "geothermal", "battery", "nuclear", "other")
+# "Grid Voltage (kV)" is self-reported: small plants sometimes enter their service voltage in
+# volts (480 = 480 V, not 480 kV). None of these is a US transmission voltage, so divide by 1000.
+_VOLTS_IN_KV_FIELD = {208.0, 240.0, 277.0, 416.0, 480.0, 481.0, 600.0}
 # The LMP node field is self-reported free text; these entries name no node.
 _LMP_PLACEHOLDERS = {"none", "n/a", "na", "null", "unknown", "tbd", "rto/iso lmp", "node", "gen", "caiso", "pg&e", "sce"}
 
@@ -146,6 +149,8 @@ def build_features(plants: pd.DataFrame, gens: pd.DataFrame) -> tuple[list[dict[
         technology = min(by_tech.index, key=lambda t: (-by_tech[t], t))
         fuel_mix = {f: round(float(by_fuel[f]), 1) for f in FUELS if f in by_fuel.index and round(float(by_fuel[f]), 1) > 0}
         voltage = _num(pd.Series([row["Grid Voltage (kV)"]])).iloc[0]
+        if voltage in _VOLTS_IN_KV_FIELD:
+            voltage = voltage / 1000
 
         features.append(
             {

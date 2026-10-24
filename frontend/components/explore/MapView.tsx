@@ -35,9 +35,11 @@ import { readSummary, trackSiteSelection, useSiteSummary } from "./useSiteSummar
 type FC = GeoJSON.FeatureCollection;
 
 const STYLE_TIMEOUT_MS = 8000;
+const STYLE_PROBE_MS = 10000; // after the timeout, how long the basemap style URL gets to answer before we give up
 const HIT_PX = 5; // query box half-size, so thin lines are clickable
 const HOVER_LAYER_IDS = CLICKABLE_LAYER_IDS.filter((id) => id !== "utilities-fill"); // a fill would make every pixel "clickable"
 const SITE_ZOOM = 9; // the 25 km ring fits comfortably
+const SELECT_DELAY_MS = 250; // wait this long after a click on empty map, so a double-click zooms instead of moving the site
 
 // One fetch per layer per page load, shared across remounts (StrictMode, error-boundary resets).
 const layerCache = new Map<DataKey, Promise<FC>>();
@@ -86,7 +88,7 @@ function assetsFC(assets: Asset[] | undefined): FC {
   return { type: "FeatureCollection", features };
 }
 
-/** 25 km ring around the site plus dashed links to the nearest 230 kV+ substation and line. */
+/** 25 km ring around the site plus dashed links to the nearest 220 kV+ substation and line. */
 function contextFC(p: LngLat | undefined, summary: SiteSummary | null): FC {
   if (!p) return EMPTY_FC;
   const features: GeoJSON.Feature[] = [
@@ -123,6 +125,7 @@ export function MapView() {
   const [hiddenOverlays, setHiddenOverlays] = useState<ReadonlySet<string>>(() => new Set());
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
+  const retryBasemap = useRef<(() => void) | null>(null);
 
   // Latest values for map event handlers (they're registered once).
   const selectRef = useRef(selectSite);
@@ -143,6 +146,7 @@ export function MapView() {
   useEffect(() => {
     let cancelled = false;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+    let selectTimer: ReturnType<typeof setTimeout> | undefined;
     let popup: Popup | null = null;
     let raf = 0;
     let gen = 0;
@@ -211,9 +215,28 @@ export function MapView() {
         setFallback(true);
         m.setStyle(fetched ?? INLINE_FALLBACK_STYLE, { diff: false }); // full rebuild -> 'style.load'
       };
-      fallbackTimer = setTimeout(() => {
-        if (!styleLoaded) void swapToFallback(`no style after ${STYLE_TIMEOUT_MS / 1000} s`);
-      }, STYLE_TIMEOUT_MS);
+      // Slow is not down (venue Wi-Fi, a busy laptop): after the timeout, fall back only if the
+      // basemap's style URL is actually unreachable. Real load errors fall back right away (below).
+      const probeThenSwap = async () => {
+        if (styleLoaded) return;
+        const reachable = await fetch(BASEMAP, { signal: AbortSignal.timeout(STYLE_PROBE_MS) }).then((r) => r.ok, () => false);
+        if (!reachable && !styleLoaded) void swapToFallback(`basemap unreachable after ${STYLE_TIMEOUT_MS / 1000} s`);
+      };
+      const armFallbackTimer = () => {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = setTimeout(() => void probeThenSwap(), STYLE_TIMEOUT_MS);
+      };
+      armFallbackTimer();
+      retryBasemap.current = () => {
+        if (cancelled || map.current !== m) return;
+        styleLoaded = false;
+        swapping = false;
+        drawn.current.clear();
+        setStyleGen(0);
+        setFallback(false);
+        m.setStyle(BASEMAP, { diff: false }); // errors or a dead URL land back on the fallback
+        armFallbackTimer();
+      };
 
       m.on("error", (e) => {
         if (!styleLoaded) void swapToFallback(e.error?.message ?? "style error");
@@ -249,6 +272,7 @@ export function MapView() {
 
       m.on("click", (e) => {
         userMoved.current = true;
+        clearTimeout(selectTimer);
         popup?.remove();
         popup = null;
         const hits = hitsAt(e.point, CLICKABLE_LAYER_IDS); // topmost first
@@ -257,14 +281,18 @@ export function MapView() {
           popup = openPopup(feature, e.lngLat);
           return;
         }
-        // Empty map (or only a utility territory): select a site here.
+        if (e.originalEvent.detail > 1) return; // 2nd click of a double-click: the map zooms instead
+        // Empty map (or only a utility territory): select a site here, unless a double-click follows.
         const ll = e.lngLat.wrap(); // a click on a world copy still means -180..180
         const p = { lon: ll.lng, lat: ll.lat };
-        clickedKey.current = locKey(p);
-        trackSiteSelection(p, selectRef.current(p));
         const territory = hits.find((f) => f.layer.id === "utilities-fill");
-        if (territory) popup = openPopup(territory, e.lngLat);
+        selectTimer = setTimeout(() => {
+          clickedKey.current = locKey(p);
+          trackSiteSelection(p, selectRef.current(p));
+          if (territory) popup = openPopup(territory, e.lngLat);
+        }, SELECT_DELAY_MS);
       });
+      m.on("dblclick", () => clearTimeout(selectTimer));
 
       let hoverPt = { x: 0, y: 0 };
       m.on("mousemove", (e) => {
@@ -287,7 +315,9 @@ export function MapView() {
     const overlaysOnMap = drawn.current;
     return () => {
       cancelled = true;
+      retryBasemap.current = null;
       clearTimeout(fallbackTimer);
+      clearTimeout(selectTimer);
       if (raf) cancelAnimationFrame(raf);
       popup?.remove();
       map.current?.remove();
@@ -415,7 +445,8 @@ export function MapView() {
   return (
     <div className="relative h-full w-full">
       <div ref={el} className="h-full w-full" />
-      <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+      {/* Top-left column: view buttons, basemap notice, layers + legend (capped at ~45% of the map height). */}
+      <div className="pointer-events-none absolute bottom-2 left-2 top-2 z-10 flex flex-col items-start gap-1.5">
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
             California
@@ -425,18 +456,15 @@ export function MapView() {
           </button>
         </div>
         {fallback && (
-          <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 shadow ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800">
-            Basemap offline: showing grid layers on a plain background
+          <span className="pointer-events-auto rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 shadow ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800">
+            Basemap offline: showing grid layers on a plain background ·{" "}
+            <button type="button" className="font-medium underline" onClick={() => retryBasemap.current?.()}>
+              Retry
+            </button>
           </span>
         )}
-      </div>
-      {pending > 0 && (
-        <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-xs text-zinc-600 shadow ring-1 ring-black/10 dark:bg-zinc-900/95 dark:text-zinc-300 dark:ring-white/10">
-          Loading grid data… {DATA_KEYS.length - pending}/{DATA_KEYS.length}
-        </div>
-      )}
-      <div className="pointer-events-none absolute bottom-2 left-2 top-24 z-10 flex flex-col justify-end">
         <LayerControl
+          container={el}
           visible={visible}
           onToggle={toggleGroup}
           status={status}
@@ -445,6 +473,11 @@ export function MapView() {
           onToggleOverlay={toggleOverlay}
         />
       </div>
+      {pending > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-xs text-zinc-600 shadow ring-1 ring-black/10 dark:bg-zinc-900/95 dark:text-zinc-300 dark:ring-white/10">
+          Loading grid data… {DATA_KEYS.length - pending}/{DATA_KEYS.length}
+        </div>
+      )}
     </div>
   );
 }

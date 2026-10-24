@@ -107,5 +107,6 @@ export function fmtKm(v: number | null | undefined): string {
 }
 
 export function fmtKv(v: number | null | undefined): string {
-  return v === null || v === undefined || !Number.isFinite(v) || v <= 0 ? "kV unknown" : `${Math.round(v)} kV`;
+  if (v === null || v === undefined || !Number.isFinite(v) || v <= 0) return "kV unknown";
+  return v < 10 ? `${Number(v.toFixed(2))} kV` : `${Math.round(v)} kV`; // low voltages keep decimals: 0.48 kV, 4.16 kV
 }

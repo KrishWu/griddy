@@ -37,6 +37,11 @@ RAW_OSM = RAW_DIR / "osm_substations_ca_bbox.json"
 
 STATES_URL = "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_state_500k.zip"
 CA_BUFFER_M = 2000  # keep border substations (e.g. on the Colorado River) that sit just outside the line
+NEIGHBOR_STATEFP = ("04", "32", "41")  # AZ, NV, OR
+# The buffer must not reach into Mexico (CFE substations in Tijuana and Mexicali): south of this
+# latitude, just north of the CA-Mexico line's highest point at the Colorado River, a buffered
+# point that is in no US state is dropped.
+MEXICO_MAX_LAT = 32.72
 
 OUT_PATH = OUT_DIR / "substations_ca.geojson"
 SOURCE = "OpenStreetMap (ODbL)"
@@ -109,13 +114,15 @@ def fetch_overpass(dest: Path = RAW_OSM, *, rounds: int = 2) -> dict[str, Any]:
     raise RuntimeError("All Overpass mirrors failed:\n" + "\n".join(errors))
 
 
-def california_mask(buffer_m: float = CA_BUFFER_M) -> Any:
-    """California (Census cartographic boundary 2023) buffered by buffer_m, in EPSG:3310."""
-    states = gpd.read_file(download(STATES_URL, RAW_DIR / "cb_2023_us_state_500k.zip"))
-    ca = states[states["STATEFP"] == "06"].to_crs(CA_ALBERS)
+def california_mask(buffer_m: float = CA_BUFFER_M) -> tuple[Any, Any]:
+    """(California buffered by buffer_m, California + AZ/NV/OR unbuffered), Census cartographic
+    boundaries 2023, in EPSG:3310."""
+    states = gpd.read_file(download(STATES_URL, RAW_DIR / "cb_2023_us_state_500k.zip")).to_crs(CA_ALBERS)
+    ca = states[states["STATEFP"] == "06"]
     if ca.empty:
         raise RuntimeError("STATEFP 06 not found in the Census states file")
-    return ca.geometry.union_all().buffer(buffer_m)
+    us = states[states["STATEFP"].isin(("06", *NEIGHBOR_STATEFP))]
+    return ca.geometry.union_all().buffer(buffer_m), us.geometry.union_all()
 
 
 def _exclusion_reason(tags: dict[str, str]) -> str | None:
@@ -159,6 +166,13 @@ def build_rows(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], Counter[str]]
             dropped["no coordinates"] += 1
             continue
         voltages = parse_voltage_kv(tags.get("voltage"))
+        # A bare node (no name, ref, operator or substation type) with a voltage is most likely a
+        # transformer whose kVA rating went into `voltage`, like the street cabinets above (a lone
+        # "500000" node in downtown Redding). Keep the point but not the voltage.
+        if el["type"] == "node" and not any((tags.get(k) or "").strip() for k in ("name", "ref", "operator", "substation")):
+            if voltages:
+                dropped["voltage of bare node (kept, voltage nulled)"] += 1
+            voltages = []
         rows.append(
             {
                 "id": f"osm-{OSM_TYPES[el['type']]}{el['id']}",
@@ -211,8 +225,14 @@ def main() -> None:
     rows, dropped = build_rows(raw)
     gdf = gpd.GeoDataFrame(rows, geometry=gpd.points_from_xy([r["lon"] for r in rows], [r["lat"] for r in rows]), crs=WGS84)
     projected = gdf.to_crs(CA_ALBERS)
-    inside = projected.within(california_mask()).to_numpy()
+    ca_buffered, ca_and_neighbors = california_mask()
+    inside = projected.within(ca_buffered).to_numpy()
+    mexico = ~projected.within(ca_and_neighbors).to_numpy() & (gdf["lat"].to_numpy() < MEXICO_MAX_LAT)
     dropped["outside CA (+2 km)"] = int((~inside).sum())
+    dropped["Mexico (within 2 km of CA)"] = int((inside & mexico).sum())
+    for r in gdf[inside & mexico].itertuples():
+        print(f"  dropped (Mexico): {r.id} {r.name!r} {r.voltage_kv} kV at ({r.lon:.4f}, {r.lat:.4f})")
+    inside &= ~mexico
     projected = projected[inside].reset_index(drop=True)
     kept = gdf[inside].reset_index(drop=True)
 

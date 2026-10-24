@@ -25,14 +25,15 @@ export function SitePanel() {
   const view = useMemo(() => (summary ? readSummary(summary) : null), [summary]);
   if (!scenario) return null;
   const { lon, lat } = scenario.site.location;
+  // A clicked site is named "Site at lat, lon" by the store: prefer the backend's "Site in X County, CA"
+  // (the summary always matches the current location). Presets keep their own name.
+  const name = summary?.site?.name && scenario.site.name.startsWith("Site at") ? summary.site.name : scenario.site.name;
+  const coords = `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
   return (
     <Panel title="Site" owner="A · Explore">
       <p className="mb-3 text-sm">
-        <span className="font-medium">{scenario.site.name}</span>
-        <span className="text-zinc-500">
-          {" "}
-          · {lat.toFixed(3)}, {lon.toFixed(3)}
-        </span>
+        <span className="block font-medium">{name}</span>
+        {!name.includes(coords) && <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{coords}</span>}
       </p>
       {summary && view ? (
         <SiteDetails summary={summary} v={view} />
@@ -61,34 +62,55 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** One label/value row of a two-column <dl>; long values wrap instead of truncating. */
 function Fact({ label, value, title }: { label: string; value: string | null; title?: string | null }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-[11px] text-zinc-500">{label}</dt>
-      <dd className="truncate font-medium" title={title ?? value ?? undefined}>
+    <>
+      <dt className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</dt>
+      <dd className="min-w-0 break-words font-medium" title={title ?? value ?? undefined}>
         {value ?? "–"}
       </dd>
-    </div>
+    </>
+  );
+}
+
+/** List row: swatch, full name (wraps) and distance, with details on a second line. */
+function Row({ swatch, name, title, detail, km }: { swatch: ReactNode; name: ReactNode; title?: string; detail: ReactNode; km: number | null }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="flex h-5 shrink-0 items-center">{swatch}</span>
+      <div className="min-w-0 flex-1">
+        <div className="break-words" title={title}>
+          {name}
+        </div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">{detail}</div>
+      </div>
+      <span className="w-14 shrink-0 text-right tabular-nums">{fmtKm(km)}</span>
+    </li>
   );
 }
 
 function SubstationRow({ s, note }: { s: SubstationRef; note?: string }) {
   return (
-    <li className="flex items-center gap-2">
-      <Dot color={voltageClass(s.voltage_kv).color} ring size={9} />
-      <span className="min-w-0 flex-1 truncate" title={[s.name, s.operator].filter(Boolean).join(" · ")}>
-        {note && <span className="text-zinc-500">{note} </span>}
-        {s.name}
-      </span>
-      <span className="shrink-0 text-xs text-zinc-500">{fmtKv(s.voltage_kv)}</span>
-      <span className="w-14 shrink-0 text-right tabular-nums">{fmtKm(s.distance_km)}</span>
-    </li>
+    <Row
+      swatch={<Dot color={voltageClass(s.voltage_kv).color} ring size={9} />}
+      name={
+        <>
+          {note && <span className="text-zinc-500 dark:text-zinc-400">{note} </span>}
+          {s.name}
+        </>
+      }
+      title={[s.name, s.operator].filter(Boolean).join(" · ")}
+      detail={fmtKv(s.voltage_kv)}
+      km={s.distance_km}
+    />
   );
 }
 
 function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
-  const county = v.county ? (/county/i.test(v.county) ? v.county : `${v.county} County`) : null;
-  const hv = v.hvSubstation && !v.substations.some((s) => s.id === v.hvSubstation?.id) ? v.hvSubstation : null;
+  // The backend appends the nearest 220 kV+ substation (the 230 kV class, incl. SCE 220 kV) when it is not among the 3 nearest: label it.
+  const near = v.substations.slice(0, 3);
+  const hv = v.hvSubstation && !near.some((s) => s.id === v.hvSubstation?.id) ? v.hvSubstation : null;
   const closerLine =
     v.anyLine && v.anyLine.distance_km !== null && (v.hvLine?.distance_km ?? Infinity) - v.anyLine.distance_km > 0.05 ? v.anyLine : null;
   const provenance = Array.isArray(summary.provenance) ? summary.provenance : [];
@@ -101,37 +123,37 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
         </p>
       )}
 
-      <dl className="grid grid-cols-3 gap-2">
-        <Fact label="County" value={county} />
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5">
+        <Fact label="County" value={v.county} />
         <Fact label="Utility" value={v.utility} title={v.utilityTitle} />
-        <Fact label="Balancing auth." value={v.balancingAuthority} title={v.balancingAuthorityTitle} />
+        <Fact label="Balancing authority" value={v.balancingAuthority} title={v.balancingAuthorityTitle} />
       </dl>
 
       <Section title="Nearest substations">
         {v.substations.length || hv ? (
-          <ul className="space-y-1">
-            {v.substations.slice(0, 4).map((s) => (
+          <ul className="space-y-1.5">
+            {near.map((s) => (
               <SubstationRow key={s.id} s={s} />
             ))}
-            {hv && <SubstationRow s={hv} note="230 kV+:" />}
+            {hv && <SubstationRow s={hv} note="220 kV+:" />}
           </ul>
         ) : (
           <p className="text-zinc-500">No substations found nearby.</p>
         )}
       </Section>
 
-      <Section title="Nearest 230 kV+ line">
+      <Section title="Nearest 220 kV+ line">
         {v.hvLine ? (
           <p className="flex items-center gap-2">
             <LineSwatch color={voltageClass(v.hvLine.voltage_kv).color} />
-            <span className="min-w-0 flex-1 truncate" title={v.hvLine.name}>
+            <span className="min-w-0 flex-1 break-words" title={v.hvLine.name}>
               {fmtKv(v.hvLine.voltage_kv)}
               {v.hvLine.owner && <span className="text-zinc-500"> · {v.hvLine.owner}</span>}
             </span>
             <span className="w-14 shrink-0 text-right tabular-nums">{fmtKm(v.hvLine.distance_km)}</span>
           </p>
         ) : (
-          <p className="text-zinc-500">No operational 230 kV+ line found.</p>
+          <p className="text-zinc-500">No operational 220 kV+ line found.</p>
         )}
         {closerLine && (
           <p className="mt-1 text-xs text-zinc-500">
@@ -159,16 +181,19 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
               </ul>
             )}
             {v.plants.length > 0 && (
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-2 space-y-1.5">
                 {v.plants.slice(0, 5).map((p) => (
-                  <li key={p.id} className="flex items-center gap-2">
-                    <Dot color={FUEL_COLOR[p.fuel]} size={8} />
-                    <span className="min-w-0 flex-1 truncate" title={`${p.name} (${FUEL_LABEL[p.fuel]})`}>
-                      {p.name}
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums text-zinc-500">{fmtMw(p.capacity_mw)}</span>
-                    <span className="w-14 shrink-0 text-right tabular-nums">{fmtKm(p.distance_km)}</span>
-                  </li>
+                  <Row
+                    key={p.id}
+                    swatch={<Dot color={FUEL_COLOR[p.fuel]} size={8} />}
+                    name={p.name}
+                    detail={
+                      <>
+                        {FUEL_LABEL[p.fuel]} · <span className="tabular-nums">{fmtMw(p.capacity_mw)}</span>
+                      </>
+                    }
+                    km={p.distance_km}
+                  />
                 ))}
               </ul>
             )}

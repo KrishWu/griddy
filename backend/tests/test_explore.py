@@ -9,6 +9,7 @@ from __future__ import annotations
 import gzip
 import json
 import math
+import re
 import time
 from collections.abc import Iterator
 
@@ -27,8 +28,10 @@ TRACY = LngLat(lon=-121.55, lat=37.71)
 LOS_BANOS = LngLat(lon=-120.85, lat=37.06)
 RENO = LngLat(lon=-119.81, lat=39.53)
 PACIFIC = LngLat(lon=-126.0, lat=36.0)
+SANTA_BARBARA = LngLat(lon=-119.68, lat=34.43)  # SCE territory: bulk lines are 220 kV
+TEHACHAPI = LngLat(lon=-118.40, lat=35.05)
 FUELS = {"solar", "wind", "gas", "hydro", "geothermal", "battery", "nuclear", "other"}
-CA_BBOX = (-124.6, 32.3, -113.9, 42.2)  # substations reach 2 km past the state line
+CA_BBOX = (-124.6, 32.3, -113.9, 42.2)  # substations reach 2 km into neighboring states
 
 
 def _in_bbox(lon: float, lat: float) -> bool:
@@ -86,6 +89,40 @@ def test_lines_and_substations_have_voltage():
         assert f["geometry"]["type"] == "Point" and _in_bbox(*f["geometry"]["coordinates"])
 
 
+def test_no_substations_in_mexico():
+    # The CA-Mexico line runs straight from the Pacific (-117.124, 32.534) to the Colorado River
+    # (-114.719, 32.718); as a geodesic it bows north of this lon/lat chord, so US points are north of it.
+    def border_lat(lon: float) -> float:
+        return 32.534 + (lon + 117.124) / (117.124 - 114.719) * (32.718 - 32.534)
+
+    for f in get_layer("substations")["features"]:
+        lon, lat = f["geometry"]["coordinates"]
+        if -117.124 <= lon <= -114.719:
+            assert lat >= border_lat(lon), f["properties"]["id"]
+
+
+def test_bare_osm_nodes_carry_no_voltage():
+    # A node with no name, ref, operator or substation type and a "voltage" is a transformer's kVA rating.
+    for f in get_layer("substations")["features"]:
+        p = f["properties"]
+        if p["id"].startswith("osm-n") and p["name"] == "Unnamed substation" and not p["operator"] and not p["substation_type"]:
+            assert p["voltage_kv"] is None, p["id"]
+
+
+def test_line_labels_agree_with_voltage():
+    for f in get_layer("transmission")["features"]:
+        p = f["properties"]
+        m = re.search(r"(\d+(?:\.\d+)?)\s*kV", p["name"], re.IGNORECASE)
+        assert m is None or float(m.group(1)) == p["voltage_kv"], (p["id"], p["name"], p["voltage_kv"])
+        if p["owner"] == "TRANS BAY CABLE":  # +/-200 kV HVDC
+            assert "DC" in p["voltage_label"], p
+
+
+def test_plant_grid_voltages_are_in_kv():
+    volts = {208.0, 240.0, 277.0, 416.0, 480.0, 481.0, 600.0}  # service voltages entered in volts
+    assert not [f["properties"]["id"] for f in get_layer("plants")["features"] if f["properties"]["grid_voltage_kv"] in volts]
+
+
 def test_boundaries_are_the_58_counties():
     names = {f["properties"]["name"] for f in get_layer("boundaries")["features"]}
     assert len(names) == 58 and {"Kern", "Los Angeles", "San Francisco"} <= names
@@ -118,6 +155,9 @@ def _check_summary_invariants(s: SiteSummary) -> None:
     assert plants == sorted(plants) and len(plants) <= 30
     assert all(d <= 25 for d in plants)
     assert all(x["fuel"] in FUELS for x in s.nearby_plants)
+    stats = s.extras["plants_within_25km"]
+    assert set(stats["by_fuel_mw"]) <= FUELS
+    assert sum(stats["by_fuel_mw"].values()) == pytest.approx(stats["total_mw"], abs=0.5)
     ids = [f.id for f in s.findings]
     assert len(ids) == len(set(ids))
     assert all(f.module == "explore" for f in s.findings)
@@ -164,6 +204,57 @@ def test_nearest_line_is_operational_ac():
     assert line["properties"]["operational"] is True and "DC" not in line["properties"]["voltage_label"]
 
 
+@pytest.mark.parametrize("site", [SANTA_BARBARA, TEHACHAPI], ids=["santa_barbara", "tehachapi"])
+def test_sce_220kv_counts_as_high_voltage(site: LngLat):
+    s = summarize_site(site)
+    _check_summary_invariants(s)
+    assert s.nearest_line_kv is not None and s.nearest_line_kv >= 220
+    assert s.nearest_line_km is not None and s.nearest_line_km < 15
+    assert s.extras["nearest_hv_substation"]["voltage_kv"] >= 220
+    assert s.extras["nearest_hv_substation"]["distance_km"] < 30
+
+
+@pytest.mark.parametrize("site", [LngLat(lon=-122.385, lat=37.757), LngLat(lon=-121.88, lat=38.04)], ids=["potrero", "pittsburg"])
+def test_trans_bay_hvdc_cable_is_never_the_nearest_line(site: LngLat):
+    s = summarize_site(site)
+    for key in ("nearest_line", "nearest_any_line"):
+        line = s.extras[key]
+        assert line["owner"] != "TRANS BAY CABLE" and "DC" not in line["voltage_label"], (key, line)
+
+
+def test_hybrid_plants_are_split_by_generator():
+    s = summarize_site(LngLat(lon=-121.78, lat=36.81))  # Moss Landing: 2,148 MW gas + 750 MW battery hybrid
+    mix = s.extras["plants_within_25km"]["by_fuel_mw"]
+    assert mix["battery"] > 750 and mix["gas"] < 2000
+    found = {f.id: f for f in s.findings}
+    assert "hybrid" in found["nearby_generation"].detail
+
+
+def test_substation_list_has_one_entry_per_site():
+    s = summarize_site(LngLat(lon=-122.40, lat=37.78))  # San Francisco: Embarcadero is mapped twice in OSM
+    named = [x["name"] for x in s.nearest_substations[:3] if not x["name"].startswith("Unnamed")]
+    assert len(named) == len(set(named)), named
+
+
+@pytest.mark.parametrize(
+    "site",
+    [
+        LngLat(lon=-122.30, lat=37.70),  # SF Bay
+        LngLat(lon=-122.40, lat=38.05),  # San Pablo Bay
+        LngLat(lon=-120.74665, lat=39.00337),  # Oxbow plant, in a gap between El Dorado and Placer
+        LngLat(lon=-118.27262, lat=33.71911),  # AltaSea plant, Port of Los Angeles
+    ],
+    ids=["sf_bay", "san_pablo_bay", "county_gap", "harbor"],
+)
+def test_bays_and_county_gaps_are_in_california(site: LngLat):
+    s = summarize_site(site)
+    _check_summary_invariants(s)
+    assert s.extras["in_california"] is True and s.site.county
+    assert s.site.name.startswith("Site in ")
+    assert s.population_within_10km is not None
+    assert "outside_california" not in {f.id for f in s.findings}
+
+
 @pytest.mark.parametrize(
     "a,b",
     [(KERN, LngLat(lon=-119.47, lat=35.85)), (KERN, LngLat(lon=-118.92, lat=35.40)), (TRACY, LngLat(lon=-121.10, lat=38.00))],
@@ -175,7 +266,7 @@ def test_albers_distance_matches_haversine(a: LngLat, b: LngLat):
     assert distance_km(a, b) == pytest.approx(want, rel=0.01)
 
 
-@pytest.mark.parametrize("site", [RENO, PACIFIC], ids=["reno", "pacific"])
+@pytest.mark.parametrize("site", [RENO, PACIFIC, LngLat(lon=-114.60, lat=32.70)], ids=["reno", "pacific", "yuma_az"])
 def test_outside_california_degrades_cleanly(site: LngLat):
     s = summarize_site(site)
     assert SiteSummary.model_validate_json(s.model_dump_json()) == s

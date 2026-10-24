@@ -1,9 +1,9 @@
 // Site summary for the current scenario site, shared by MapView and SitePanel.  OWNER: workstream A.
-// The store only fetches a summary when a site is clicked (selectSite), so for the preset
-// site (and after a failed click fetch) we fetch it here. One request per location: the
-// promise cache dedupes the two consumers, and map clicks in flight are tracked so we
-// don't race the store's own request.
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+// The store only fetches a summary when a site is clicked (selectSite), and only publishes it
+// once /api/site/intel has answered too, so we always fetch our own copy (preset site, map
+// clicks, failed store fetches) and let the store's copy take over when it lands. One request
+// per location: the promise cache dedupes the two consumers (the backend caches it as well).
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
 import type { LngLat, SiteSummary } from "@/lib/contract";
@@ -13,6 +13,7 @@ import { lngLat, locKey, num, rec, sameLoc, str } from "./geo";
 import { asFuel, type Fuel } from "./palette";
 
 const MAX_CACHED = 50;
+const RETRY_MS = 1500;
 const cache = new Map<string, Promise<SiteSummary>>();
 // Settled successes, so a remounted panel (AppShell re-keys it on every run) renders without a loading flash.
 const resolved = new Map<string, SiteSummary>();
@@ -21,7 +22,8 @@ function fetchSummary(p: LngLat): Promise<SiteSummary> {
   const key = locKey(p);
   let pr = cache.get(key);
   if (!pr) {
-    pr = api.siteSummary(p);
+    // One retry: a backend restart or a dev-server rebuild can drop a single request.
+    pr = api.siteSummary(p).catch(() => new Promise<void>((r) => setTimeout(r, RETRY_MS)).then(() => api.siteSummary(p)));
     cache.set(key, pr);
     pr.then(
       (s) => {
@@ -35,27 +37,11 @@ function fetchSummary(p: LngLat): Promise<SiteSummary> {
   return pr;
 }
 
-// --- map clicks in flight (selectSite fetches the summary itself) ---
-let pendingKey: string | null = null;
-const listeners = new Set<() => void>();
-const subscribe = (fn: () => void) => {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-};
-const setPending = (key: string | null) => {
-  pendingKey = key;
-  listeners.forEach((fn) => fn());
-};
-
-/** Call around selectSite() so panels show a loading state instead of fetching twice. */
+/** Call with selectSite()'s promise on a map click: starts our summary request right away, so the
+ *  panel and the map's ring and links don't wait for the store (which also waits for site intel). */
 export function trackSiteSelection(p: LngLat, selection: Promise<void>): void {
-  const key = locKey(p);
-  setPending(key);
-  selection
-    .catch(() => undefined)
-    .finally(() => {
-      if (pendingKey === key) setPending(null);
-    });
+  void fetchSummary(p).catch(() => undefined); // useSiteSummary reports the error
+  void selection.catch(() => undefined);
 }
 
 export interface SiteSummaryState {
@@ -70,10 +56,9 @@ export function useSiteSummary(): SiteSummaryState {
   const lat = scenario?.site.location.lat;
   const loc = useMemo(() => (lon !== undefined && lat !== undefined ? { lon, lat } : null), [lon, lat]);
   const key = loc ? locKey(loc) : null;
-  const pending = useSyncExternalStore(subscribe, () => pendingKey, () => null);
   // The store keeps a clicked site's summary after a preset switch moves the site: only use it if it matches.
   const fromStore = siteSummary && (!loc || !siteSummary.site?.location || sameLoc(siteSummary.site.location, loc)) ? siteSummary : null;
-  const needLocal = !fromStore && loc !== null && pending !== key;
+  const needLocal = !fromStore && loc !== null;
   const [local, setLocal] = useState<{ key: string; summary: SiteSummary | null; error: string | null } | null>(() => {
     const hit = key ? resolved.get(key) : undefined;
     return key && hit ? { key, summary: hit, error: null } : null;
@@ -93,7 +78,7 @@ export function useSiteSummary(): SiteSummaryState {
 
   if (fromStore) return { summary: fromStore, loading: false, error: null };
   if (!key) return { summary: null, loading: false, error: null };
-  if (pending === key || local?.key !== key) return { summary: null, loading: true, error: null };
+  if (local?.key !== key) return { summary: null, loading: true, error: null };
   return { summary: local.summary, loading: false, error: local.error };
 }
 

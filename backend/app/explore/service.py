@@ -9,12 +9,22 @@ warm summarize_site() takes a few milliseconds. A missing data file gives an emp
 and a summary that says the data is unavailable, never an exception.
 
 Screening choices beyond the brief (documented so judges can audit them):
+- "230 kV+" in the brief means the bulk-transmission class, so the high-voltage threshold is
+  220 kV: SCE's whole bulk system is labelled 220 kV (the same class as PG&E's 230 kV), and a
+  strict 230 kV cut would skip it and overstate distances across Southern California.
 - Substations: candidates are tagged >= 60 kV, or untagged with substation=transmission.
-  Cable transition stations are skipped: they are not places to interconnect.
-- Lines: only operational AC lines count. Proposed/Closed lines and the 500 kV DC interties
-  (which cannot be tapped) stay on the map but are never reported as the interconnection line.
+  Cable transition stations are skipped: they are not places to interconnect. Same-name OSM
+  objects within 500 m of each other are one site mapped twice and fill one slot of the nearest 3.
+- Lines: only operational AC lines count. Proposed/Closed lines and HVDC lines (the 500 kV DC
+  interties and the +/-200 kV Trans Bay Cable, which cannot be tapped) stay on the map but are
+  never reported as the interconnection line.
 - Utility: smallest containing territory, skipping the special-purpose water-agency
   suppliers (PWRPA, Eastside, MWD) that overlap the retail utilities.
+- County / in California: the Census cartographic counties are clipped to the shoreline and
+  simplified one by one, so a point in a hairline gap between counties (within 200 m of one) or
+  in an enclosed bay (SF, San Pablo, San Diego Bay) takes the nearest county.
+- Nearby generation mix: each plant's generator-level fuel mix, so a solar + storage plant counts
+  its battery MW as battery, not as solar.
 """
 
 from __future__ import annotations
@@ -47,12 +57,18 @@ POPULATION_FILE = "population_bg_ca.csv"
 FALLBACK_STYLE_FILE = "basemap_fallback.json"
 
 FUELS = ("solar", "wind", "gas", "hydro", "geothermal", "battery", "nuclear", "other")
-HV_KV = 230.0  # "high voltage" for interconnecting a ~1 GW site
+HV_KV = 220.0  # "high voltage" for interconnecting a ~1 GW site: the 230 kV class, incl. SCE's 220 kV system
 SUBSTATION_MIN_KV = 60.0
+SAME_SITE_M = 500.0  # same-name substations closer than this are one site mapped twice in OSM
 PLANT_RADIUS_KM = 25.0
 POPULATION_RADIUS_KM = 10.0
 NEAR_KM = 30.0  # info at or below, warn above
-FAIL_KM = 150.0  # no 230 kV+ substation this close: fail
+FAIL_KM = 150.0  # no 220 kV+ substation this close: fail
+COUNTY_SNAP_M = 200.0  # gaps between independently simplified counties are under ~70 m wide
+BAY_CLOSE_M = 1500.0  # seals the Golden Gate, Carquinez Strait and harbor mouths (see _california)
+# The bay fill applies west of here only: east of it the border is the Colorado River (Arizona),
+# whose meanders the closing would otherwise fill with Arizona land.
+BAY_FILL_MAX_LON = -115.0
 MAX_NEARBY_PLANTS = 30
 DISTANCE_METHOD = "Straight-line distance in EPSG:3310 (California Albers); real line routes are longer"
 
@@ -235,7 +251,7 @@ def layer_info() -> dict[str, dict[str, Any]]:
 
 def clear_caches() -> None:
     """Drop every loaded file, index and cached summary (after re-running a prep script)."""
-    for fn in (_collection, _encoded, _plants, _substations, _line_sets, _polygons, _population, _substation_coverage, _summary):
+    for fn in (_collection, _encoded, _plants, _substations, _line_sets, _polygons, _california, _population, _substation_coverage, _summary):
         fn.cache_clear()
 
 
@@ -359,7 +375,7 @@ def _lines(features: list[dict[str, Any]], min_kv: float) -> _Lines:
 
 @lru_cache(maxsize=1)
 def _line_sets() -> tuple[_Lines, _Lines]:
-    """(operational AC >= 230 kV, operational AC >= 69 kV)."""
+    """(operational AC >= 220 kV, operational AC >= 69 kV)."""
     feats = _collection("transmission")["features"]
     return _lines(feats, HV_KV), _lines(feats, 69.0)
 
@@ -385,6 +401,31 @@ def _polygons(name: str) -> _Polygons:
     ]
     geoms = np.asarray([shape(f["geometry"]) for f in keep], dtype=object)
     return _Polygons([f["properties"] for f in keep], geoms, shapely.STRtree(geoms))
+
+
+@dataclass(frozen=True)
+class _California:
+    tree: shapely.STRtree  # county polygons in EPSG:3310, same order as _polygons("boundaries")
+    outline: Any  # prepared EPSG:3310 (Multi)Polygon: counties plus enclosed bays; None without counties
+
+
+@lru_cache(maxsize=1)
+def _california() -> _California:
+    """County polygons in EPSG:3310 (for nearest-county lookups) and California's outline with its bays.
+
+    The cartographic counties are clipped to the shoreline, so SF, San Pablo and San Diego Bay lie
+    outside every county. A BAY_CLOSE_M morphological closing seals the narrow mouths (Golden Gate,
+    Carquinez Strait, harbor entrances); filling the holes that leaves adds the enclosed water and
+    the gaps between counties. Open bays (Monterey) and the ocean stay outside. Built on first use.
+    """
+    geoms = _polygons("boundaries").geoms
+    projected = shapely.transform(geoms, _project_coords) if len(geoms) else geoms
+    outline = None
+    if len(projected):
+        closed = shapely.union_all(projected).buffer(BAY_CLOSE_M).buffer(-BAY_CLOSE_M)
+        outline = shapely.union_all([shapely.Polygon(p.exterior) for p in shapely.get_parts(closed)])
+        shapely.prepare(outline)
+    return _California(shapely.STRtree(projected), outline)
 
 
 @dataclass(frozen=True)
@@ -420,10 +461,20 @@ def _population() -> _Population:
 # ---------------------------------------------------------------------------
 
 
-def _county_at(lon: float, lat: float) -> dict[str, Any] | None:
+def _county_at(lon: float, lat: float, x: float, y: float) -> dict[str, Any] | None:
+    """County containing the point; else the nearest county if the point is within COUNTY_SNAP_M of
+    one (hairline gaps between counties) or in an enclosed bay; else None (outside California)."""
     polys = _polygons("boundaries")
     hits = polys.containing(lon, lat)
-    return polys.props[hits[0]] if hits else None
+    if hits:
+        return polys.props[hits[0]]
+    if not len(polys.geoms) or not (math.isfinite(x) and math.isfinite(y)):
+        return None
+    ca = _california()
+    pt = shapely.Point(x, y)
+    idx, dist = ca.tree.query_nearest(pt, return_distance=True, all_matches=False)
+    in_bay = lon < BAY_FILL_MAX_LON and ca.outline is not None and ca.outline.contains(pt)
+    return polys.props[int(idx[0])] if float(dist[0]) <= COUNTY_SNAP_M or in_bay else None
 
 
 def _area(props: dict[str, Any]) -> float:
@@ -462,18 +513,32 @@ def _substation_entry(subs: _Substations, i: int, dist_m: float) -> dict[str, An
     }
 
 
+def _same_site(subs: _Substations, i: int, j: int) -> bool:
+    """Two OSM objects with the same real name within SAME_SITE_M: one substation mapped twice."""
+    a, b = subs.pts.props[i], subs.pts.props[j]
+    if not (a.get("named") is True and b.get("named") is True and a.get("name") == b.get("name")):
+        return False
+    return float(np.hypot(*(subs.pts.xy[i] - subs.pts.xy[j]))) <= SAME_SITE_M
+
+
 def _nearest_substations(x: float, y: float) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Nearest 3 candidates, plus the nearest 230 kV+ one if it is not already among them."""
+    """Nearest 3 candidates (one per site), plus the nearest 220 kV+ one if it is not already among them."""
     subs = _substations()
     if not len(subs.pts.props):
         return [], None
     d = subs.pts.distances_m(x, y)
     cand = np.flatnonzero(subs.candidate)
-    picks = [int(i) for i in cand[np.argsort(d[cand], kind="stable")[:3]]]
+    picks: list[int] = []
+    for i in cand[np.argsort(d[cand], kind="stable")].tolist():
+        if len(picks) == 3:
+            break
+        if not any(_same_site(subs, i, j) for j in picks):
+            picks.append(i)
     hv_idx = np.flatnonzero(subs.hv)
     hv = int(hv_idx[np.argmin(d[hv_idx])]) if len(hv_idx) else None
     if hv is not None and hv not in picks:
         picks.append(hv)
+        picks.sort(key=lambda i: d[i])  # a skipped same-site copy can be nearer than the 3rd pick
     entries = [_substation_entry(subs, i, d[i]) for i in picks]
     return entries, (_substation_entry(subs, hv, d[hv]) if hv is not None else None)
 
@@ -492,6 +557,17 @@ def _plants_near(x: float, y: float) -> tuple[list[dict[str, Any]], dict[str, An
         f = plants.pts.props[i].get("fuel")
         return f if f in FUELS else "other"
 
+    def mix(i: int) -> dict[str, float]:
+        """Per-fuel MW from the plant's generator-level fuel_mix (hybrids split their MW), or
+        the whole capacity under its dominant fuel when the mix is missing."""
+        raw = plants.pts.props[i].get("fuel_mix")
+        out: dict[str, float] = {}
+        for f, mw in (raw.items() if isinstance(raw, dict) else ()):
+            key = f if f in FUELS else "other"
+            out[key] = out.get(key, 0.0) + (_num(mw) or 0.0)
+        out = {f: mw for f, mw in out.items() if mw > 0}
+        return out or {fuel(i): float(plants.capacity_mw[i])}
+
     def entry(i: int) -> dict[str, Any]:
         p = plants.pts.props[i]
         return {
@@ -499,13 +575,15 @@ def _plants_near(x: float, y: float) -> tuple[list[dict[str, Any]], dict[str, An
             "name": str(p.get("name") or "Unnamed plant"),
             "fuel": fuel(i),
             "capacity_mw": float(plants.capacity_mw[i]),
+            "fuel_mix": mix(i),
             "distance_km": round(float(d[i]) / 1000.0, 2),
             "location": _lonlat(plants.pts, i),
         }
 
     by_fuel: dict[str, float] = {}
     for i in order:
-        by_fuel[fuel(int(i))] = by_fuel.get(fuel(int(i)), 0.0) + float(plants.capacity_mw[i])
+        for f, mw in mix(int(i)).items():
+            by_fuel[f] = by_fuel.get(f, 0.0) + mw
     stats = {
         "count": int(len(order)),
         "total_mw": round(float(plants.capacity_mw[order].sum()), 1),
@@ -559,14 +637,14 @@ def _kv(value: float | None) -> str:
 def _substation_finding(hv: dict[str, Any] | None, have_data: bool) -> Finding:
     fid = "hv_substation_distance"
     if not have_data:
-        return _finding(fid, "warn", "Substation data unavailable", "The substation layer did not load, so the nearest 230 kV+ substation is unknown.")
+        return _finding(fid, "warn", "Substation data unavailable", "The substation layer did not load, so the nearest 220 kV+ substation is unknown.")
     if hv is None or hv["distance_km"] > FAIL_KM:
         where = f" The nearest mapped one is {hv['name']} at {hv['distance_km']:.1f} km." if hv else ""
         return _finding(
             fid,
             "fail",
-            f"No 230 kV+ substation within {FAIL_KM:.0f} km",
-            f"OpenStreetMap shows no substation of 230 kV or more within {FAIL_KM:.0f} km.{where} "
+            f"No 220 kV+ substation within {FAIL_KM:.0f} km",
+            f"OpenStreetMap shows no substation of 220 kV or more within {FAIL_KM:.0f} km.{where} "
             "A site this remote would need a long new transmission line before it could serve a large load.",
             metric=hv["distance_km"] if hv else None,
             threshold=FAIL_KM,
@@ -582,14 +660,14 @@ def _substation_finding(hv: dict[str, Any] | None, have_data: bool) -> Finding:
         detail += " OSM tags it as a power plant's switchyard, so the usual connection point is the utility substation it feeds."
     if km > NEAR_KM:
         detail += f" Beyond {NEAR_KM:.0f} km the gen-tie becomes a major cost and permitting item."
-    return _finding(fid, "info" if km <= NEAR_KM else "warn", f"Nearest 230 kV+ substation {km:.1f} km", detail, metric=km, threshold=NEAR_KM)
+    return _finding(fid, "info" if km <= NEAR_KM else "warn", f"Nearest 220 kV+ substation {km:.1f} km", detail, metric=km, threshold=NEAR_KM)
 
 
 def _line_finding(line: dict[str, Any] | None, have_data: bool) -> Finding:
     fid = "hv_line_distance"
     if line is None:
-        why = "No operational AC line of 230 kV or more is mapped." if have_data else "The transmission layer did not load."
-        return _finding(fid, "warn", "No 230 kV+ line found", why)
+        why = "No operational AC line of 220 kV or more is mapped." if have_data else "The transmission layer did not load."
+        return _finding(fid, "warn", "No 220 kV+ line found", why)
     km = line["distance_km"]
     owner = f", {line['owner']}" if line.get("owner") else ""
     label = line.get("voltage_label") or (f"{line['voltage_kv']:g}" if line["voltage_kv"] is not None else "?")
@@ -599,7 +677,7 @@ def _line_finding(line: dict[str, Any] | None, have_data: bool) -> Finding:
     )
     if km > NEAR_KM:
         detail += f" A tie line over {NEAR_KM:.0f} km adds significant cost and permitting time."
-    return _finding(fid, "info" if km <= NEAR_KM else "warn", f"Nearest 230 kV+ line {km:.1f} km", detail, metric=km, threshold=NEAR_KM)
+    return _finding(fid, "info" if km <= NEAR_KM else "warn", f"Nearest 220 kV+ line {km:.1f} km", detail, metric=km, threshold=NEAR_KM)
 
 
 def _utility_label(utility: dict[str, Any]) -> str:
@@ -635,12 +713,14 @@ def _generation_finding(stats: dict[str, Any], largest: dict[str, Any] | None, i
         )
     mix = ", ".join(f"{fuel} {v:,.0f} MW" for fuel, v in stats["by_fuel_mw"].items())
     plural = "plant" if n == 1 else "plants"
+    largest_mix = largest.get("fuel_mix") or {}
+    kind = " + ".join(sorted(largest_mix, key=lambda f: -largest_mix[f])) + " hybrid" if len(largest_mix) > 1 else largest["fuel"]
     return _finding(
         "nearby_generation",
         "info",
         f"{n} operating {plural} ({mw:,.0f} MW) within {PLANT_RADIUS_KM:.0f} km",
-        f"Largest: {largest['name']} ({largest['capacity_mw']:,.0f} MW {largest['fuel']}, {largest['distance_km']:.1f} km). "
-        f"Mix: {mix}. Nameplate capacity from EIA-860 2024.",
+        f"Largest: {largest['name']} ({largest['capacity_mw']:,.0f} MW {kind}, {largest['distance_km']:.1f} km). "
+        f"Mix: {mix}. Nameplate capacity from EIA-860 2024; hybrid plants are split by generator.",
         metric=float(mw),
     )
 
@@ -665,10 +745,14 @@ def _observed(name: str, note: str | None = None) -> Provenance:
 def _provenance(available: set[str]) -> list[Provenance]:
     """One Provenance per dataset that loaded, plus the inferred distance method."""
     notes: dict[str, str | None] = {
-        "plants": "Operating generators summed to nameplate MW per plant (plants >= 1 MW); status as of end of 2024.",
+        "plants": (
+            "Operating generators summed to nameplate MW per plant (plants >= 1 MW); status as of end of 2024. "
+            "The fuel mix splits hybrid plants (e.g. solar + storage) by generator."
+        ),
         "transmission": (
             f"Data last edited {_updated('transmission') or 'unknown'}. Nearest-line results use operational AC lines only "
-            "(proposed/closed lines and 500 kV DC interties are excluded)."
+            "(proposed/closed lines and HVDC lines, i.e. the 500 kV DC interties and the Trans Bay Cable, are excluded). "
+            "220 kV+ is the 230 kV class and up, including SCE's 220 kV bulk system."
         ),
         "substations": None,
         "boundaries": None,
@@ -686,7 +770,8 @@ def _provenance(available: set[str]) -> list[Provenance]:
         notes["substations"] = (
             f"OSM data as of {_updated('substations') or 'unknown'}. Volunteer-mapped: some substations are missing, "
             f"{no_kv:.0%} lack a voltage tag and {no_name:.0%} lack a name. HIFLD substations are restricted and EIA "
-            "publishes no substation locations, so OSM is the open source. Counted: tagged >= 60 kV or substation=transmission."
+            "publishes no substation locations, so OSM is the open source. Counted: tagged >= 60 kV or substation=transmission; "
+            "220 kV+ includes SCE's 220 kV substations."
         )
     out = [_observed(name, note) for name, note in notes.items() if name in available]
     out.append(
@@ -723,7 +808,7 @@ def _summary(lon: float, lat: float) -> SiteSummary:
     x, y = _to_albers().transform(lon, lat)
     projected = math.isfinite(x) and math.isfinite(y)
 
-    county = _county_at(lon, lat)
+    county = _county_at(lon, lat, x, y)
     utility, overlapping = _utilities_at(lon, lat)
     ba = _ba_at(lon, lat)
     in_california: bool | None = (county is not None) if "boundaries" in available else None
@@ -755,7 +840,7 @@ def _summary(lon: float, lat: float) -> SiteSummary:
                 "warn",
                 "Outside California data coverage",
                 "This point is not inside any California county. Plants, lines, boundaries and population cover California only "
-                "(substations reach 2 km past the border), so nearby out-of-state infrastructure is missing and distances may be overstated.",
+                "(substations reach 2 km into neighboring states), so nearby out-of-state infrastructure is missing and distances may be overstated.",
             )
         )
     findings.append(_substation_finding(hv_sub, "substations" in available))

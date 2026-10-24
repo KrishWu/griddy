@@ -5,7 +5,8 @@ Writes three processed GeoJSON files to data/explore/ (raw downloads cached in d
   utilities_ca.geojson              electric retail service territories, CEC "Electric Load Serving
                                     Entities (IOU & POU)"; IOU and POU polygons overlap, so a lookup
                                     should pick the smallest containing polygon
-  balancing_authorities_ca.geojson  balancing authority areas (CEC), keyed by EIA BA code
+  balancing_authorities_ca.geojson  balancing authority areas (CEC), keyed by common acronym (the EIA
+                                    BA code, except CAISO = EIA CISO and LADWP = EIA LDWP)
 
 Run from backend/:  .venv/Scripts/python -m app.explore.prepare_boundaries
 Idempotent: reuses cached raw downloads; delete data/explore/raw/<file> to refetch.
@@ -46,7 +47,9 @@ BA_URL = "https://services3.arcgis.com/bWPjFyq029ChCGur/arcgis/rest/services/Bal
 LSE_SOURCE = "CEC Electric Load Serving Entities (IOU & POU)"
 BA_SOURCE = "CEC Balancing Authority areas"
 
-# CEC NAME -> (EIA BA code, display name)
+# CEC NAME -> (common acronym, display name). The acronym is the EIA BA code except CAISO (EIA: CISO)
+# and LADWP (EIA: LDWP), so EIA-860 plant records say CISO/LDWP where this layer says CAISO/LADWP.
+# "CAISO" must stay: it is the contract default for Site.balancing_authority.
 BA_CODES: dict[str, tuple[str, str]] = {
     "CALISO": ("CAISO", "California ISO"),
     "BANC": ("BANC", "Balancing Authority of Northern California"),
