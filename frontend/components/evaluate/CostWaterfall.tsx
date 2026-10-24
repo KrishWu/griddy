@@ -20,6 +20,8 @@ import {
   type YAxisTickContentProps,
 } from "recharts";
 
+import { Term } from "@/components/glossary/Term";
+import { usePanelActive } from "@/components/shell/panelActive";
 import { usd } from "@/lib/format";
 
 import { CHART_VARS, TICK, TOOLTIP_CARD } from "./chartTheme";
@@ -249,6 +251,7 @@ export function CostWaterfall({
   dollarYear?: number;
 }) {
   const { rows, total } = buildWaterfall(breakdown);
+  const shown = usePanelActive(); // hidden sidebar tab: no chart (it would measure 0 x 0)
   const groups = (["capital", "operating", "credit", "total"] as Group[]).filter((g) => rows.some((r) => r.group === g));
   const mismatch = Math.abs(total - npcUsd) > Math.max(1, Math.abs(npcUsd) * 0.005);
   const height = rows.length * 24 + 26;
@@ -256,7 +259,9 @@ export function CostWaterfall({
   return (
     <figure className={CHART_VARS}>
       <figcaption className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2">
-        <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Net present cost build-up</span>
+        <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+          <Term k="npc">Net present cost</Term> build-up
+        </span>
         <span className="text-[10px] text-zinc-500">
           PV, {years} yr @ {(rate * 100).toFixed(1).replace(/\.0$/, "")}% real{dollarYear ? `, ${dollarYear} $` : ""}
         </span>
@@ -270,33 +275,35 @@ export function CostWaterfall({
         ))}
       </ul>
       <div style={{ height }}>
-        <ResponsiveContainer>
-          <BarChart data={rows} layout="vertical" margin={{ top: 2, right: 54, bottom: 0, left: 0 }} barSize={14}>
-            <CartesianGrid horizontal={false} stroke="var(--ev-grid)" />
-            <XAxis
-              type="number"
-              tickFormatter={compactUsd}
-              tick={TICK}
-              tickLine={false}
-              axisLine={{ stroke: "var(--ev-axis)" }}
-              tickCount={4}
-            />
-            <YAxis
-              type="category"
-              dataKey="short"
-              width={118}
-              interval={0}
-              tick={CategoryTick}
-              tickLine={false}
-              axisLine={false}
-            />
-            <Tooltip content={StepTooltip} cursor={{ fill: "var(--ev-cursor)" }} isAnimationActive={false} />
-            <Bar dataKey="base" stackId="w" fill="transparent" activeBar={false} legendType="none" tooltipType="none" isAnimationActive={false} />
-            <Bar dataKey="delta" stackId="w" shape={StepShape} activeBar={StepShape} isAnimationActive={false}>
-              <LabelList dataKey="display" position="right" fill="var(--ev-label)" fontSize={10} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {shown && (
+          <ResponsiveContainer>
+            <BarChart data={rows} layout="vertical" margin={{ top: 2, right: 54, bottom: 0, left: 0 }} barSize={14}>
+              <CartesianGrid horizontal={false} stroke="var(--ev-grid)" />
+              <XAxis
+                type="number"
+                tickFormatter={compactUsd}
+                tick={TICK}
+                tickLine={false}
+                axisLine={{ stroke: "var(--ev-axis)" }}
+                tickCount={4}
+              />
+              <YAxis
+                type="category"
+                dataKey="short"
+                width={118}
+                interval={0}
+                tick={CategoryTick}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip content={StepTooltip} cursor={{ fill: "var(--ev-cursor)" }} isAnimationActive={false} />
+              <Bar dataKey="base" stackId="w" fill="transparent" activeBar={false} legendType="none" tooltipType="none" isAnimationActive={false} />
+              <Bar dataKey="delta" stackId="w" shape={StepShape} activeBar={StepShape} isAnimationActive={false}>
+                <LabelList dataKey="display" position="right" fill="var(--ev-label)" fontSize={10} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
       {mismatch && (
         <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-400">

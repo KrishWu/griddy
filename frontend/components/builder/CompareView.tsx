@@ -5,8 +5,10 @@ import { useEffect, useRef } from "react";
 import { Area, ComposedChart, Line, ResponsiveContainer, YAxis } from "recharts";
 
 import { ComparisonTable } from "@/components/evaluate/ComparisonTable";
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import type { ScenarioResult } from "@/lib/contract";
+import type { GlossaryKey } from "@/lib/glossary";
 import { pct, tons, usd } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
@@ -50,7 +52,12 @@ function dayData(r: ScenarioResult) {
   });
 }
 
-function ScenarioCard({ r, onLoad, yMax }: { r: ScenarioResult; onLoad?: () => void; yMax: number }) {
+/** Glossary tooltips on the first card only: the same labels repeat on every card. */
+function CardTerm({ on, k, children }: { on: boolean; k: GlossaryKey; children: string }) {
+  return on ? <Term k={k}>{children}</Term> : <>{children}</>;
+}
+
+function ScenarioCard({ r, onLoad, yMax, explain }: { r: ScenarioResult; onLoad?: () => void; yMax: number; explain: boolean }) {
   const s = r.simulation.summary;
   const e = r.evaluation.economics;
   return (
@@ -80,15 +87,25 @@ function ScenarioCard({ r, onLoad, yMax }: { r: ScenarioResult; onLoad?: () => v
       </div>
       <p className="mb-2 text-[10px] text-zinc-500">A July day, hour by hour</p>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-        <dt className="text-zinc-500">CAPEX</dt>
+        <dt className="text-zinc-500">
+          <CardTerm on={explain} k="capex">CAPEX</CardTerm>
+        </dt>
         <dd className="text-right tabular-nums">{usd(e.capex_total_usd)}</dd>
-        <dt className="text-zinc-500">LCOE</dt>
+        <dt className="text-zinc-500">
+          <CardTerm on={explain} k="lcoe">LCOE</CardTerm>
+        </dt>
         <dd className="text-right tabular-nums">${e.lcoe_usd_per_mwh.toFixed(0)}/MWh</dd>
-        <dt className="text-zinc-500">CO2e / yr</dt>
+        <dt className="text-zinc-500">
+          <CardTerm on={explain} k="co2e">CO2e</CardTerm> / yr
+        </dt>
         <dd className="text-right tabular-nums">{tons(r.evaluation.emissions.annual_t_co2e)}</dd>
-        <dt className="text-zinc-500">On-site clean</dt>
+        <dt className="text-zinc-500">
+          <CardTerm on={explain} k="onsite_clean_share">On-site clean</CardTerm>
+        </dt>
         <dd className="text-right tabular-nums">{pct(s.onsite_clean_share)}</dd>
-        <dt className="text-zinc-500">Unmet hours</dt>
+        <dt className="text-zinc-500">
+          <CardTerm on={explain} k="unmet">Unmet hours</CardTerm>
+        </dt>
         <dd className={`text-right tabular-nums ${s.hours_unmet ? "font-semibold text-red-600" : ""}`}>{s.hours_unmet}</dd>
       </dl>
     </div>
@@ -128,11 +145,12 @@ export function CompareView() {
       ) : (
         <>
           <div className={`grid gap-3 ${compareResults.length > 3 ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
-            {compareResults.map((r) => (
+            {compareResults.map((r, i) => (
               <ScenarioCard
                 key={r.scenario.id}
                 r={r}
                 yMax={yMax}
+                explain={i === 0}
                 onLoad={r.scenario.id === "custom" ? undefined : () => loadCompared(r.scenario.preset ?? r.scenario.id)}
               />
             ))}

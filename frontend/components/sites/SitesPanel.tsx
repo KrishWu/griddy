@@ -6,6 +6,7 @@
 // `onRequestChange` when given, so the map and this panel stay on one request.
 import { useEffect, useMemo, useState } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import { Panel, Stat } from "@/components/shell/Panel";
 import { post } from "@/lib/api";
 import type { AssetKind, SiteCandidate, SiteRecommendation, SiteRequest } from "@/lib/contract";
@@ -130,7 +131,7 @@ export function SitesPanel({
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">
-            New capacity to cover the {rec.scenario} scenario&apos;s growth by {rec.year}, placed on the best-scoring 5 km cells.
+            New capacity to cover the {rec.scenario} <Term k="forecast_scenario">scenario</Term>&apos;s growth by {rec.year}, placed on the best-scoring 5 km cells.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {KINDS.filter((k) => totals.get(k.kind)).map((k) => (
@@ -142,7 +143,9 @@ export function SitesPanel({
           </div>
           {rec.total_capex_usd != null && rec.total_capex_usd > 0 && (
             <p className="text-sm">
-              <span className="text-zinc-500">CAPEX incl. gen-ties:</span> <span className="font-semibold tabular-nums">{usd(rec.total_capex_usd)}</span>
+              <span className="text-zinc-500">
+                <Term k="capex">CAPEX</Term> incl. <Term k="gen_tie">gen-ties</Term>:
+              </span> <span className="font-semibold tabular-nums">{usd(rec.total_capex_usd)}</span>
             </p>
           )}
           {unmet.length > 0 && (
@@ -164,7 +167,7 @@ export function SitesPanel({
             <Slider label="Peak cover split" value={mix.gas_cc / (mix.battery + mix.gas_cc || 1)} onChange={(v) => setMix({ battery: 1 - v, gas_cc: v })} left="battery" right="gas" />
             {rec.capacity_credit && (
               <p className="text-[11px] text-zinc-500">
-                At the evening net-load peak, 1 MW of solar counts as {pct(rec.capacity_credit.solar_pv ?? 0)}
+                At the evening net-load peak, 1 MW of solar <Term k="capacity_credit">counts as</Term> {pct(rec.capacity_credit.solar_pv ?? 0)}
                 {rec.capacity_credit.onshore_wind != null && ` and wind as ${pct(rec.capacity_credit.onshore_wind)}`}, so firm capacity covers most of the peak.
               </p>
             )}
