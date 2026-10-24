@@ -3,7 +3,8 @@
 Everything is read from processed files in data/simulate/ (built offline by app/simulate/prep/)
 and cached per process, so simulate() never waits on the network for a pre-baked site. A site
 that isn't pre-baked costs one Open-Meteo fetch (cached in data/simulate/cache/); if that fails,
-the nearest pre-baked site stands in and the provenance says so.
+the nearest pre-baked site stands in and the provenance says so. Only real loads are cached:
+after a failed fetch the stand-in is reused for WEATHER_RETRY_S, then the next run retries.
 
 Time: index i = the hour beginning Jan 1 00:00 PST + i (fixed UTC-8, no DST). Profiles are 2024;
 other weather years reuse them (Feb 29 dropped in non-leap years) and say so in provenance.
@@ -15,6 +16,7 @@ import calendar
 import json
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 
@@ -29,6 +31,10 @@ log = logging.getLogger(__name__)
 SIM_DIR = DATA_DIR / "simulate"
 PROFILE_YEAR = 2024
 DLAP = {"pgae": "DLAP_PGAE-APND", "sce": "DLAP_SCE-APND", "sdge": "DLAP_SDGE-APND"}
+# After a failed live weather fetch, skip the network for this long: one run calls prepare()
+# for simulate and again for the stress tests, and should pay the 10 s fetch timeout once.
+WEATHER_RETRY_S = 90.0
+WEATHER_SOURCE_FALLBACK = "Open-Meteo best_match: ECMWF IFS ~9 km analysis (2017+)"
 
 
 def n_hours(year: int) -> int:
@@ -62,6 +68,11 @@ class SiteWeather:
     wind_cf: np.ndarray
     provenance: tuple[Provenance, ...]
     note: str | None = None  # set when a stand-in site or synthetic data was used
+    source_key: str = ""  # site whose weather this actually is: the stand-in's key, "synthetic", or "" = key
+
+    def __post_init__(self) -> None:
+        if not self.source_key:
+            object.__setattr__(self, "source_key", self.key)
 
 
 def _baked_sites() -> list[dict]:
@@ -78,7 +89,7 @@ def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 6371 * 2 * math.asin(math.sqrt(a))
 
 
-def _weather_provenance(meta: dict, key: str) -> tuple[Provenance, ...]:
+def _weather_provenance(meta: dict, key: str, stand_in: str | None = None) -> tuple[Provenance, ...]:
     grid = f"grid point {meta['grid_lat']:.3f}, {meta['grid_lon']:.3f}" if meta.get("grid_lat") is not None else key
     pv = meta.get("pvwatts") or {}
     pv_note = (
@@ -92,7 +103,9 @@ def _weather_provenance(meta: dict, key: str) -> tuple[Provenance, ...]:
             kind="observed",
             source=f"Open-Meteo historical weather, {PROFILE_YEAR} hourly ({grid})",
             url="https://open-meteo.com/en/docs/historical-weather-api",
-            note="Irradiance, 100 m wind, 2 m temperature; ERA5-based reanalysis",
+            note="; ".join(
+                x for x in (stand_in, "Irradiance, 100 m wind, 2 m temperature", meta.get("source") or WEATHER_SOURCE_FALLBACK) if x
+            ),
         ),
         Provenance(
             kind="simulated",
@@ -120,38 +133,40 @@ def _synthetic_weather(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return temp, solar, wind
 
 
+def _frame_weather(key: str, df: pd.DataFrame, provenance: tuple[Provenance, ...], **kw) -> SiteWeather:
+    return SiteWeather(
+        key=key,
+        temp_c=df["temp_c"].to_numpy(float),
+        solar_cf=df["solar_cf"].to_numpy(float),
+        wind_cf=df["wind_cf"].to_numpy(float),
+        provenance=provenance,
+        **kw,
+    )
+
+
 @lru_cache(maxsize=64)
-def _site_weather_2024(key: str, lat: float, lon: float) -> SiteWeather:
+def _real_site_weather(key: str, lat: float, lon: float) -> SiteWeather:
+    """This site's own weather (pre-baked, runtime cache or one live fetch). Raises on failure,
+    and lru_cache never caches an exception, so a failed fetch is retried on a later run."""
     from app.simulate import weather  # pvlib/httpx only load when a profile is first needed
 
-    try:
-        df, meta = weather.load_or_fetch(lat, lon, PROFILE_YEAR, allow_network=True)
-        return SiteWeather(
-            key=key,
-            temp_c=df["temp_c"].to_numpy(float),
-            solar_cf=df["solar_cf"].to_numpy(float),
-            wind_cf=df["wind_cf"].to_numpy(float),
-            provenance=_weather_provenance(meta, key),
-        )
-    except Exception as exc:  # noqa: BLE001 - any failure falls back to a stand-in site
-        log.warning("weather for %s unavailable (%s); falling back", key, exc)
+    df, meta = weather.load_or_fetch(lat, lon, PROFILE_YEAR, allow_network=True)
+    return _frame_weather(key, df, _weather_provenance(meta, key))
 
-    sites = sorted(_baked_sites(), key=lambda s: _km(lat, lon, s["lat"], s["lon"]))
-    for s in sites:
+
+@lru_cache(maxsize=64)
+def _fallback_site_weather(key: str, lat: float, lon: float) -> SiteWeather:
+    """Nearest pre-baked site, else synthetic shapes. Safe to cache: baked files never change at runtime."""
+    from app.simulate import weather
+
+    for s in sorted(_baked_sites(), key=lambda s: _km(lat, lon, s["lat"], s["lon"])):
         try:
             df, meta = weather.load_or_fetch(s["lat"], s["lon"], PROFILE_YEAR, allow_network=False)
         except Exception:  # noqa: BLE001
             continue
         km = _km(lat, lon, s["lat"], s["lon"])
         note = f"Weather for {key} unavailable; using nearest pre-baked site {s.get('name', s['key'])} ({km:.0f} km away)"
-        return SiteWeather(
-            key=key,
-            temp_c=df["temp_c"].to_numpy(float),
-            solar_cf=df["solar_cf"].to_numpy(float),
-            wind_cf=df["wind_cf"].to_numpy(float),
-            provenance=_weather_provenance(meta, s["key"]),
-            note=note,
-        )
+        return _frame_weather(key, df, _weather_provenance(meta, s["key"], stand_in=note), note=note, source_key=s["key"])
 
     temp, solar, wind = _synthetic_weather(n_hours(PROFILE_YEAR))
     return SiteWeather(
@@ -161,7 +176,34 @@ def _site_weather_2024(key: str, lat: float, lon: float) -> SiteWeather:
         wind_cf=wind,
         provenance=(Provenance(kind="assumption", source="Synthetic solar/wind/temperature shapes (no weather data available)"),),
         note="No weather data available; synthetic shapes used",
+        source_key="synthetic",
     )
+
+
+_weather_failed_at: dict[str, float] = {}  # key -> time.monotonic() of the last failed real load
+
+
+def _site_weather_2024(key: str, lat: float, lon: float) -> SiteWeather:
+    failed = _weather_failed_at.get(key)
+    if failed is None or time.monotonic() - failed >= WEATHER_RETRY_S:
+        try:
+            w = _real_site_weather(key, lat, lon)
+            _weather_failed_at.pop(key, None)
+            return w
+        except Exception as exc:  # noqa: BLE001 - any failure falls back to a stand-in site
+            log.warning("weather for %s unavailable (%s); falling back for %.0f s", key, exc, WEATHER_RETRY_S)
+            _weather_failed_at[key] = time.monotonic()
+    return _fallback_site_weather(key, lat, lon)
+
+
+def clear_weather_cache() -> None:
+    """Forget cached site weather and fetch failures (tests; a re-baked site file)."""
+    _real_site_weather.cache_clear()
+    _fallback_site_weather.cache_clear()
+    _weather_failed_at.clear()
+
+
+_site_weather_2024.cache_clear = clear_weather_cache  # type: ignore[attr-defined]  # the name tests used
 
 
 def site_key(lat: float, lon: float) -> str:
@@ -181,6 +223,7 @@ def site_weather(lat: float, lon: float, year: int) -> SiteWeather:
         wind_cf=fit_year(w.wind_cf, year),
         provenance=w.provenance,
         note="; ".join(x for x in (w.note, _year_note(year)) if x),
+        source_key=w.source_key,
     )
 
 
@@ -222,7 +265,8 @@ def dlap_for(site: Site) -> str:
 def _synthetic_grid(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     hod = np.arange(n) % 24
     solar_hours = (hod >= 8) & (hod <= 16)
-    price = np.where(solar_hours, 25.0, 70.0) + 25 * np.clip(np.sin(np.pi * (hod - 16) / 6), 0, None)
+    evening = (hod >= 16) & (hod <= 22)  # one bump, peaking at 19:00; sin() alone also peaks at 07:00
+    price = np.where(solar_hours, 25.0, 70.0) + 25 * np.where(evening, np.sin(np.pi * (hod - 16) / 6), 0.0)
     co2 = np.where(solar_hours, 150.0, 330.0)
     cfe = np.where(solar_hours, 0.7, 0.4)
     return price, co2, cfe

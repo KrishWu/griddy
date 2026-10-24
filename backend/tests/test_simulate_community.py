@@ -12,9 +12,15 @@ import pandas as pd
 import pytest
 
 from app import DATA_DIR
-from app.simulate.prep.community import canonical_index, fill_gaps
+from app.simulate.prep.community import (
+    EIA_CISO_LABEL_LAG_H,
+    canonical_index,
+    fill_gaps,
+    load_raw,
+)
 
 CSV = DATA_DIR / "simulate" / "eia930_pgae_2024.csv"
+CAISO_CSV = DATA_DIR / "simulate" / "caiso_2024_hourly.csv"
 
 
 @pytest.fixture(scope="module")
@@ -55,6 +61,47 @@ def test_summer_peak(df: pd.DataFrame) -> None:
 def test_evening_above_night(df: pd.DataFrame) -> None:
     hod = df["shape"].groupby(df["hour"] % 24).mean()
     assert hod.loc[16:19].mean() > hod.loc[2:5].mean()
+
+
+def _diff_corr(a: np.ndarray, b: np.ndarray, lag: int) -> float:
+    """corr(diff a[t + lag], diff b[t]); a positive best lag means `a` runs late of `b`."""
+    da, db = np.diff(a), np.diff(b)
+    if lag > 0:
+        da, db = da[lag:], db[:-lag]
+    elif lag < 0:
+        da, db = da[:lag], db[-lag:]
+    return float(np.corrcoef(da, db)[0, 1])
+
+
+def test_aligned_with_caiso_load(df: pd.DataFrame) -> None:
+    """EIA's CISO stamps run 1 h late; after the prep correction the shape must line up
+    with CAISO's own load (net of the signed fuel-mix columns = supply = load) at lag 0."""
+    if not CAISO_CSV.exists():
+        pytest.skip(f"{CAISO_CSV.name} missing; run `python -m app.simulate.prep.caiso`")
+    caiso = pd.read_csv(CAISO_CSV)
+    assert len(caiso) == len(df)
+    net = caiso[[c for c in caiso.columns if c.endswith("_mw")]].sum(axis=1).to_numpy(float)
+    eia = df["demand_mw"].to_numpy(float)
+    corr = {lag: _diff_corr(eia, net, lag) for lag in range(-3, 4)}
+    assert max(corr, key=corr.__getitem__) == 0, corr
+    assert corr[0] > 0.8  # PG&E is ~45% of CAISO load; same-hour changes track closely
+    assert corr[0] - max(corr[-1], corr[1]) > 0.05, corr  # a clear peak, not a tie
+
+
+def test_load_raw_applies_ciso_label_lag(tmp_path) -> None:
+    """A row EIA stamps 'UTC end 10:00' (02:00 PST) is the hour beginning 00:00 PST."""
+    path = tmp_path / "sub.csv"
+    path.write_text(
+        '"Balancing Authority","Data Date","Hour Number","Sub-Region","Demand (MW)",'
+        '"Local Time at End of Hour","UTC Time at End of Hour"\n'
+        'CISO,01/01/2024,2,PGAE,"9,905",01/01/2024 2:00:00 AM,01/01/2024 10:00:00 AM\n'
+        "CISO,01/01/2024,2,SCE,9800,01/01/2024 2:00:00 AM,01/01/2024 10:00:00 AM\n"
+    )
+    s, n_dup = load_raw([path])
+    assert EIA_CISO_LABEL_LAG_H == 1
+    assert n_dup == 0 and len(s) == 1  # other subregions dropped
+    assert s.index[0] == pd.Timestamp("2024-01-01 00:00", tz="Etc/GMT+8")
+    assert s.iloc[0] == 9905.0  # thousands separator parsed
 
 
 def test_fill_gaps_keeps_daily_cycle() -> None:

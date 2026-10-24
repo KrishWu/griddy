@@ -1,11 +1,13 @@
 """Unit tests for the dispatch core (app/simulate/dispatch.py).  OWNER: workstream B.
 
 One test per dispatch rule on small hand-computed cases, then a randomized property
-test over many seeds and a performance check on a full leap year.
+test over many seeds, a check on the real preset inputs, and a performance check on a
+full leap year.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import time
 import warnings
@@ -13,7 +15,8 @@ import warnings
 import numpy as np
 import pytest
 
-from app.simulate.dispatch import GENERATION_KEYS, Dispatch, Drivers, Fleet, dispatch
+from app.simulate import dispatch as dispatch_module
+from app.simulate.dispatch import GENERATION_KEYS, VOLL_USD_PER_MWH, Dispatch, Drivers, Fleet, dispatch
 
 TOL = 1e-6
 ETA = 0.9  # tests use rte = 0.81 so eta_c = eta_d = 0.9 exactly
@@ -54,7 +57,7 @@ def assert_invariants(fleet: Fleet, drv: Drivers, d: Dispatch) -> None:
     for s in series:
         assert s.shape == (n,)
         assert np.isfinite(s).all()
-        assert (s >= -TOL).all()
+        assert (s >= 0.0).all(), "flows and SOC are never negative, not even by float residue"
     assert math.isfinite(d.initial_soc_mwh)
 
     g = d.generation_mw
@@ -465,7 +468,11 @@ def test_random_dispatch_invariants(seed: int):
 @pytest.mark.parametrize("seed", range(60))
 def test_random_dispatch_invariants_with_grid_charging(seed: int):
     fleet, drv, frac = _random_case(seed, grid_charging=True)
-    assert_invariants(fleet, drv, dispatch(fleet, drv, initial_soc_frac=frac))
+    d = dispatch(fleet, drv, initial_soc_frac=frac)
+    assert_invariants(fleet, drv, d)
+    if frac is None:  # rule 6 safety net: grid charging never makes a cyclic year dearer
+        off = dispatch(_without_grid_charging(fleet), drv)
+        assert _energy_cost(d, drv) <= _energy_cost(off, drv) + 1e-9 * abs(_energy_cost(off, drv))
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +493,19 @@ def _arbitrage_day(**fleet_kw) -> tuple[Fleet, Drivers]:
 
 
 def _energy_cost(d: Dispatch, drv: Drivers) -> float:
-    return float((d.imports_mw * drv.import_cost_usd_per_mwh).sum() + drv.gas_cc_cost_usd_per_mwh * d.generation_mw["gas_cc"].sum())
+    """Imports + gas - export revenue + unserved load at VOLL (what the safety net compares)."""
+    g = d.generation_mw
+    return float(
+        d.imports_mw @ drv.import_cost_usd_per_mwh
+        + (g["gas_cc"] * drv.gas_cc_cost_usd_per_mwh).sum()
+        + (g["gas_ct"] * drv.gas_ct_cost_usd_per_mwh).sum()
+        - d.exports_mw @ drv.export_price_usd_per_mwh
+        + VOLL_USD_PER_MWH * d.unmet_mw.sum()
+    )
+
+
+def _without_grid_charging(fleet: Fleet) -> Fleet:
+    return dataclasses.replace(fleet, grid_charging=False)
 
 
 def test_grid_charging_buys_cheap_and_displaces_dear_imports():
@@ -497,7 +516,7 @@ def test_grid_charging_buys_cheap_and_displaces_dear_imports():
     assert d.discharge_mw[18:22].sum() > 0  # ... and spent in the $200 hours
     # Stored energy costs $25 / 0.81 = $30.9 delivered: not worth spending on $30 hours.
     assert d.discharge_mw[6:18].sum() == pytest.approx(0, abs=TOL)
-    off = dispatch(Fleet(**{**fleet.__dict__, "grid_charging": False}), drv, initial_soc_frac=0.0)
+    off = dispatch(_without_grid_charging(fleet), drv, initial_soc_frac=0.0)
     assert _energy_cost(d, drv) < _energy_cost(off, drv)
 
 
@@ -539,6 +558,148 @@ def test_grid_charging_needs_spare_import_capacity():
     assert d.imports_mw.max() <= fleet.import_limit_mw + TOL
 
 
+def _solar_week_with_one_dear_hour() -> tuple[Fleet, Drivers]:
+    """Flat 100 MW load, 300 MW of solar at 09-15 h (6 h x 200 MW surplus), a 50 MW /
+    200 MWh battery and imports at $40 except $200 at 18 h, for 7 days. The $200 hour is
+    always within 24 h, so every other hour looks cheap, yet solar fills the battery every
+    day and leaves no room to charge from the grid."""
+    n = 24 * 7
+    hour = np.arange(n) % 24
+    fleet = Fleet(solar_mw=300.0, batt_mw=50.0, batt_mwh=200.0, rte=0.81, import_limit_mw=200.0, grid_charging=True)
+    drv = drivers(np.full(n, 100.0), solar_cf=np.where((hour >= 9) & (hour < 15), 1.0, 0.0), import_cost=np.where(hour == 18, 200.0, 40.0))
+    return fleet, drv
+
+
+def test_cheap_hours_release_stored_solar_the_next_surplus_would_spill():
+    fleet, drv = _solar_week_with_one_dear_hour()
+    d = dispatch(fleet, drv)
+    off = dispatch(_without_grid_charging(fleet), drv)
+    assert_invariants(fleet, drv, d)
+    assert d.grid_charge_mw.sum() == pytest.approx(0, abs=TOL)
+    # Holding all 180 deliverable MWh through the cheap hours for the one $200 hour would
+    # leave 144 MWh in the battery overnight and curtail tomorrow's solar. Instead it
+    # delivers 50 + 50 + 30 MW at 15-17 h, keeps 50 MW for 18 h and is empty by morning.
+    np.testing.assert_allclose(d.discharge_mw[18::24], 50.0)
+    np.testing.assert_allclose(d.soc_mwh[8::24], 0.0, atol=TOL)
+    assert d.curtailed_mw.sum() == pytest.approx(off.curtailed_mw.sum())
+    # Per day: imports 2,400 - 600 solar - 180 battery = 1,620 MWh, 50 of them at $200.
+    # Without grid charging the battery runs dry at 18 h (70 MWh at $200): $76,000.
+    daily = (d.imports_mw * drv.import_cost_usd_per_mwh).reshape(7, 24).sum(axis=1)
+    np.testing.assert_allclose(daily, 50 * 200 + 1570 * 40)
+    assert _energy_cost(off, drv) == pytest.approx(7 * 76_000)
+
+
+def test_release_waits_while_unserved_load_lies_ahead():
+    # Same week, but CC (100 MW @ $30, carrying the rest of the night) is out at 18 h, when
+    # a 150 MW peak meets the 100 MW import limit: without the battery 50 MW go unserved.
+    # The cheap hours before it then release nothing, and the battery covers the gap.
+    fleet, drv = _solar_week_with_one_dear_hour()
+    hour = np.arange(drv.demand_mw.size) % 24
+    drv.demand_mw[hour == 18] = 150.0
+    fleet.import_limit_mw = 100.0
+    fleet.gas_cc_mw = np.where(hour == 18, 0.0, 100.0)
+    d = dispatch(fleet, drv)
+    assert_invariants(fleet, drv, d)
+    assert d.discharge_mw.reshape(7, 24)[:, 15:18].sum() == pytest.approx(0, abs=TOL)
+    np.testing.assert_allclose(d.discharge_mw[18::24], 50.0)
+    assert d.unmet_mw.sum() == pytest.approx(0, abs=TOL)
+
+
+def test_grid_energy_never_displaces_ct_priced_below_cc():
+    # CC 60 MW @ $60 runs before CT 60 MW @ $40 (brief), so a battery discharge displaces CT,
+    # the last tier, first. Grid energy bought at $35 costs $35 / 0.81 = $43.2 delivered:
+    # spending it at h1 would displace $40 CT (although $60 CC also runs). It waits for h2,
+    # where it displaces $100 imports.
+    fleet = Fleet(gas_cc_mw=60.0, gas_ct_mw=60.0, batt_mw=20.0, batt_mwh=20.0, rte=0.81, import_limit_mw=200.0, grid_charging=True)
+    drv = drivers([0.0, 100.0, 200.0], import_cost=[35.0, 100.0, 100.0], cc_cost=60.0, ct_cost=40.0)
+    d = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert_invariants(fleet, drv, d)
+    np.testing.assert_allclose(d.grid_charge_mw, [20.0, 0.0, 0.0])
+    np.testing.assert_allclose(d.discharge_mw, [0.0, 0.0, 16.2], atol=TOL)
+    np.testing.assert_allclose(d.generation_mw["gas_ct"], [0.0, 40.0, 60.0])
+    off = dispatch(_without_grid_charging(fleet), drv, initial_soc_frac=0.0)
+    assert _energy_cost(d, drv) == pytest.approx(_energy_cost(off, drv) + 20 * 35 - 16.2 * 100)
+
+
+def test_safety_net_drops_grid_charging_that_costs_more(monkeypatch):
+    # Flat $50 imports never look cheap. Force a bad plan: charge from the grid every even
+    # hour and treat that energy as free, so the battery cycles it at a 19% loss. dispatch()
+    # must notice the year got dearer and return the dispatch without grid charging.
+    n = 48
+    fleet = Fleet(batt_mw=50.0, batt_mwh=100.0, rte=0.81, import_limit_mw=200.0, grid_charging=True)
+    drv = drivers(np.full(n, 100.0), import_cost=50.0)
+    real = dispatch_module._rule6_inputs
+    calls = []
+
+    def bad_plan(*args):
+        _, _, tiers, surplus_ahead, carry = real(*args)
+        calls.append(1)
+        return [100.0 * (t % 2 == 0) for t in range(n)], [0.0] * n, tiers, surplus_ahead, carry
+
+    monkeypatch.setattr(dispatch_module, "_rule6_inputs", bad_plan)
+    d = dispatch(fleet, drv)
+    assert calls, "the grid-charging plan was never tried"
+    assert_invariants(fleet, drv, d)
+    off = dispatch(_without_grid_charging(fleet), drv)
+    assert not d.grid_charging
+    np.testing.assert_array_equal(d.grid_charge_mw, 0.0)
+    np.testing.assert_array_equal(d.imports_mw, off.imports_mw)
+    np.testing.assert_array_equal(d.soc_mwh, off.soc_mwh)
+    # A single pass (a window continuing some year) follows the fleet's policy as given.
+    window = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert window.grid_charging and window.grid_charge_mw.sum() > 0
+
+
+@pytest.mark.parametrize("seed", [0, 1, 5])
+def test_window_rerun_reproduces_the_year(seed: int):
+    # Every rule 6 decision for hour t uses inputs up to t + LOOKAHEAD_H only, so a window
+    # that starts where the year's battery is empty (no stored energy, no cost basis) and
+    # sees LOOKAHEAD_H hours past its end replays the year exactly (stress reruns rely on it).
+    n = 24 * 20
+    fleet, drv, _ = _random_case(seed, n=n, grid_charging=True)
+    year = dispatch(fleet, drv)
+    assert year.grid_charging
+    empty = np.flatnonzero(year.soc_mwh[24 : n - 120] == 0.0)
+    a = 24 + int(empty[0]) + 1
+    b = a + 72
+    ext = slice(a, b + dispatch_module.LOOKAHEAD_H)
+
+    def cut(x):
+        return np.asarray(x)[ext] if np.ndim(x) else x
+
+    w_fleet = dataclasses.replace(fleet, gas_cc_mw=cut(fleet.gas_cc_mw), gas_ct_mw=cut(fleet.gas_ct_mw), grid_charging=year.grid_charging)
+    w_drv = Drivers(**{f.name: cut(getattr(drv, f.name)) for f in dataclasses.fields(drv)})
+    w = dispatch(w_fleet, w_drv, initial_soc_frac=0.0)
+    assert year.grid_charge_mw[a:b].sum() > 0
+    for name in ("charge_mw", "grid_charge_mw", "discharge_mw", "soc_mwh", "imports_mw", "exports_mw", "unmet_mw", "curtailed_mw"):
+        np.testing.assert_allclose(getattr(w, name)[: b - a], getattr(year, name)[a:b], atol=1e-6, err_msg=name)
+
+
+def test_grid_charging_pays_on_every_preset_with_a_battery():
+    """Real 2024 inputs: grid charging never raises the energy cost, never curtails more
+    than the energy it bought and, with no unserved load either way, curtails no more."""
+    from app.builder.service import list_presets
+    from app.evaluate.catalog import get_catalog
+    from app.simulate.engine import prepare
+
+    catalog = get_catalog()
+    checked = []
+    for scenario in list_presets():
+        prep = prepare(scenario, catalog)
+        if not (prep.fleet.grid_charging and prep.fleet.batt_mwh > 0):
+            continue
+        on = dispatch(prep.fleet, prep.drivers)
+        off = dispatch(_without_grid_charging(prep.fleet), prep.drivers)
+        assert_invariants(prep.fleet, prep.drivers, on)
+        assert _energy_cost(on, prep.drivers) <= _energy_cost(off, prep.drivers), scenario.id
+        extra_curtailed = on.curtailed_mw.sum() - off.curtailed_mw.sum()
+        assert extra_curtailed <= on.grid_charge_mw.sum() + TOL, scenario.id
+        if on.unmet_mw.sum() <= TOL and off.unmet_mw.sum() <= TOL:
+            assert extra_curtailed <= 0.005 * off.curtailed_mw.sum() + 1.0, scenario.id
+        checked.append(scenario.id)
+    assert checked, "no grid-connected preset with a battery"
+
+
 def test_dispatch_is_deterministic():
     fleet, drv, _ = _random_case(123)
     a, b = dispatch(fleet, drv), dispatch(fleet, drv)
@@ -547,10 +708,14 @@ def test_dispatch_is_deterministic():
     np.testing.assert_array_equal(a.soc_mwh, b.soc_mwh)
 
 
-def test_full_leap_year_runs_fast():
+@pytest.mark.parametrize("grid_charging", [False, True], ids=["plain", "grid-charging"])
+def test_full_leap_year_runs_fast(grid_charging: bool):
+    # Grid charging adds the carry-limit pass and the safety net's second cyclic pair
+    # (~15 ms on a laptop); the bound is loose for slow CI machines.
     n = 8784
-    fleet, drv, _ = _random_case(2024, n=n)
+    fleet, drv, _ = _random_case(2024, n=n, grid_charging=grid_charging)
     fleet.batt_mw, fleet.batt_mwh = 500.0, 2000.0  # make sure the sequential battery loop runs (twice: cyclic)
+    fleet.import_limit_mw = 300.0
     best = math.inf
     for _ in range(3):
         t0 = time.perf_counter()

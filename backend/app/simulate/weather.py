@@ -11,15 +11,20 @@ hour's end, so hour-beginning index i takes label i+1. Instantaneous variables
 Runtime callers use load_or_fetch(): it reads the committed pre-baked file in
 data/simulate/sites/ (written by ``python -m app.simulate.prep.sites``), then the
 runtime cache in data/simulate/cache/, and only then goes to the network.
-Nothing here touches the network at import time.
+Nothing here touches the network at import time. Files are written atomically (temp +
+replace), and an unreadable runtime-cache file counts as a miss and is refetched.
 """
 
 from __future__ import annotations
 
 import calendar
 import json
+import logging
 import math
+import os
+import tempfile
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -30,6 +35,8 @@ import numpy as np
 import pandas as pd
 
 from app import DATA_DIR
+
+log = logging.getLogger(__name__)
 
 TZ = "Etc/GMT+8"  # fixed UTC-8 (POSIX sign is inverted), never America/Los_Angeles
 OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -359,10 +366,29 @@ def site_paths(lat: float, lon: float, year: int, directory: Path) -> tuple[Path
     return directory / f"{stem}.csv", directory / f"{stem}.json"
 
 
+def _replace_atomic(path: Path, write: Callable[[Path], object]) -> None:
+    """write(tmp_path) into a unique sibling temp file, then rename it onto `path` (atomic on
+    one filesystem), so a crash, reload or concurrent writer never leaves a half-written file."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    os.close(fd)
+    try:
+        write(Path(tmp))
+        Path(tmp).replace(path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def write_site_frame(df: pd.DataFrame, meta: dict[str, Any], csv_path: Path, json_path: Path) -> None:
+    """JSON sidecar first, CSV last: a CSV on disk implies its metadata is complete."""
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    df[CSV_COLUMNS].to_csv(csv_path, index=False)
-    json_path.write_text(json.dumps(meta, indent=2) + "\n")
+    _replace_atomic(json_path, lambda tmp: tmp.write_text(json.dumps(meta, indent=2) + "\n"))
+    _replace_atomic(csv_path, lambda tmp: df[CSV_COLUMNS].to_csv(tmp, index=False))
+
+
+def _data_path(path: Path) -> str:
+    """Path relative to data/ for metadata (absolute if it lives elsewhere, e.g. a test dir)."""
+    return str(path.relative_to(DATA_DIR)) if path.is_relative_to(DATA_DIR) else str(path)
 
 
 @lru_cache(maxsize=16)
@@ -379,6 +405,8 @@ def load_or_fetch(lat: float, lon: float, year: int, allow_network: bool = True)
 
     Order: committed data/simulate/sites/ -> runtime data/simulate/cache/ -> Open-Meteo
     (only if allow_network; written to the cache). Raises WeatherUnavailable otherwise.
+    A bad pre-baked file raises (fix the bake); a bad runtime-cache file (e.g. a write cut
+    short before writes were atomic) is a miss, and the refetch overwrites it.
     """
     n = len(hour_index(year))
     for directory, origin in ((SITES_DIR, "pre-baked"), (CACHE_DIR, "runtime cache")):
@@ -387,11 +415,16 @@ def load_or_fetch(lat: float, lon: float, year: int, allow_network: bool = True)
             continue
         try:
             df, meta = _read_site(str(csv_path), str(json_path), csv_path.stat().st_mtime_ns)
+            if len(df) != n or not set(CSV_COLUMNS) <= set(df.columns):
+                raise ValueError(f"{len(df)} rows or wrong columns; expected {n} rows of {', '.join(CSV_COLUMNS)}")
+            if not np.isfinite(df[CSV_COLUMNS].to_numpy(dtype=float)).all():
+                raise ValueError("missing or non-numeric values")
         except (OSError, ValueError) as exc:
-            raise WeatherUnavailable(f"could not read {csv_path.name}: {exc}") from exc
-        if len(df) != n or not set(CSV_COLUMNS) <= set(df.columns):
-            raise WeatherUnavailable(f"{csv_path.name} has {len(df)} rows or wrong columns; expected {n} rows")
-        return df.copy(), {**meta, "origin": origin, "path": str(csv_path.relative_to(DATA_DIR))}
+            if directory == SITES_DIR:
+                raise WeatherUnavailable(f"pre-baked {csv_path.name} is unusable: {exc}") from exc
+            log.warning("ignoring unusable cache file %s (%s); refetching", csv_path.name, exc)
+            continue
+        return df.copy(), {**meta, "origin": origin, "path": _data_path(csv_path)}
 
     if not allow_network:
         raise WeatherUnavailable(f"no cached weather for {site_key(lat, lon)} {year} and network disabled")

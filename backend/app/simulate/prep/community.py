@@ -9,8 +9,11 @@ data/simulate/raw/eia930/, keeps CISO / PGAE, and writes
 Run from backend/:  .venv/bin/python -m app.simulate.prep.community
 
 Time convention (contract): row i = the hour BEGINNING at 2024-01-01 00:00 PST + i hours,
-fixed UTC-8 (Etc/GMT+8), no DST, 8784 rows. EIA stamps each hour at its END, so
-hour-beginning = "UTC Time at End of Hour" - 1 h, converted to Etc/GMT+8.
+fixed UTC-8 (Etc/GMT+8), no DST, 8784 rows. EIA documents its stamps as hour-ENDING, but
+the CISO rows run one hour late against CAISO's own load (EIA_CISO_LABEL_LAG_H), so
+hour-beginning = "UTC Time at End of Hour" - (1 + EIA_CISO_LABEL_LAG_H) h, in Etc/GMT+8.
+The first raw row then falls in 2023 and the last canonical hour (Dec 31 23:00 PST) is an
+edge gap filled like any other.
 
 Cleaning: zero/negative values, values below LOW_FRAC x median and above HIGH_FRAC x median
 are treated as missing. Gaps of <= MAX_LINEAR_GAP_H interior hours are linearly
@@ -50,6 +53,14 @@ HIGH_FRAC = 3.0  # above 3 x median MW likewise
 MAX_LINEAR_GAP_H = 3  # longer gaps get a diurnal (same hour, +/- 1 week) fill
 MAX_REPLACED_FRAC = 0.02  # fail if more than 2% of hours are missing or outliers
 WEEK_H, DAY_H = 168, 24
+# EIA-930 CISO demand is stamped one hour late: the row EIA labels "ending H" is CAISO's
+# hour ENDING H-1. Basis (2024): (a) CAISO Today's Outlook demand.csv (5-min "Current
+# demand", via gridstatus CAISO().get_load) matches the CISO-subregion sum to ~0.1% in
+# evening/night hours only after this shift, e.g. 2024-07-09 19:00 PST 38,908 MW vs 38,942,
+# 2024-01-15 18:00 PST 26,976 vs 27,007; (b) hour-to-hour changes of PGAE correlate best with
+# the CAISO fuel-mix net supply (= load, caiso_2024_hourly.csv) at +1 h (0.90 vs 0.72 at 0 h),
+# in PST and DST months alike, so it is a label offset, not a DST slip.
+EIA_CISO_LABEL_LAG_H = 1
 
 
 def canonical_index() -> pd.DatetimeIndex:
@@ -90,8 +101,10 @@ def load_raw(paths: list[Path]) -> tuple[pd.Series, int]:
     end_utc = pd.to_datetime(
         df["UTC Time at End of Hour"], format="%m/%d/%Y %I:%M:%S %p", utc=True
     )
+    # Hour-ending -> hour-beginning, plus the CISO label correction (see EIA_CISO_LABEL_LAG_H).
     # Explicit unit: Timedelta(hours=1) on a Series trips a numpy 2.5 deprecation.
-    begin = pd.DatetimeIndex(end_utc).tz_convert(TZ) - pd.Timedelta(1, unit="h")
+    shift = pd.Timedelta(1 + EIA_CISO_LABEL_LAG_H, unit="h")
+    begin = pd.DatetimeIndex(end_utc).tz_convert(TZ) - shift
     mw = pd.to_numeric(df["Demand (MW)"].str.replace(",", "", regex=False).str.strip(),
                        errors="coerce")
     s = pd.Series(mw.to_numpy(dtype=float), index=begin, name="demand_mw")
@@ -188,7 +201,8 @@ def build(paths: list[Path]) -> tuple[pd.DataFrame, dict]:
             "kind": "observed",
             "source": "EIA-930 2024, CAISO subregion PGAE",
             "url": "https://www.eia.gov/electricity/gridmonitor/",
-            "note": "Hourly PG&E-area demand; gaps/outliers filled (see counts).",
+            "note": ("Hourly PG&E-area demand; gaps/outliers filled (see counts); EIA CISO "
+                     "stamps shifted 1 h earlier to match CAISO load (see time_correction)."),
         },
         "urls": URLS,
         "raw_files": [
@@ -199,8 +213,33 @@ def build(paths: list[Path]) -> tuple[pd.DataFrame, dict]:
         "balancing_authority": BA,
         "sub_region": SUBREGION,
         "time_convention": (
-            "row i = hour beginning 2024-01-01T00:00-08:00 + i h (Etc/GMT+8, no DST)"
+            "row i = hour beginning 2024-01-01T00:00-08:00 + i h (Etc/GMT+8, no DST); "
+            f"hour beginning = 'UTC Time at End of Hour' - {1 + EIA_CISO_LABEL_LAG_H} h "
+            f"(1 h hour-ending convention + {EIA_CISO_LABEL_LAG_H} h CISO label correction)"
         ),
+        "time_correction": {
+            "eia_ciso_label_lag_h": EIA_CISO_LABEL_LAG_H,
+            "reason": (
+                "EIA-930 CISO rows run one hour late against CAISO's own load: the row EIA "
+                "labels 'ending H' matches CAISO's hour ending H-1. Shifted 1 h earlier so the "
+                "shape lines up with the CAISO prices and fuel mix in caiso_2024_hourly.csv."
+            ),
+            "evidence": [
+                "CAISO Today's Outlook demand.csv (5-min 'Current demand', gridstatus "
+                "CAISO().get_load, hourly mean) vs the sum of EIA CISO subregions: MAPE "
+                "5.6% same-hour vs 3.9% shifted on 2024-07-09 and 5.3% vs 3.6% on "
+                "2024-01-15; evening hours agree to ~0.1% only when shifted (07-09 19:00 PST "
+                "38,908 vs 38,942 MW; 20:00 37,531 vs 37,529; 01-15 18:00 26,976 vs 27,007).",
+                "Correlation of hour-to-hour changes, PGAE vs CAISO fuel-mix net supply "
+                "(sum of the signed *_mw columns of caiso_2024_hourly.csv = CAISO load), "
+                "before the shift: 0.72 at lag 0, 0.90 at EIA +1 h, 0.79 at +2 h; PST months "
+                "0.66 vs 0.90, DST months 0.74 vs 0.90 (a label offset, not a DST slip).",
+                "Daily peak hour, EIA CISO sum minus CAISO net supply, before the shift: "
+                "+1 h on 270 days, 0 h on 47.",
+                "Cross-check: CAISO fuel-mix solar centroid falls at 11.6-12.0 PST every "
+                "month, so the CAISO side is not the shifted one.",
+            ],
+        },
         "rows": len(out),
         "raw_rows": int(len(raw) + n_dup),
         "raw_rows_outside_year": n_outside,

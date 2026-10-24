@@ -3,11 +3,12 @@
 // Pure functions over HourlySeries; the components memoize them. Renewable generation_mw
 // INCLUDES curtailed output, so the chart splits curtailed_mw between solar and wind in
 // proportion to their output that hour and stacks only the used part, with the
-// curtailed remainder drawn as a pale wash on top.
+// curtailed remainder drawn as a pale wash on top. Flows are hour-beginning averages
+// drawn at the hour's start tick; SOC is shifted to the state at that same instant.
 import type { HourlySeries } from "@/lib/contract";
 import { mwh } from "@/lib/format";
 
-import type { WorstDay } from "./extras";
+import type { SimExtras, WorstDay } from "./extras";
 
 export type SeriesKey = "solar" | "wind" | "discharge" | "gas_cc" | "gas_ct" | "imports" | "unmet" | "curtailed" | "charge" | "exports";
 
@@ -41,6 +42,7 @@ export const SERIES: SeriesDef[] = [
 
 export interface Point extends Record<SeriesKey, number> {
   demand: number;
+  /** Battery state of charge at the START of the hour (MWh). */
   soc: number;
 }
 
@@ -62,6 +64,14 @@ export const valueAt = (a: number[] | undefined, t: number): number => {
 };
 const pos = (a: number[] | undefined, t: number) => Math.max(0, valueAt(a, t));
 
+/** SOC at the START of hour t. The engine reports the state at the END of each hour, so
+ *  this is soc[t-1]; for t = 0 it is the year-end SOC, which the default cyclic dispatch
+ *  starts the year from (dispatch.py rule 5). */
+function socAtStart(h: HourlySeries, t: number): number {
+  const n = h.battery_soc_mwh?.length ?? 0;
+  return n > 0 ? pos(h.battery_soc_mwh, t > 0 ? t - 1 : n - 1) : 0;
+}
+
 export function pointAt(h: HourlySeries, t: number): Point {
   const solarGen = pos(h.generation_mw.solar_pv, t);
   const windGen = pos(h.generation_mw.onshore_wind, t);
@@ -80,7 +90,7 @@ export function pointAt(h: HourlySeries, t: number): Point {
     curtailed,
     charge: -pos(h.battery_charge_mw, t),
     exports: -pos(h.exports_mw, t),
-    soc: pos(h.battery_soc_mwh, t),
+    soc: socAtStart(h, t),
   };
 }
 
@@ -116,6 +126,25 @@ export function scanYear(h: HourlySeries): YearScan {
 /** The visible window only (24 or 168 points), never the whole year. */
 export function windowRows(h: HourlySeries, start: number, length: number): Row[] {
   return Array.from({ length }, (_, x) => ({ x, t: start + x, ...pointAt(h, start + x) }));
+}
+
+/** Grid-drawn part of hour t's battery charge (MW, never above the charge itself); 0 when
+ *  the engine sent no hourly split. The browser never re-derives the engine's attribution. */
+export function gridChargeAt(ex: Pick<SimExtras, "batteryGridChargeMw">, t: number, chargeMw: number): number {
+  return Math.min(Math.abs(chargeMw), Math.max(0, valueAt(ex.batteryGridChargeMw, t)));
+}
+
+/** Share (0-1) of the year's battery charging energy drawn from grid imports, or null when
+ *  the engine reported no split or the battery never charged. The hourly array wins (same
+ *  units as battery_charge_mw); the annual MWh is the fallback. */
+export function gridChargeShare(h: HourlySeries, ex: Pick<SimExtras, "batteryGridChargeMw" | "batteryGridChargeMwh">, stepH: number): number | null {
+  let charge = 0;
+  for (let t = 0; t < h.demand_mw.length; t++) charge += pos(h.battery_charge_mw, t);
+  let grid: number | undefined;
+  if (ex.batteryGridChargeMw) grid = ex.batteryGridChargeMw.reduce((a, v) => a + Math.max(0, v), 0);
+  else if (ex.batteryGridChargeMwh !== undefined && stepH > 0) grid = Math.max(0, ex.batteryGridChargeMwh) / stepH;
+  if (grid === undefined || charge <= EPS_MW) return null;
+  return Math.min(1, grid / charge);
 }
 
 /** Most unmet MWh, else most gas + import MWh, else least solar + wind MWh. */

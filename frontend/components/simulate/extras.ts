@@ -20,6 +20,10 @@ export interface SimExtras {
   gridCfeShare?: number[];
   /** Total battery energy capacity the engine dispatched (MWh). */
   batteryEnergyMwh?: number;
+  /** Annual battery charging energy drawn from grid imports (MWh), dispatch rule 6. */
+  batteryGridChargeMwh?: number;
+  /** Hourly part of battery_charge_mw drawn from grid imports (MW). */
+  batteryGridChargeMw?: number[];
   /** Data-quality notes from the engine (e.g. a stand-in weather site). */
   notes: string[];
 }
@@ -59,6 +63,8 @@ export function readExtras(extras: Record<string, unknown> | undefined, n: numbe
     temperatureC: numArray(x.temperature_c, n),
     gridCfeShare: numArray(x.grid_cfe_share, n),
     batteryEnergyMwh: finite(x.battery_energy_mwh),
+    batteryGridChargeMwh: finite(x.battery_grid_charge_mwh),
+    batteryGridChargeMw: numArray(x.battery_grid_charge_mw, n),
     notes: Array.isArray(x.notes) ? x.notes.filter((v): v is string => typeof v === "string") : [],
   };
 }

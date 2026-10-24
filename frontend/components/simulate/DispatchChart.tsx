@@ -3,9 +3,11 @@
 // Renders only the 24 (day) or 168 (week) visible points, never the full year. Supply
 // stacks above zero, battery charge and exports stack below zero, curtailment is a pale
 // dashed wash on top, demand is the dark line, battery SOC is a dashed line on the right
-// axis (0-100% of the battery's MWh). The Y scale is fixed for the whole year so days
-// compare while scrubbing.
-import { memo, useMemo, useState } from "react";
+// axis (0-100% of the battery's MWh, state at the start of each hour, so it lines up with
+// the clock ticks). The Y scale is fixed for the whole year so days compare while scrubbing.
+// Battery charge drawn from grid imports (price-aware charging) is named in the tooltip
+// and table when the engine sends the hourly split.
+import { Fragment, memo, useMemo, useState } from "react";
 import {
   Area,
   CartesianGrid,
@@ -21,7 +23,7 @@ import {
 
 import type { HourlySeries } from "@/lib/contract";
 
-import { SERIES, compact, int, niceTicks, usdPerMwh, valueAt, windowRows, type Row, type YearScan } from "./dispatch";
+import { SERIES, compact, gridChargeAt, int, niceTicks, usdPerMwh, valueAt, windowRows, type Row, type YearScan } from "./dispatch";
 import type { SimExtras } from "./extras";
 import { fmtClock, fmtHour, fmtMonthDay, fmtWeekday, pointLabel, wallAt, type Clock } from "./time";
 
@@ -47,6 +49,9 @@ const THEME = [
 ].join(" ");
 
 const TICK = { fill: "var(--gf-tick)", fontSize: 10 };
+
+/** Flows below this round to 0 MW, so the tooltip leaves them out. */
+const SHOWN_MW = 0.5;
 
 export interface DispatchChartProps {
   hourly: HourlySeries;
@@ -230,7 +235,7 @@ export const DispatchChart = memo(function DispatchChart(props: DispatchChartPro
         </ResponsiveContainer>
       </div>
       <Legend defs={defs} showSoc={showSoc} />
-      <WindowTable rows={rows} defs={defs} clock={clock} hourly={hourly} view={view} showSoc={showSoc} />
+      <WindowTable rows={rows} defs={defs} clock={clock} hourly={hourly} view={view} showSoc={showSoc} extras={extras} />
     </div>
   );
 });
@@ -252,7 +257,8 @@ function DispatchTooltip(props: {
   const r = active && label !== undefined ? rows[Math.round(Number(label))] : undefined;
   if (!r) return null;
   // Only series flowing this hour, so the readout stays short in the narrow column.
-  const items = defs.filter((d) => Math.abs(r[d.key]) >= 0.5);
+  const items = defs.filter((d) => Math.abs(r[d.key]) >= SHOWN_MW);
+  const gridCharge = gridChargeAt(extras, r.t, r.charge);
   const temp = extras.temperatureC?.[r.t];
   const cfe = extras.gridCfeShare?.[r.t];
   const context = [
@@ -270,13 +276,19 @@ function DispatchTooltip(props: {
         <span className="text-right font-semibold tabular-nums">{int(r.demand)}</span>
         <span className="text-zinc-500">MW demand</span>
         {items.map((d) => (
-          <Row3 key={d.key} color={d.color} value={`${int(Math.abs(r[d.key]))}`} label={d.label} dashed={d.key === "curtailed"} />
+          <Fragment key={d.key}>
+            <Row3 color={d.color} value={`${int(Math.abs(r[d.key]))}`} label={d.label} dashed={d.key === "curtailed"} />
+            {d.key === "charge" && gridCharge >= SHOWN_MW && (
+              <span className="col-start-3 text-[10px] leading-3 text-zinc-500">of which from grid: {int(gridCharge)} MW</span>
+            )}
+          </Fragment>
         ))}
         {showSoc && (
           <Row3
             color="var(--gf-battery)"
             value={int(r.soc)}
-            label={`MWh SOC${socCapacityMwh > 0 ? ` (${((r.soc / socCapacityMwh) * 100).toFixed(0)}%)` : ""}`}
+            // SOC is the state at the hour's start (the left end of the window above).
+            label={`MWh SOC at ${fmtClock(wallAt(clock, r.t))}${socCapacityMwh > 0 ? ` (${((r.soc / socCapacityMwh) * 100).toFixed(0)}%)` : ""}`}
             dashed
           />
         )}
@@ -342,12 +354,16 @@ function Legend({ defs, showSoc }: { defs: Defs; showSoc: boolean }) {
 }
 
 /** Table twin of the visible window. Rendered only while open (168 rows in week view). */
-function WindowTable(props: { rows: Row[]; defs: Defs; clock: Clock; hourly: HourlySeries; view: View; showSoc: boolean }) {
-  const { rows, defs, clock, hourly, view, showSoc } = props;
+function WindowTable(props: { rows: Row[]; defs: Defs; clock: Clock; hourly: HourlySeries; view: View; showSoc: boolean; extras: SimExtras }) {
+  const { rows, defs, clock, hourly, view, showSoc, extras } = props;
   const [open, setOpen] = useState(false);
+  // "From grid" column only when the engine sent the hourly split and it is ever non-zero.
+  const gridCol = useMemo(() => extras.batteryGridChargeMw?.some((v) => v >= SHOWN_MW) ?? false, [extras.batteryGridChargeMw]);
   return (
     <details className="mt-2 text-[11px]" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary className="cursor-pointer select-none text-zinc-500">Table view ({rows.length} hours, MW)</summary>
+      <summary className="cursor-pointer select-none text-zinc-500">
+        Table view ({rows.length} hours, MW{showSoc ? "; SOC at hour start" : ""})
+      </summary>
       {open && (
         <div className="mt-1 max-h-64 overflow-auto">
           <table className="w-full text-right tabular-nums">
@@ -356,9 +372,10 @@ function WindowTable(props: { rows: Row[]; defs: Defs; clock: Clock; hourly: Hou
                 <th className="py-0.5 pr-2 text-left font-normal">PST</th>
                 <th className="px-1 font-normal">Demand</th>
                 {defs.map((d) => (
-                  <th key={d.key} className="px-1 font-normal">
-                    {d.short}
-                  </th>
+                  <Fragment key={d.key}>
+                    <th className="px-1 font-normal">{d.short}</th>
+                    {d.key === "charge" && gridCol && <th className="px-1 font-normal">from grid</th>}
+                  </Fragment>
                 ))}
                 {showSoc && <th className="px-1 font-normal">SOC MWh</th>}
                 <th className="pl-1 font-normal">$/MWh</th>
@@ -375,9 +392,10 @@ function WindowTable(props: { rows: Row[]; defs: Defs; clock: Clock; hourly: Hou
                     </td>
                     <td className="px-1">{int(r.demand)}</td>
                     {defs.map((s) => (
-                      <td key={s.key} className="px-1">
-                        {int(Math.abs(r[s.key]))}
-                      </td>
+                      <Fragment key={s.key}>
+                        <td className="px-1">{int(Math.abs(r[s.key]))}</td>
+                        {s.key === "charge" && gridCol && <td className="px-1">{int(gridChargeAt(extras, r.t, r.charge))}</td>}
+                      </Fragment>
                     ))}
                     {showSoc && <td className="px-1">{int(r.soc)}</td>}
                     <td className="pl-1">{int(valueAt(hourly.price_usd_per_mwh, r.t))}</td>

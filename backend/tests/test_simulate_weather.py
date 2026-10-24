@@ -313,3 +313,65 @@ def test_pvwatts_failure_never_prints_the_api_key(monkeypatch: pytest.MonkeyPatc
 def test_offline_miss_raises_clear_error() -> None:
     with pytest.raises(W.WeatherUnavailable):
         W.load_or_fetch(-89.99, 179.99, 1999, allow_network=False)
+
+
+UNBAKED = (36.30, -119.90)  # not in data/simulate/sites/
+
+
+def _good_frame(kern: tuple[pd.DataFrame, dict]) -> pd.DataFrame:
+    df = kern[0].copy()
+    df.attrs["meta"] = {"site_key": W.site_key(*UNBAKED), "n_hours": len(df), "source": "fake fetch"}
+    return df
+
+
+def test_write_site_frame_is_atomic(tmp_path, kern: tuple[pd.DataFrame, dict]) -> None:
+    """JSON first, CSV last, each via temp + replace: a failed write leaves the old file and no temp."""
+    csv_path, json_path = W.site_paths(*UNBAKED, YEAR, tmp_path / "cache")
+    W.write_site_frame(kern[0], {"a": 1}, csv_path, json_path)
+    assert len(pd.read_csv(csv_path)) == 8784 and json.loads(json_path.read_text()) == {"a": 1}
+    before = csv_path.read_bytes()
+
+    class Boom(Exception):
+        pass
+
+    def fail(tmp) -> None:
+        tmp.write_text("hour,temp_c\n0,1")  # half written, then the process dies
+        raise Boom
+
+    with pytest.raises(Boom):
+        W._replace_atomic(csv_path, fail)
+    assert csv_path.read_bytes() == before
+    assert sorted(p.name for p in csv_path.parent.iterdir()) == sorted([csv_path.name, json_path.name])
+
+
+def test_truncated_runtime_cache_is_refetched(monkeypatch: pytest.MonkeyPatch, tmp_path, kern: tuple[pd.DataFrame, dict]) -> None:
+    monkeypatch.setattr(W, "CACHE_DIR", tmp_path)
+    csv_path, _ = W.site_paths(*UNBAKED, YEAR, tmp_path)
+    fetched = []
+
+    def fake_build(lat: float, lon: float, year: int, timeout: float = 20.0) -> pd.DataFrame:
+        fetched.append((lat, lon))
+        return _good_frame(kern)
+
+    monkeypatch.setattr(W, "build_site_frame", fake_build)
+    good = kern[0][W.CSV_COLUMNS].to_csv(index=False)
+    for bad in (good[:200], good[: good.rindex(",")], "not,a\ncsv"):  # few rows; last row cut mid-line; junk
+        csv_path.write_text(bad)
+        with pytest.raises(W.WeatherUnavailable):  # offline: a bad cache file is a miss, not data
+            W.load_or_fetch(*UNBAKED, YEAR, allow_network=False)
+        df, meta = W.load_or_fetch(*UNBAKED, YEAR, allow_network=True)
+        assert meta["origin"] == "network" and len(df) == 8784
+        assert len(pd.read_csv(csv_path)) == 8784  # the refetch overwrote the bad file
+    assert len(fetched) == 3
+    _, meta = W.load_or_fetch(*UNBAKED, YEAR, allow_network=True)
+    assert meta["origin"] == "runtime cache" and len(fetched) == 3
+
+
+def test_bad_prebaked_file_still_raises(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """A broken committed file is a bake bug: fail loudly rather than refetch over it."""
+    monkeypatch.setattr(W, "SITES_DIR", tmp_path)
+    monkeypatch.setattr(W, "build_site_frame", lambda *a, **k: pytest.fail("must not refetch over a baked file"))
+    csv_path, _ = W.site_paths(*KERN, YEAR, tmp_path)
+    csv_path.write_text(",".join(W.CSV_COLUMNS) + "\n0,1,2,3,4,0.1,0.2\n")
+    with pytest.raises(W.WeatherUnavailable, match="pre-baked"):
+        W.load_or_fetch(*KERN, YEAR, allow_network=True)

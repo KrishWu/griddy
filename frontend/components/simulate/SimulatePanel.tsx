@@ -1,7 +1,8 @@
 "use client";
 // Hourly dispatch chart + simulation summary.  OWNER: workstream B (Simulate + Stress Test).
 // Day / week dispatch window over the 8,760/8,784-hour year (only the visible points are
-// charted), jump-to-worst-day, summary stats, and the provenance of every number shown.
+// charted), jump-to-worst-day, summary stats, data-quality notes, and the provenance of
+// every number shown.
 import { useEffect, useMemo, useState } from "react";
 
 import { Panel, Stat } from "@/components/shell/Panel";
@@ -10,7 +11,7 @@ import { mw, mwh, pct } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
 import { DispatchChart, type View } from "./DispatchChart";
-import { fallbackWorstDay, scanYear } from "./dispatch";
+import { fallbackWorstDay, gridChargeShare, scanYear } from "./dispatch";
 import { readExtras, type WorstDay } from "./extras";
 import { dayOf, fmtDate, makeClock, rangeLabel, wallAt } from "./time";
 
@@ -42,6 +43,7 @@ function SimulateBody({ result }: { result: ScenarioResult }) {
 
   const extras = useMemo(() => readExtras(result.simulation.extras, n, days), [result.simulation.extras, n, days]);
   const scan = useMemo(() => scanYear(h), [h]);
+  const gridShare = useMemo(() => gridChargeShare(h, extras, stepH), [h, extras, stepH]);
   const worst: WorstDay = useMemo(
     () => extras.worstDay ?? fallbackWorstDay(h, per, days, stepH),
     [extras.worstDay, h, per, days, stepH],
@@ -81,7 +83,9 @@ function SimulateBody({ result }: { result: ScenarioResult }) {
   const solarCf = cf("solar_pv");
   const windCf = cf("onshore_wind");
   const renewableMwh = (s.generation_mwh.solar_pv ?? 0) + (s.generation_mwh.onshore_wind ?? 0);
-  const curtailShare = extras.curtailmentShare ?? (renewableMwh > 0 ? s.curtailed_mwh / renewableMwh : null);
+  // Gated on solar/wind capacity like the CFs: the engine reports 0.0 with no renewables.
+  const hasRenewables = cap("solar_pv") + cap("onshore_wind") > 0;
+  const curtailShare = hasRenewables ? (extras.curtailmentShare ?? (renewableMwh > 0 ? s.curtailed_mwh / renewableMwh : null)) : null;
   const grid = scenario.grid;
   const connected = grid.connected !== false;
 
@@ -104,8 +108,30 @@ function SimulateBody({ result }: { result: ScenarioResult }) {
         {solarCf !== null && <Stat label="Solar CF" value={pct1(solarCf)} />}
         {windCf !== null && <Stat label="Wind CF" value={pct1(windCf)} />}
         {curtailShare !== null && <Stat label="Curtailment" value={pct1(curtailShare)} />}
-        {socCapacityMwh > 0 && <Stat label="Battery cycles / yr" value={s.battery_cycles.toFixed(0)} />}
+        {socCapacityMwh > 0 && (
+          // Price-aware charging can fill the battery from cheap grid imports, so the cycles
+          // are not all solar time-shifting: say how much of the charge came from the grid.
+          <div>
+            <Stat label="Battery cycles / yr" value={s.battery_cycles.toFixed(0)} />
+            {gridShare !== null && gridShare > 0 && (
+              <div
+                className="text-[10px] leading-3 tabular-nums text-zinc-400"
+                title="Share of the battery's charging energy drawn from grid imports in cheap hours; the rest is surplus solar/wind."
+              >
+                {gridShare < 0.005 ? "<1%" : pct(gridShare)} grid-charged
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {extras.notes.length > 0 && (
+        <ul className="mb-2 space-y-0.5 text-[11px] leading-4 text-amber-700 dark:text-amber-500">
+          {extras.notes.map((note, i) => (
+            <li key={`${i}-${note}`}>Data note: {note}</li>
+          ))}
+        </ul>
+      )}
 
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="text-sm font-medium">{rangeLabel(clock, start, length)}</span>

@@ -7,7 +7,9 @@ stress.py reuses prepare()/dispatch() to rerun the year under stressed inputs.
 
 Balance enforced every hour t:
     demand = sum(generation) + discharge + imports + unmet - charge - exports - curtailed
-(curtailed is renewable output thrown away; it is included in generation_mw.)
+(curtailed is renewable output thrown away; it is included in generation_mw.) to_result()
+rounds the hourly series to 0.001 MW and clips capped ones to their limits, so the
+contract's per-hour limits hold exactly and the balance stays within a few kW.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from app.contract import (
 )
 from app.simulate import profiles
 from app.simulate.demand import fit_demand
-from app.simulate.dispatch import Dispatch, Drivers, Fleet, dispatch
+from app.simulate.dispatch import GRID_SPREAD_USD_PER_MWH, LOOKAHEAD_H, Dispatch, Drivers, Fleet, dispatch
 
 RENEWABLE = ("solar_pv", "onshore_wind")
 THERMAL = ("gas_cc", "gas_ct")
@@ -49,6 +51,7 @@ class Prepared:
     capacity_mw: dict[str, float]
     provenance: list[Provenance] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    weather_site: str = ""  # key of the site whose weather was used (a stand-in's key on fallback)
 
 
 def _of_kind(scenario: Scenario, kind: AssetKind) -> list[Asset]:
@@ -137,8 +140,20 @@ def prepare(scenario: Scenario, catalog: Catalog) -> Prepared:
         gas_cc_cost_usd_per_mwh=_marginal_cost(catalog, scenario, "gas_cc"),
         gas_ct_cost_usd_per_mwh=_marginal_cost(catalog, scenario, "gas_ct"),
     )
+    if fleet.grid_charging and batt_mw > 0 and batt_mwh > 0:
+        prov.append(
+            Provenance(
+                kind="assumption",
+                source=(
+                    f"Battery also charges from grid imports in cheap hours ({LOOKAHEAD_H} h price/demand/solar "
+                    f"foresight, ${GRID_SPREAD_USD_PER_MWH:g}/MWh minimum spread); "
+                    "scenario.options.grid_charging=false turns it off"
+                ),
+                note="Perfect day-ahead foresight is an upper bound on arbitrage; adds battery cycles",
+            )
+        )
     cap["battery"] = batt_mw
-    return Prepared(scenario, n, fleet, drivers, site_w.temp_c, grid, cap, prov, notes)
+    return Prepared(scenario, n, fleet, drivers, site_w.temp_c, grid, cap, prov, notes, site_w.source_key)
 
 
 def _demand_provenance(scenario: Scenario, community: bool) -> Provenance:
@@ -151,7 +166,8 @@ def _demand_provenance(scenario: Scenario, community: bool) -> Provenance:
         "ai_inference": "diurnal AI inference load",
         "community": "synthetic community shape",
     }[d.profile]
-    pue = "" if d.profile == "flat" else f"; cooling (PUE {d.pue:g}) rises with outdoor temperature"
+    # demand.py applies PUE only to the AI profiles; community and flat loads have no cooling term.
+    pue = "" if d.profile in ("flat", "community") else f"; cooling (PUE {d.pue:g}) rises with outdoor temperature"
     return Provenance(
         kind="assumption",
         source=f"Demand: {shape}, {d.peak_mw:,.0f} MW peak, load factor {d.load_factor:.2f}{pue}",
@@ -204,22 +220,35 @@ def summarize(prep: Prepared, d: Dispatch) -> SimulationSummary:
     )
 
 
+def _rounded(x: np.ndarray, nd: int = 3, cap: float | np.ndarray | None = None) -> np.ndarray:
+    """Round for the payload; a capped series is clipped back to its (unrounded) limit, since
+    rounding a value at a limit like 718.4466 MW would otherwise report 718.447."""
+    out = np.round(np.asarray(x, dtype=float), nd)
+    return out if cap is None else np.minimum(out, np.asarray(cap, dtype=float))
+
+
 def to_result(prep: Prepared, d: Dispatch, started: float | None = None) -> SimulationResult:
-    s = prep.scenario
+    s, f = prep.scenario, prep.fleet
     kinds = [k for k in (*RENEWABLE, *THERMAL) if prep.capacity_mw[k] > 0]
+    gen_cap = {"solar_pv": f.solar_mw, "onshore_wind": f.wind_mw, "gas_cc": f.gas_cc_mw, "gas_ct": f.gas_ct_mw}
 
-    def r(x: np.ndarray, nd: int = 3) -> list[float]:
-        return np.round(np.asarray(x, dtype=float), nd).tolist()
+    def r(x: np.ndarray, nd: int = 3, cap: float | np.ndarray | None = None) -> list[float]:
+        return _rounded(x, nd, cap).tolist()
 
+    charge = _rounded(d.charge_mw, cap=f.batt_mw)
+    imports = _rounded(d.imports_mw, cap=f.import_limit_mw)
+    grid_charge = np.zeros(prep.n) if d.grid_charge_mw is None else np.asarray(d.grid_charge_mw, dtype=float)
+    # Part of battery_charge_mw drawn from imports, never more than either rounded series.
+    grid_charge_hourly = np.minimum(np.round(grid_charge, 2), np.minimum(charge, imports))
     hourly = HourlySeries(
         start=f"{s.assumptions.weather_year}-01-01T00:00:00-08:00",
         demand_mw=r(prep.drivers.demand_mw),
-        generation_mw={k: r(d.generation_mw[k]) for k in kinds},
-        battery_charge_mw=r(d.charge_mw),
-        battery_discharge_mw=r(d.discharge_mw),
-        battery_soc_mwh=r(d.soc_mwh),
-        imports_mw=r(d.imports_mw),
-        exports_mw=r(d.exports_mw),
+        generation_mw={k: r(d.generation_mw[k], cap=gen_cap[k]) for k in kinds},
+        battery_charge_mw=charge.tolist(),
+        battery_discharge_mw=r(d.discharge_mw, cap=f.batt_mw),
+        battery_soc_mwh=r(d.soc_mwh, cap=f.batt_mwh),
+        imports_mw=imports.tolist(),
+        exports_mw=r(d.exports_mw, cap=f.export_limit_mw),
         unmet_mw=r(d.unmet_mw),
         curtailed_mw=r(d.curtailed_mw),
         price_usd_per_mwh=r(prep.grid.price_usd_per_mwh, 2),
@@ -234,10 +263,13 @@ def to_result(prep: Prepared, d: Dispatch, started: float | None = None) -> Simu
         "curtailment_share": float(d.curtailed_mw.sum()) / ren_gen if ren_gen else 0.0,
         "worst_day": _worst_day(d, prep.n),
         "price_node": prep.grid.node,
-        "weather_site": profiles.site_key(s.site.location.lat, s.site.location.lon),
+        "weather_site": prep.weather_site or profiles.site_key(s.site.location.lat, s.site.location.lon),
         "marginal_cost_usd_per_mwh": {"gas_cc": prep.drivers.gas_cc_cost_usd_per_mwh, "gas_ct": prep.drivers.gas_ct_cost_usd_per_mwh},
         "battery_energy_mwh": prep.fleet.batt_mwh,
-        "battery_grid_charge_mwh": float(d.grid_charge_mw.sum()) if d.grid_charge_mw is not None else 0.0,
+        "battery_grid_charge_mwh": float(grid_charge.sum()),
+        # Policy the year actually used: dispatch drops rule 6 if it would have cost more.
+        "grid_charging": bool(d.grid_charging),
+        "battery_grid_charge_mw": grid_charge_hourly.tolist(),
         "notes": prep.notes,
     }
     if started is not None:

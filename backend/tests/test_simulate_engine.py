@@ -41,7 +41,9 @@ def test_hybrid_meets_demand_with_real_profiles(hybrid):
     assert s.hours_unmet == 0 and s.unmet_mwh == 0
     assert 0.20 <= hybrid.extras["capacity_factor"]["solar_pv"] <= 0.30
     assert hybrid.extras["curtailment_share"] < 0.10
-    assert 150 <= s.battery_cycles <= 400  # brief: >= 150 equivalent cycles/yr
+    # Brief: >= 150 equivalent cycles/yr. With grid charging on (the default) this includes
+    # price arbitrage from imports; solar-only cycling is checked in the grid-charging test.
+    assert 150 <= s.battery_cycles <= 400
 
 
 def test_solar_peaks_at_noon_pst(hybrid):
@@ -129,6 +131,7 @@ def test_grid_charging_pays_for_itself_and_can_be_turned_off(hybrid):
     assert off.extras["battery_grid_charge_mwh"] == 0
     assert hybrid.extras["battery_grid_charge_mwh"] > 0
     assert hybrid.summary.battery_cycles > off.summary.battery_cycles
+    assert off.summary.battery_cycles >= 140  # solar shifting alone stays near the brief's 150
 
     def energy_cost(sim):
         h, mc = sim.hourly, sim.extras["marginal_cost_usd_per_mwh"]
@@ -136,6 +139,69 @@ def test_grid_charging_pays_for_itself_and_can_be_turned_off(hybrid):
         return imports + mc["gas_cc"] * _arr(h.generation_mw["gas_cc"]).sum()
 
     assert energy_cost(hybrid) < energy_cost(off)
+
+
+def test_grid_charging_is_disclosed_hourly_and_in_provenance(hybrid):
+    """Grid charging changes the cycles a judge sees, so it needs a Provenance and an hourly series."""
+    n, h = len(hybrid.hourly.demand_mw), hybrid.hourly
+    gc = _arr(hybrid.extras["battery_grid_charge_mw"])
+    assert len(gc) == n and gc.min() >= 0
+    assert np.all(gc <= _arr(h.battery_charge_mw)) and np.all(gc <= _arr(h.imports_mw))
+    assert np.allclose(gc, np.round(gc, 3))  # 0.01 MW steps, or clipped to a 0.001 MW series
+    assert abs(gc.sum() - hybrid.extras["battery_grid_charge_mwh"]) <= 0.01 * n
+    gc_prov = [p for p in hybrid.provenance if "grid imports" in p.source and "grid_charging" in p.source]
+    assert len(gc_prov) == 1 and gc_prov[0].kind == "assumption"
+
+    off = simulate(_variant(PRESETS["hybrid"], options={"grid_charging": False}), CATALOG)
+    assert len(off.extras["battery_grid_charge_mw"]) == n and max(off.extras["battery_grid_charge_mw"]) == 0
+    assert not any("grid_charging" in p.source for p in off.provenance)
+    no_batt = [a for a in PRESETS["hybrid"].assets if a.kind != "battery"]
+    assert not any("grid_charging" in p.source for p in simulate(_variant(PRESETS["hybrid"], assets=no_batt), CATALOG).provenance)
+
+
+def test_rounding_never_exceeds_caps():
+    """Limits with more than 3 decimals (the UI's peak rescaling makes them) must still hold in the payload."""
+    base = PRESETS["hybrid"]
+    k = 1000 / 1030  # peak 1030 -> 1000 in the builder rescales every capacity and limit by this
+    assets = [a.model_copy(update={"capacity_mw": a.capacity_mw * k if a.kind == "battery" else 718.4466019417475 if a.kind == "gas_cc" else a.capacity_mw}) for a in base.assets]
+    sc = _variant(base, assets=assets, grid=base.grid.model_copy(update={"import_limit_mw": 300.97087378640776}))
+    sim = simulate(sc, CATALOG)
+    h = sim.hourly
+    assert max(h.generation_mw["gas_cc"]) <= 718.4466019417475
+    assert max(h.imports_mw) <= 300.97087378640776
+    assert abs(max(h.imports_mw) - sim.summary.peak_import_mw) < 1e-6  # summary and hourly agree
+    batt_mw = sum(a.capacity_mw for a in assets if a.kind == "battery")
+    assert max(h.battery_charge_mw) <= batt_mw and max(h.battery_discharge_mw) <= batt_mw
+    assert max(h.battery_soc_mwh) <= sim.extras["battery_energy_mwh"]
+    for kind, series in h.generation_mw.items():
+        assert max(series) <= sum(a.capacity_mw for a in assets if a.kind == kind)
+    gen = np.sum([_arr(v) for v in h.generation_mw.values()], axis=0)
+    supply = gen + _arr(h.battery_discharge_mw) + _arr(h.imports_mw) + _arr(h.unmet_mw)
+    sinks = _arr(h.battery_charge_mw) + _arr(h.exports_mw) + _arr(h.curtailed_mw)
+    assert np.abs(_arr(h.demand_mw) - (supply - sinks)).max() <= 0.01  # contract allows 0.05
+
+
+def test_community_fallback_shape_claims_no_cooling(monkeypatch):
+    """demand.py applies no PUE to the community shape, so its provenance must not say it does."""
+    monkeypatch.setattr(profiles, "community_shape", lambda year: None)
+    base = PRESETS["hybrid"]
+    sim = simulate(_variant(base, demand=base.demand.model_copy(update={"profile": "community"})), CATALOG)
+    demand_prov = [p for p in sim.provenance if p.source.startswith("Demand:")]
+    assert len(demand_prov) == 1 and "PUE" not in demand_prov[0].source
+
+
+def test_weather_provenance_names_the_real_model(hybrid):
+    """2024 Open-Meteo best_match data is the ECMWF IFS ~9 km analysis, not ERA5."""
+    wx = next(p for p in hybrid.provenance if p.source.startswith("Open-Meteo"))
+    assert "IFS" in (wx.note or "") and "ERA5-based" not in (wx.note or "")
+
+
+def test_synthetic_grid_price_has_one_evening_peak():
+    price, _, _ = profiles._synthetic_grid(48)
+    day = price[:24]
+    assert int(day.argmax()) == 19
+    assert day[5:9].max() < day[17:22].min()  # no morning bump (sin() alone peaked at 07:00 too)
+    assert np.array_equal(price[:24], price[24:])
 
 
 def test_flat_price_source():
@@ -165,15 +231,51 @@ def test_unknown_site_falls_back_to_nearest_baked_site(monkeypatch):
         return real(lat, lon, year, allow_network=False)
 
     monkeypatch.setattr(weather, "load_or_fetch", offline)
-    profiles._site_weather_2024.cache_clear()
+    profiles.clear_weather_cache()
     try:
         base = PRESETS["hybrid"]
         sc = _variant(base, site=base.site.model_copy(update={"location": LngLat(lon=-119.60, lat=35.50)}))
         sim = simulate(sc, CATALOG)
         assert any("nearest pre-baked site" in n for n in sim.extras["notes"])
         assert 0.20 <= sim.extras["capacity_factor"]["solar_pv"] <= 0.30
+        assert sim.extras["weather_site"] == "35.40_-119.47"  # the stand-in actually used, not the request
+        wx = next(p for p in sim.provenance if p.source.startswith("Open-Meteo"))
+        assert "nearest pre-baked site" in (wx.note or "")  # visible in the Sources line too
     finally:
-        profiles._site_weather_2024.cache_clear()
+        profiles.clear_weather_cache()
+
+
+def test_weather_fallback_is_retried_after_backoff(monkeypatch):
+    """One failed fetch must not pin a site to its stand-in for the process lifetime, and the
+    simulate + stress prepare() calls of one run must not each pay the fetch timeout."""
+    from app.simulate import weather
+
+    real = weather.load_or_fetch
+    key = "36.30_-119.90"
+    attempts = []
+
+    def flaky(lat, lon, year, allow_network=True):
+        if profiles.site_key(lat, lon) == key:
+            attempts.append(allow_network)
+            if len(attempts) == 1:
+                raise weather.WeatherUnavailable("timeout")
+            return real(37.00, -120.80, year, allow_network=False)  # "fetched" data once the network is back
+        return real(lat, lon, year, allow_network=False)
+
+    monkeypatch.setattr(weather, "load_or_fetch", flaky)
+    profiles.clear_weather_cache()
+    try:
+        w1 = profiles.site_weather(36.30, -119.90, 2024)
+        assert w1.note and "nearest pre-baked site" in w1.note and w1.source_key != key
+        w2 = profiles.site_weather(36.30, -119.90, 2024)  # same run (stress): inside the backoff
+        assert len(attempts) == 1 and w2.source_key == w1.source_key
+        profiles._weather_failed_at[key] -= profiles.WEATHER_RETRY_S + 1  # backoff over: next run retries
+        w3 = profiles.site_weather(36.30, -119.90, 2024)
+        assert len(attempts) == 2 and w3.note is None and w3.source_key == key
+        assert profiles.site_weather(36.30, -119.90, 2024) is w3 and len(attempts) == 2  # success is cached
+        assert profiles.site_weather(36.30, -119.90, 2023).source_key == key
+    finally:
+        profiles.clear_weather_cache()
 
 
 def test_extra_asset_kinds_and_zero_battery():

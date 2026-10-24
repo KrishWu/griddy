@@ -4,7 +4,7 @@
     "kind": "observed",
     "source": "EIA-930 2024, CAISO subregion PGAE",
     "url": "https://www.eia.gov/electricity/gridmonitor/",
-    "note": "Hourly PG&E-area demand; gaps/outliers filled (see counts)."
+    "note": "Hourly PG&E-area demand; gaps/outliers filled (see counts); EIA CISO stamps shifted 1 h earlier to match CAISO load (see time_correction)."
   },
   "urls": [
     "https://www.eia.gov/electricity/gridmonitor/sixMonthFiles/EIA930_SUBREGION_2024_Jan_Jun.csv",
@@ -24,48 +24,61 @@
   ],
   "balancing_authority": "CISO",
   "sub_region": "PGAE",
-  "time_convention": "row i = hour beginning 2024-01-01T00:00-08:00 + i h (Etc/GMT+8, no DST)",
+  "time_convention": "row i = hour beginning 2024-01-01T00:00-08:00 + i h (Etc/GMT+8, no DST); hour beginning = 'UTC Time at End of Hour' - 2 h (1 h hour-ending convention + 1 h CISO label correction)",
+  "time_correction": {
+    "eia_ciso_label_lag_h": 1,
+    "reason": "EIA-930 CISO rows run one hour late against CAISO's own load: the row EIA labels 'ending H' matches CAISO's hour ending H-1. Shifted 1 h earlier so the shape lines up with the CAISO prices and fuel mix in caiso_2024_hourly.csv.",
+    "evidence": [
+      "CAISO Today's Outlook demand.csv (5-min 'Current demand', gridstatus CAISO().get_load, hourly mean) vs the sum of EIA CISO subregions: MAPE 5.6% same-hour vs 3.9% shifted on 2024-07-09 and 5.3% vs 3.6% on 2024-01-15; evening hours agree to ~0.1% only when shifted (07-09 19:00 PST 38,908 vs 38,942 MW; 20:00 37,531 vs 37,529; 01-15 18:00 26,976 vs 27,007).",
+      "Correlation of hour-to-hour changes, PGAE vs CAISO fuel-mix net supply (sum of the signed *_mw columns of caiso_2024_hourly.csv = CAISO load), before the shift: 0.72 at lag 0, 0.90 at EIA +1 h, 0.79 at +2 h; PST months 0.66 vs 0.90, DST months 0.74 vs 0.90 (a label offset, not a DST slip).",
+      "Daily peak hour, EIA CISO sum minus CAISO net supply, before the shift: +1 h on 270 days, 0 h on 47.",
+      "Cross-check: CAISO fuel-mix solar centroid falls at 11.6-12.0 PST every month, so the CAISO side is not the shifted one."
+    ]
+  },
   "rows": 8784,
   "raw_rows": 8784,
-  "raw_rows_outside_year": 0,
+  "raw_rows_outside_year": 1,
   "duplicate_timestamps_averaged": 0,
-  "absent_hours": 0,
-  "missing_hours_filled": 48,
+  "absent_hours": 1,
+  "missing_hours_filled": 49,
   "outliers_replaced": 0,
-  "outlier_rule": "<= 0, < 0.2 x median or > 3.0 x median (median 10905 MW)",
+  "outlier_rule": "<= 0, < 0.2 x median or > 3.0 x median (median 10906 MW)",
   "gap_runs": [
     {
-      "start": "2024-10-31T23:00:00-08:00",
+      "start": "2024-10-31T22:00:00-08:00",
       "hours": 48
+    },
+    {
+      "start": "2024-12-31T23:00:00-08:00",
+      "hours": 1
     }
   ],
   "filled_linear_hours": 0,
-  "filled_diurnal_hours": 48,
+  "filled_diurnal_hours": 49,
   "mean_mw": 11239.6,
   "peak_mw": 21155.0,
-  "peak_timestamp": "2024-07-11T19:00:00-08:00",
+  "peak_timestamp": "2024-07-11T18:00:00-08:00",
   "min_mw": 5907.0,
-  "min_timestamp": "2024-03-17T14:00:00-08:00",
+  "min_timestamp": "2024-03-17T13:00:00-08:00",
   "annual_energy_twh": 98.73,
   "shape_mean": 1.0,
   "shape_min": 0.5256,
   "shape_max": 1.8822,
   "monthly_mean_mw": {
-    "1": 10724.5,
-    "2": 10237.3,
-    "3": 9731.3,
-    "4": 9586.1,
-    "5": 10317.5,
-    "6": 12105.2,
-    "7": 14191.2,
-    "8": 12775.9,
-    "9": 12084.3,
-    "10": 11542.9,
-    "11": 10619.4,
-    "12": 10877.0
+    "1": 10724.9,
+    "2": 10236.9,
+    "3": 9729.6,
+    "4": 9587.4,
+    "5": 10319.6,
+    "6": 12106.1,
+    "7": 14192.3,
+    "8": 12773.9,
+    "9": 12084.2,
+    "10": 11540.7,
+    "11": 10620.1,
+    "12": 10876.4
   },
   "hour_of_day_mean_shape": [
-    0.9657,
     0.9327,
     0.9059,
     0.8901,
@@ -88,19 +101,21 @@
     1.1744,
     1.1382,
     1.0757,
-    1.0088
+    1.0088,
+    0.9656
   ],
   "daily_min_hour_counts": {
-    "2": 4,
-    "3": 63,
-    "4": 92,
-    "5": 37,
-    "6": 3,
-    "11": 14,
-    "12": 52,
-    "13": 53,
-    "14": 38,
-    "15": 8,
-    "16": 2
+    "1": 4,
+    "2": 63,
+    "3": 90,
+    "4": 37,
+    "5": 3,
+    "10": 14,
+    "11": 52,
+    "12": 53,
+    "13": 38,
+    "14": 8,
+    "15": 2,
+    "23": 2
   }
 }
