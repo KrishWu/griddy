@@ -126,7 +126,9 @@ def report_csv(result: ScenarioResult) -> str:
     w.writerow(["site", "utility_territory", sc.site.utility_territory or "", "", ""])
 
     w.writerow(["design", "mode", sc.mode, "", ""])
-    w.writerow(["design", "peak_demand", sc.demand.peak_mw, "MW", ""])
+    w.writerow(["design", "peak_demand", sc.demand.peak_mw, "MW", "facility peak at the meter = IT load x PUE"])
+    if sc.mode != "community":
+        w.writerow(["design", "it_load", round(sc.demand.peak_mw / sc.demand.pue, 1), "MW", "peak_demand / PUE"])
     w.writerow(["design", "load_factor", sc.demand.load_factor, "", ""])
     w.writerow(["design", "pue", sc.demand.pue, "", ""])
     w.writerow(["design", "load_profile", sc.demand.profile, "", ""])

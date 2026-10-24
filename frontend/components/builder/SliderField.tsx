@@ -18,6 +18,8 @@ interface Props {
   displayScale?: number;
   hint?: string;
   slider?: boolean;
+  /** Fixed display decimals, for derived values that needn't show every digit (e.g. IT load). */
+  decimals?: number;
 }
 
 /** Show the committed value as it was run: the step's decimals, plus up to two more if
@@ -27,7 +29,7 @@ function fmt(v: number, step: number): string {
   return String(Number(v.toFixed(decimals + 2)));
 }
 
-export function SliderField({ label, value, onChange, min, max, inputMax, step = 1, unit, displayScale = 1, hint, slider = true }: Props) {
+export function SliderField({ label, value, onChange, min, max, inputMax, step = 1, unit, displayScale = 1, hint, slider = true, decimals }: Props) {
   const id = useId();
   const [draft, setDraft] = useState<string | null>(null);
   const shown = value * displayScale;
@@ -48,7 +50,7 @@ export function SliderField({ label, value, onChange, min, max, inputMax, step =
             className={`w-20 rounded border bg-transparent px-1 py-0.5 text-right text-sm tabular-nums ${
               invalid ? "border-red-500" : "border-zinc-300 dark:border-zinc-700"
             }`}
-            value={draft ?? fmt(shown, step * displayScale)}
+            value={draft ?? (decimals === undefined ? fmt(shown, step * displayScale) : shown.toFixed(decimals))}
             onChange={(e) => {
               setDraft(e.target.value);
               const n = Number(e.target.value);
