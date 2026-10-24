@@ -10,7 +10,7 @@ import type { LngLat, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
 import { lngLat, locKey, num, rec, sameLoc, str } from "./geo";
-import { asFuel, type Fuel } from "./palette";
+import { asFuel, asQueueType, QUEUE_TYPES, type Fuel, type QueueType } from "./palette";
 
 const MAX_CACHED = 50;
 const RETRY_MS = 1500;
@@ -111,6 +111,32 @@ export interface PlantRef {
   distance_km: number | null;
 }
 
+export interface QueueRequest {
+  name: string | null;
+  type: QueueType;
+  tech: string | null;
+  mw: number | null;
+  queueYear: number | null;
+  phase: string | null;
+  poi: string | null;
+}
+
+/** extras.queue_county: active interconnection requests in the site's county (LBNL Queued Up). */
+export interface QueueView {
+  county: string | null;
+  activeProjects: number;
+  activeMw: number;
+  iaExecutedProjects: number | null;
+  iaExecutedMw: number | null;
+  byType: [QueueType, number][];
+  largest: QueueRequest[];
+  rank: number | null;
+  countiesRanked: number | null;
+  statewideActiveMw: number | null;
+  asOf: string | null;
+  url: string | null;
+}
+
 export interface SiteView {
   county: string | null;
   utility: string | null;
@@ -128,6 +154,7 @@ export interface SiteView {
   plantsByFuel: [Fuel, number][];
   population: number | null;
   distanceMethod: string | null;
+  queue: QueueView | null;
 }
 
 function substation(v: unknown, i: number): SubstationRef | null {
@@ -154,6 +181,40 @@ function line(v: unknown): LineRef | null {
     voltage_kv: num(r.voltage_kv),
     distance_km: num(r.distance_km),
     point: lngLat(r.point),
+  };
+}
+
+function queueView(v: unknown): QueueView | null {
+  const r = rec(v);
+  const activeProjects = num(r?.active_projects);
+  const activeMw = num(r?.active_mw);
+  if (!r || activeProjects === null || activeMw === null) return null;
+  const byType = new Map<QueueType, number>();
+  for (const [t, mw] of Object.entries(rec(r.by_type_mw) ?? {})) {
+    const v = num(mw);
+    if (v !== null && v > 0) byType.set(asQueueType(t), (byType.get(asQueueType(t)) ?? 0) + v);
+  }
+  const largest = (Array.isArray(r.largest) ? r.largest : [])
+    .map((p): QueueRequest | null => {
+      const q = rec(p);
+      return q
+        ? { name: str(q.name), type: asQueueType(q.type), tech: str(q.tech), mw: num(q.mw), queueYear: num(q.queue_year), phase: str(q.phase), poi: str(q.poi) }
+        : null;
+    })
+    .filter((v): v is QueueRequest => v !== null);
+  return {
+    county: str(r.county),
+    activeProjects,
+    activeMw,
+    iaExecutedProjects: num(r.ia_executed_projects),
+    iaExecutedMw: num(r.ia_executed_mw),
+    byType: [...byType.entries()].sort((a, b) => b[1] - a[1] || QUEUE_TYPES.indexOf(a[0]) - QUEUE_TYPES.indexOf(b[0])),
+    largest,
+    rank: num(r.rank),
+    countiesRanked: num(r.counties_ranked),
+    statewideActiveMw: num(r.statewide_active_mw),
+    asOf: str(r.as_of),
+    url: str(r.url),
   };
 }
 
@@ -214,5 +275,6 @@ export function readSummary(s: SiteSummary): SiteView {
     plantsByFuel: [...byFuel.entries()].filter(([, mw]) => mw > 0).sort((a, b) => b[1] - a[1]),
     population: num(s.population_within_10km),
     distanceMethod: str(x.distance_method),
+    queue: queueView(x.queue_county),
   };
 }
