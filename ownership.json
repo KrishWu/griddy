@@ -30,6 +30,7 @@
     "frontend/eslint.config.mjs",
     "backend/.env.example",
     "frontend/components/shell/PanelGuard.tsx",
+    "ml/__init__.py",
     "ml/README.md",
     "ml/contract/**"
   ],
