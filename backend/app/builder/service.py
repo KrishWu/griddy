@@ -20,9 +20,11 @@ import io
 
 from app.contract import Asset, DemandSpec, GridConnection, LngLat, Scenario, ScenarioResult, Site
 
+# Team's demo site: Buttonwillow, Kern County, about a mile from PG&E's Midway 500 kV
+# substation (the PG&E/SCE junction at the south end of Path 15).
 DEFAULT_SITE = Site(
-    id="kern-example",
-    name="Example site - Kern County, CA",
+    id="kern-buttonwillow",
+    name="Buttonwillow, Kern County (by Midway 500 kV)",
     location=LngLat(lon=-119.47, lat=35.40),
     county="Kern",
     utility_territory="PG&E",
