@@ -32,9 +32,10 @@ import pandas as pd
 
 from ml.contract.demand_artifact import BASE_SCENARIO, Manifest, write_artifact
 from ml.contract.regions import REGIONS
-from ml.demand_forecast.config import ARTIFACTS_DIR, BASE_YEAR, EIA930_PAGE, FIRST_YEAR, FORECAST_YEARS, OPEN_METEO_URL
+from ml.demand_forecast.config import ARTIFACTS_DIR, BASE_YEAR, DOF_P2A_PAGE, EIA930_PAGE, FIRST_YEAR, FORECAST_YEARS, OPEN_METEO_URL
 from ml.demand_forecast.dataset import features_for_year, load_eia930, load_weather, year_hours_pst
 from ml.demand_forecast.geo import RegionGeo, region_geo
+from ml.demand_forecast.population import load_dof_projections
 from ml.demand_forecast.scenarios import DEFAULT_SCENARIOS, Scenario, load_scenarios
 
 PredictFn = Callable[[pd.DataFrame], np.ndarray]  # features -> (n, 3) ratio quantiles
@@ -48,6 +49,13 @@ PROVENANCE_BASE = [
         "note": "County demand is an estimate, not metered load. Regions from CEC balancing-authority and utility territories (data/explore).",
     },
 ]
+
+PROVENANCE_DOF = {
+    "kind": "observed",
+    "source": "CA Department of Finance P-2A county population projections (2024 baseline)",
+    "url": DOF_P2A_PAGE,
+    "note": "County population growth in the scenarios; DOF's projection, not a Griddy estimate.",
+}
 
 
 def _hours(year: int) -> int:
@@ -116,15 +124,45 @@ def county_rows(
     return rows
 
 
-def baseline_tables(load: pd.DataFrame, geo: RegionGeo, base_year: int) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def baseline_tables(load: pd.DataFrame, geo: RegionGeo, base_year: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """Observed base year: county rows, hourly, and the observed peak/mean ratio per region (the shape a
+    baseline artifact offers the website's what-if until the model's weather-adjusted shapes exist)."""
     obs = observed_hourly(load, base_year)
     n = _hours(base_year)
-    region_tot, hourly = {}, []
+    region_tot, hourly, shape = {}, [], []
     for region, mw in obs.items():
         region_tot[region] = {"energy_mwh": float(mw.sum()), "avg_mw": float(mw.mean()), "peak_p50": float(mw.max()), "peak_p90": float(mw.max())}
         hourly.append(pd.DataFrame({"region": region, "scenario": BASE_SCENARIO, "year": base_year, "hour": np.arange(n), "demand_mw_p10": mw, "demand_mw_p50": mw, "demand_mw_p90": mw}))
+        ratio = float(mw.max() / mw.mean())
+        shape.append({"region": region, "year": base_year, "peak_ratio_p50": ratio, "peak_ratio_p90": ratio, "weather_years": 1})
     county = pd.DataFrame(county_rows(geo, region_tot, BASE_SCENARIO, base_year, "observed_downscaled"))
-    return county, pd.concat(hourly, ignore_index=True), region_tot
+    return county, pd.concat(hourly, ignore_index=True), pd.DataFrame(shape), region_tot
+
+
+def scenario_county_rows(
+    shares: pd.DataFrame, scn: Scenario, base_year: int, year: int, level: float, ratio50: float, ratio90: float,
+    dc: dict[tuple[str, str], float], factors: pd.Series,
+) -> list[dict]:
+    """County rows of one region: the region's level split by population share x county growth factor,
+    plus each county's new data centers (flat at load factor; the flexible share stays off the peak)."""
+    hours = _hours(year)
+    w = (shares["population_share"] * factors).to_numpy()
+    w = w / w.sum() if w.sum() > 0 else w
+    lf, firm = scn.data_center_load_factor, 1.0 - scn.data_center_flexible_share
+    rows = []
+    for r, wc in zip(shares.itertuples(index=False), w):
+        add_mw = dc.get((r.geoid, r.region), 0.0)
+        rows.append(
+            {
+                "geoid": r.geoid, "county": r.county, "region": r.region, "scenario": scn.name, "year": year,
+                "annual_energy_mwh": wc * level * hours + add_mw * lf * hours,
+                "avg_mw": wc * level + add_mw * lf,
+                "peak_mw_p50": wc * level * ratio50 + add_mw * lf * firm,
+                "peak_mw_p90": wc * level * ratio90 + add_mw * lf * firm,
+                "added_load_mw": add_mw, "population_share": r.population_share, "kind": "forecast",
+            }
+        )
+    return rows
 
 
 def forecast_tables(
@@ -137,36 +175,45 @@ def forecast_tables(
     years: list[int],
     weather_years: list[int],
     base_year: int,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    county, hourly = [], []
+    dof: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """County rows, hourly series and peak/mean shape ratios for every scenario x forecast year.
+    The shape of the base year is included too, so the website measures growth on one consistent basis."""
+    county, hourly, shape = [], [], []
     dc_split = {name: data_center_split(s, geo) for name, s in scenarios.items()}
     for region in REGIONS:
-        for year in years:
+        shares = geo.county_shares[geo.county_shares["region"] == region].reset_index(drop=True)
+        for year in [base_year, *years]:
             shapes = {}
             for w in weather_years:
                 r = predict(features_for_year(weather, region, year, w, trend_year_max))
                 shapes[w] = r / r[:, 1].mean()  # the level comes from the scenario, not the model
+            peak50 = {w: float(s[:, 1].max()) for w, s in shapes.items()}
+            ratio50 = max(float(np.median(list(peak50.values()))), 1.0)
+            ratio90 = max(float(np.quantile([float(s[:, 2].max()) for s in shapes.values()], 0.9)), ratio50)
+            shape.append({"region": region, "year": year, "peak_ratio_p50": ratio50, "peak_ratio_p90": ratio90, "weather_years": len(shapes)})
+            if year == base_year:
+                continue  # base-year rows are the observed ones
+            rep = min(peak50, key=lambda w: abs(peak50[w] - ratio50))
             for name, scn in scenarios.items():
-                level = base[region]["mean_mw"] * scn.growth_factor(region, base_year, year)
+                factors = scn.county_factors(shares["geoid"], base_year, year, dof)
+                cal = scn.calibrated_factor(region, base_year, year)
+                level = base[region]["mean_mw"] * (cal if cal is not None else float((shares["population_share"] * factors).sum()))
                 dc_flat = sum(mw for (_, reg), mw in dc_split[name].items() if reg == region) * scn.data_center_load_factor
-                peak50 = {w: float((s[:, 1] * level).max()) for w, s in shapes.items()}
-                peak90 = {w: float((s[:, 2] * level).max()) for w, s in shapes.items()}
-                p50 = float(np.median(list(peak50.values())))
-                p90 = max(float(np.quantile(list(peak90.values()), 0.9)), p50)
-                rep = min(peak50, key=lambda w: abs(peak50[w] - p50))
                 q = shapes[rep] * level + dc_flat
                 hourly.append(
                     pd.DataFrame(
                         {"region": region, "scenario": name, "year": year, "hour": np.arange(len(q)), "demand_mw_p10": q[:, 0], "demand_mw_p50": q[:, 1], "demand_mw_p90": q[:, 2]}
                     )
                 )
-                tot = {region: {"energy_mwh": level * len(q), "avg_mw": level, "peak_p50": p50, "peak_p90": p90}}
-                shares = RegionGeo(geo.county_shares[geo.county_shares["region"] == region], geo.weather_points)
-                county += county_rows(shares, tot, name, year, "forecast", dc_split[name], scn.data_center_load_factor)
-    return pd.DataFrame(county), pd.concat(hourly, ignore_index=True)
+                county += scenario_county_rows(shares, scn, base_year, year, level, ratio50, ratio90, dc_split[name], factors)
+    return pd.DataFrame(county), pd.concat(hourly, ignore_index=True), pd.DataFrame(shape)
 
 
-def _write(kind: str, base_year: int, county: pd.DataFrame, hourly: pd.DataFrame, scenarios: dict, extra: dict, out: Path | None) -> Path:
+def _write(
+    kind: str, base_year: int, county: pd.DataFrame, hourly: pd.DataFrame, scenarios: dict, extra: dict, out: Path | None,
+    shape: pd.DataFrame | None = None, population: pd.DataFrame | None = None,
+) -> Path:
     stamp = dt.datetime.now(dt.UTC)
     artifact_id = f"{kind}-{base_year}-{stamp:%Y%m%d-%H%M%S}"
     manifest = Manifest(
@@ -181,18 +228,22 @@ def _write(kind: str, base_year: int, county: pd.DataFrame, hourly: pd.DataFrame
         metrics=extra.get("metrics", {}),
         provenance=extra.get("provenance", PROVENANCE_BASE),
     )
-    path = write_artifact(out or ARTIFACTS_DIR / artifact_id, manifest, county, hourly)
+    path = write_artifact(out or ARTIFACTS_DIR / artifact_id, manifest, county, hourly, shape=shape, population=population)
     if out is None:
-        (ARTIFACTS_DIR / f"LATEST_{kind.upper()}").write_text(artifact_id + "\n", encoding="utf-8")
+        (ARTIFACTS_DIR / f"LATEST_{kind.upper()}").write_text(f"{artifact_id}\n", encoding="utf-8")
     return path
 
 
 def export_baseline(base_year: int, out: Path | None) -> Path:
     geo = region_geo()
     load = load_eia930([base_year - 1, base_year, base_year + 1])  # neighbours give the spike filter context
-    county, hourly, tot = baseline_tables(load, geo, base_year)
-    extra = {"data_vintage": {"eia930": f"{base_year} six-month files", "population": "Census 2020 block groups"}}
-    path = _write("baseline", base_year, county, hourly, {BASE_SCENARIO: {"kind": "observed"}}, extra, out)
+    county, hourly, shape, tot = baseline_tables(load, geo, base_year)
+    dof = load_dof_projections()
+    extra = {
+        "data_vintage": {"eia930": f"{base_year} six-month files", "population": "Census 2020 block groups", "population_projection": "CA DOF P-2A (2024 baseline)"},
+        "provenance": PROVENANCE_BASE + [PROVENANCE_DOF],
+    }
+    path = _write("baseline", base_year, county, hourly, {BASE_SCENARIO: {"kind": "observed"}}, extra, out, shape=shape, population=dof)
     for region, t in tot.items():
         print(f"{region:5s} {t['energy_mwh'] / 1e6:7.2f} TWh  peak {t['peak_p50']:9,.0f} MW")
     return path
@@ -218,10 +269,11 @@ def export_forecast(run: Path, scenarios_path: Path, years: list[int], weather_y
     weather = load_weather(geo)
     weather_years = weather_years or list(range(FIRST_YEAR, base_year + 1))
     scenarios = load_scenarios(scenarios_path)
-    county, hourly = forecast_tables(predict, spec["trend_year_max"], base, geo, weather, scenarios, years, weather_years, base_year)
+    dof = load_dof_projections()
+    county, hourly, shape = forecast_tables(predict, spec["trend_year_max"], base, geo, weather, scenarios, years, weather_years, base_year, dof)
 
     load = load_eia930([base_year - 1, base_year, base_year + 1])
-    base_county, base_hourly, _ = baseline_tables(load, geo, base_year)
+    base_county, base_hourly, _, _ = baseline_tables(load, geo, base_year)
     county = pd.concat([base_county, county], ignore_index=True)
     hourly = pd.concat([base_hourly, hourly], ignore_index=True)
 
@@ -239,13 +291,14 @@ def export_forecast(run: Path, scenarios_path: Path, years: list[int], weather_y
         },
         "provenance": PROVENANCE_BASE
         + [
+            PROVENANCE_DOF,
             {"kind": "observed", "source": "Open-Meteo historical weather (ERA5 reanalysis)", "url": OPEN_METEO_URL, "note": f"Replayed weather years {weather_years}"},
-            {"kind": "simulated", "source": f"XGBoost quantile model {run.name}", "url": None, "note": "Hourly load shape per region from weather and calendar"},
+            {"kind": "simulated", "source": "Weather-adjusted hourly demand model (gradient-boosted quantiles)", "url": None, "note": "Load shape per region from weather and calendar"},
             {"kind": "assumption", "source": "Scenario growth rates and data-center loads", "url": None, "note": f"From {scenarios_path.name}; see manifest scenarios"},
         ],
     }
     scenario_meta = {BASE_SCENARIO: {"kind": "observed"}, **{n: s.assumptions() for n, s in scenarios.items()}}
-    return _write("forecast", base_year, county, hourly, scenario_meta, extra, out)
+    return _write("forecast", base_year, county, hourly, scenario_meta, extra, out, shape=shape, population=dof)
 
 
 def main() -> None:

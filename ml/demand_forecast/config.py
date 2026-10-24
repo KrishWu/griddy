@@ -27,3 +27,8 @@ BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 CA_ALBERS = "EPSG:3310"
 WEATHER_POINTS_PER_REGION = 6  # population-weighted centres of the region's most populous counties (>= 4% share each)
+
+# California Department of Finance county population projections (P-2A, 2024 baseline, 2020-2070)
+DOF_P2A_URL = "https://dof.ca.gov/media/docs/forecasting/Demographics/projections/P2A_County_Total.xlsx"
+DOF_P2A_PAGE = "https://dof.ca.gov/forecasting/demographics/projections/"
+DOF_P2A_FILE = RAW_DIR / "P2A_County_Total.xlsx"

@@ -3,6 +3,7 @@
 Run on the training machine, from the repo root:
     python -m ml.demand_forecast.fetch_data                 # 2019 .. current, both sources
     python -m ml.demand_forecast.fetch_data --only eia --years 2024   # just what the baseline artifact needs
+    python -m ml.demand_forecast.fetch_data --only dof                # CA DOF county population projections
 
 EIA-930 six-month files (about 25-60 MB each) land in ml/demand_forecast/data/raw/;
 weather per region point lands in ml/demand_forecast/cache/. Both are git-ignored and
@@ -21,6 +22,8 @@ import httpx
 from ml.demand_forecast.config import (
     BROWSER_UA,
     CACHE_DIR,
+    DOF_P2A_FILE,
+    DOF_P2A_URL,
     EIA930_URL,
     FIRST_YEAR,
     OPEN_METEO_URL,
@@ -103,13 +106,22 @@ def fetch_weather(start: dt.date, end: dt.date, refresh: bool = False) -> None:
                 time.sleep(1.0)  # be polite to the free API
 
 
+def fetch_dof() -> None:
+    if DOF_P2A_FILE.is_file():
+        return
+    _download(DOF_P2A_URL, DOF_P2A_FILE)
+    print(f"DOF P-2A county projections: {DOF_P2A_FILE.name}")
+
+
 def main() -> None:
     today = dt.date.today()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--years", type=int, nargs="*", default=list(range(FIRST_YEAR, today.year + 1)))
-    ap.add_argument("--only", choices=("eia", "weather"), default=None)
+    ap.add_argument("--only", choices=("eia", "weather", "dof"), default=None)
     ap.add_argument("--refresh-weather", action="store_true")
     args = ap.parse_args()
+    if args.only in (None, "dof"):
+        fetch_dof()
     if args.only in (None, "eia"):
         fetch_eia930(args.years)
     if args.only in (None, "weather"):
