@@ -41,16 +41,39 @@ to its cleanest hours and reports avoided t CO2e/yr and an SCI score per GPU-hou
 
 The GriddyGrade scores the selected site 0-100 in the browser from data already loaded: A's site
 summary and this module's site intel. No extra endpoint, so it follows the scenario's load
-instantly. GriddyGrade = 0.33 grid proximity + 0.22 nearby generation + 0.17 community exposure +
-0.17 air quality / permitting + 0.11 utility / balancing authority (land is not scored).
-`GriddyGradeCard.tsx` shows it as just a number above every other card (AppShell mounts it first),
-with `GriddyGradeDetails.tsx` on expand; `useGriddyGrade.ts` feeds both.
-`feasibility.ts` holds the pure scoring math (weights, thresholds, missing-data rules);
-`feasibilityInput.ts` maps the summary and intel onto it. The weights are initial product
-heuristics, not validated predictions. The score relies on `extras["nonattainment_available"]`
-here so that a Green Book layer that failed to load isn't read as attainment.
-Tests: `node --test components/site_intel/feasibility.test.mjs` from `frontend/` (Node >= 22.18);
-`tests/test_site_intel_feasibility.py` runs them inside pytest when such a Node is on PATH.
+instantly. GriddyGrade = 0.36 grid + 0.25 generation + 0.17 community exposure + 0.17 air quality /
+permitting + 0.05 utility / balancing authority (land is not scored), capped at 35 when both the
+nearest 220 kV+ substation and line are 20 km or more away. `feasibility.ts` holds the pure
+scoring math (weights, thresholds, missing-data rules); `feasibilityInput.ts` maps the summary and
+intel onto it. The weights are initial product heuristics, not validated predictions. The score
+relies on `extras["nonattainment_available"]` here so that a Green Book layer that failed to load
+isn't read as attainment.
+
+**Model signals** (`ml.py` → `extras["ml"]`, a few ms, offline): the nearest 5 km cell of B's site
+artifact (`ml/artifacts/site_location/LATEST`, at most 5 km away, so none outside California)
+gives the county's interconnection queue (LBNL Queued Up; a congestion penalty on G, up to 25%
+off, and a `needs_utility_study` finding at 10 GW or more) and the best solar / wind / battery
+suitability within 25 km (30% of P, labeled a similarity score; gas is left out). A's demand
+forecast (`mid`, 2035, P50 first: its P10-P90 band is too narrow) gives the region's demand
+pressure, shown as context and never scored. The cell's nonattainment flag and grid distances are
+not used (E and A already score those). Without the signals the grade falls back to the rules alone
+and data completeness is unchanged.
+
+**Percentile.** `GriddyGradeCard.tsx` leads with the grade's percentile among plausible California
+sites (5 km cells within 50 km of a 220 kV+ line, inside a utility territory), with the raw grade
+and its components in `GriddyGradeDetails.tsx`. `percentile.ts` interpolates in
+`gradePercentiles.json`: 101 cut-offs per tabulated load (25-2,000 MW), using the middle of a tied
+range. Rebuild it after changing the formula or the artifacts (about 90 s; Node >= 22.18 runs the
+same TypeScript on every cell, so it can't drift from the live grade):
+`python -m app.site_intel.prep.grade_percentiles --node <node>` (`--reuse` skips rescoring the cells).
+
+**California only.** `regionGuard.ts` keeps data centers inside California plus a 2 km Pacific
+margin (`caOutline.json`, from `python -m app.site_intel.prep.region`); D's `selectSite` calls it,
+and the card says why a click was refused.
+
+Tests: `node --test components/site_intel/feasibility.test.mjs` and `percentile.test.mjs` from
+`frontend/` (Node >= 22.18); `tests/test_site_intel_feasibility.py` runs them inside pytest when such
+a Node is on PATH, and `tests/test_site_intel_ml.py` covers the model signals.
 
 ## Offline data (`data/site_intel/`)
 

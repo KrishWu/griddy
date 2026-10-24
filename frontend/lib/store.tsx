@@ -4,6 +4,8 @@
 // everything else in local component state. Panels read/write through useGridForge().
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { allowSitePlacement } from "@/components/site_intel/regionGuard";
+
 import { api } from "./api";
 import { SCHEMA_VERSION, type LngLat, type MapOverlay, type Mode, type Scenario, type ScenarioResult, type SiteIntel, type SiteSummary } from "./contract";
 
@@ -356,6 +358,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   }, [presets.length, errorSource, loadPresets, runCompare, run]);
 
   const selectSite = useCallback(async (p: LngLat) => {
+    if (!allowSitePlacement(p)) return; // Griddy is California-only for now (E's guard shows why)
     // A clicked point is a new site: fresh id/name, never the preset's Kern labels.
     // Modules that cache per site should key on location rounded to 0.01 deg, not id.
     const id = `site-${p.lon.toFixed(3)}-${p.lat.toFixed(3)}`;

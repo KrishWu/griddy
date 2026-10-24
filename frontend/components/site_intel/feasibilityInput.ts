@@ -5,9 +5,11 @@
 import type { SiteView } from "@/components/explore/useSiteSummary";
 import type { SiteIntel, SiteSummary } from "@/lib/contract";
 
-import type { AssetRef, ComponentKey, Designation, FeasibilityInput, Lookup } from "./feasibility";
+import type { AssetRef, CleanKind, ComponentKey, DemandSignal, Designation, FeasibilityInput, Lookup, MlSignals } from "./feasibility";
 
 const OUTSIDE = "outside California data coverage";
+const ML_MAX_CELL_KM = 5; // as feasibility.ts: a farther 5 km cell describes somewhere else
+const CLEAN_KINDS: CleanKind[] = ["solar_pv", "onshore_wind", "battery"];
 
 const rec = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -15,6 +17,52 @@ const str = (v: unknown): string | null => (typeof v === "string" && v ? v : nul
 
 function asset(v: { name: string; voltage_kv: number | null; distance_km: number | null } | null): AssetRef | null {
   return v ? { name: v.name, voltageKv: v.voltage_kv, distanceKm: v.distance_km } : null;
+}
+
+/** A's forecast as E's site intel passes it (backend/app/site_intel/ml.py); null when incomplete. */
+function demandSignal(f: Record<string, unknown> | null): DemandSignal | null {
+  const region = rec(f?.region);
+  const metrics = rec(f?.metrics) ?? {};
+  const v = {
+    forecastId: str(f?.artifact_id),
+    scenario: str(f?.scenario),
+    year: num(f?.year),
+    baseYear: num(f?.base_year),
+    regionName: str(region?.name) ?? str(region?.id),
+    basePeakP50Mw: num(region?.base_peak_mw_p50),
+    peakP50Mw: num(region?.peak_mw_p50),
+  };
+  if (Object.values(v).some((x) => x === null)) return null;
+  return { ...(v as { [K in keyof typeof v]: NonNullable<(typeof v)[K]> }), mapeP50Pct: num(metrics.mape_p50_pct), coverage: num(metrics.p10_p90_coverage) };
+}
+
+/** E's extras.ml, or the reason it can't describe this site. */
+function mlSignals(m: Record<string, unknown> | null): { ml: MlSignals | null; reason?: string } {
+  if (!m || m.available !== true) return { ml: null, reason: str(m?.reason) ?? "model signals not in the site screening" };
+  const art = rec(m.site_artifact);
+  const cell = rec(m.cell);
+  const cellKm = num(cell?.distance_km);
+  const artifactId = str(art?.id);
+  if (!artifactId || cellKm === null) return { ml: null, reason: "model signals incomplete" };
+  if (cellKm > ML_MAX_CELL_KM) return { ml: null, reason: `nearest model cell is ${cellKm.toFixed(1)} km away` };
+  const metrics = rec(art?.model_metrics) ?? {};
+  const clean = rec(m.clean_build);
+  const rocAuc: MlSignals["rocAuc"] = {};
+  for (const k of CLEAN_KINDS) {
+    const auc = num(rec(metrics[k])?.roc_auc);
+    if (auc !== null) rocAuc[k] = auc;
+  }
+  return {
+    ml: {
+      artifactId,
+      rocAuc,
+      cellKm,
+      county: str(cell?.county),
+      queueMw: num(m.queue_mw),
+      cleanBuild: clean ? (Object.fromEntries(CLEAN_KINDS.map((k) => [k, num(rec(clean[k])?.best)])) as Record<CleanKind, number | null>) : null,
+      demand: demandSignal(rec(m.forecast)),
+    },
+  };
 }
 
 export interface FeasibilitySources {
@@ -87,6 +135,10 @@ export function feasibilityInput({ summary, view, intel, intelPending = false }:
   const aq = rec(intel?.air_quality);
   const aqi = aq ? { aqi: num(aq.aqi), category: str(aq.category), pollutant: str(aq.pollutant) } : null;
 
+  // Model signals (queue, clean-build similarity, demand forecast): missing when the artifact is
+  // absent, the site is outside California, or the nearest 5 km cell is more than 5 km away.
+  const signals = !intel ? { ml: null, reason: noIntel } : outside ? { ml: null, reason: OUTSIDE } : mlSignals(rec(ix.ml));
+
   // Utility / balancing authority: A's polygon lookups. "None" is a real answer (incl. outside
   // California); a layer that did not load is unknown. CAISO assumed by default does not count.
   const unknown: Lookup = { status: "unknown" };
@@ -108,5 +160,7 @@ export function feasibilityInput({ summary, view, intel, intelPending = false }:
     balancingAuthority,
     outsideCoverage: outside,
     reasons,
+    ml: signals.ml,
+    ...(signals.reason ? { mlReason: signals.reason } : {}),
   };
 }

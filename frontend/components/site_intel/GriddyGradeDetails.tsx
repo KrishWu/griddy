@@ -1,6 +1,6 @@
 "use client";
-// The GriddyGrade's details, shown when its card is expanded: category, data completeness, load,
-// serious constraints, the five components, key considerations, method and limits.
+// The GriddyGrade's details, shown when its card is expanded: percentile and raw grade, data
+// completeness, load, serious constraints, the five components, key considerations, method and limits.
 // OWNER: workstream E (Site Intelligence).
 import { ProvenanceTip } from "@/components/evaluate/ProvenanceTip";
 import type { Provenance } from "@/lib/contract";
@@ -14,6 +14,7 @@ import {
   type ConsiderationGroup,
   type ConsiderationTone,
   type FeasibilityResult,
+  type MetricResult,
 } from "./feasibility";
 import { setLoadBasis, type GriddyGrade } from "./useGriddyGrade";
 
@@ -39,8 +40,8 @@ function Meter({ value, status = "observed", label, bands = false }: { value: nu
 
 // Which of the summary's and intel's provenance entries feed each component.
 const SOURCES: Record<ComponentKey, RegExp> = {
-  grid: /substation|transmission|straight-line/i,
-  generation: /EIA-860/i,
+  grid: /substation|transmission|straight-line|Queued Up|demand forecast/i,
+  generation: /EIA-860|site-location model/i,
   community: /population/i,
   air: /Green Book|AirNow/i,
   infrastructure: /Load Serving|Balancing Authority/i,
@@ -71,6 +72,35 @@ function StatusBadge({ status }: { status: ComponentStatus }) {
   );
 }
 
+function MetricRow({ m, many }: { m: MetricResult; many: boolean }) {
+  const counted = m.state === "observed" && m.effectiveWeight > 0;
+  const share = m.penalty ? (m.state === "observed" ? ` · takes ${pct(m.effectiveWeight)} off this component` : "") : counted && many ? ` · ${pct(m.effectiveWeight)} of this component` : "";
+  return (
+    <li>
+      <span className="flex flex-wrap items-center gap-x-1.5 text-zinc-500">
+        {m.label}
+        {share}
+        {m.source && (
+          <span
+            className={`rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide ${
+              m.source.kind === "inferred" ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-300" : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+          >
+            {m.source.tag}
+          </span>
+        )}
+      </span>
+      <span className="flex gap-2">
+        <span className="min-w-0 flex-1 break-words font-medium text-zinc-800 dark:text-zinc-200">{m.value}</span>
+        <span className="shrink-0 tabular-nums">
+          {m.state === "observed" && m.score !== null ? `${Math.round(m.score)}/100` : m.state === "missing" ? (m.optional ? "not used" : "missing") : "n/a"}
+        </span>
+      </span>
+      {m.source && <span className="block text-[10px] text-zinc-500">{m.source.detail}</span>}
+    </li>
+  );
+}
+
 function ComponentRow({ c, sources }: { c: ComponentResult; sources: Provenance[] }) {
   return (
     <li className="py-1.5">
@@ -94,16 +124,7 @@ function ComponentRow({ c, sources }: { c: ComponentResult; sources: Provenance[
           <p className="text-zinc-800 dark:text-zinc-200">{c.explanation}</p>
           <ul className="space-y-1">
             {c.metrics.map((m) => (
-              <li key={m.id}>
-                <span className="block text-zinc-500">
-                  {m.label}
-                  {m.state === "observed" && c.metrics.length > 1 && ` · ${pct(m.effectiveWeight)} of this component`}
-                </span>
-                <span className="flex gap-2">
-                  <span className="min-w-0 flex-1 break-words font-medium text-zinc-800 dark:text-zinc-200">{m.value}</span>
-                  <span className="shrink-0 tabular-nums">{m.state === "observed" && m.score !== null ? `${Math.round(m.score)}/100` : m.state === "missing" ? "missing" : "n/a"}</span>
-                </span>
-              </li>
+              <MetricRow key={m.id} m={m} many={c.metrics.length > 1} />
             ))}
             {c.context.map((f) => (
               <li key={`${f.label}:${f.value}`}>
@@ -191,17 +212,62 @@ function KeyConsiderations({ r }: { r: FeasibilityResult }) {
   );
 }
 
+const PERCENTILE_NOTES = [
+  "A percentile is relative: the 50th means typical for plausible California sites, not a 50% chance the project works.",
+  "It magnifies small differences where many sites score alike: a few grade points can move a site many percentiles, so read it with the grade and its components.",
+  "It follows the assumed load: the cut-offs are tabulated from 25 to 2,000 MW and interpolated.",
+];
+
+function PercentileHeader({ g, r }: { g: GriddyGrade; r: FeasibilityResult }) {
+  const p = g.percentile;
+  if (!p) return null;
+  const t = p.table;
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">{p.display.toFixed(1)} percentile</span>
+          <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
+            among {t.count.toLocaleString()} plausible California sites at the same load: {t.reference}
+          </span>
+        </span>
+        <ProvenanceTip
+          label="GriddyGrade percentile"
+          provenance={{
+            kind: "inferred",
+            source: "Every 5 km cell of California scored with this formula (prep/grade_percentiles.py)",
+            note: `Cut-offs of ${t.generated}${t.site_artifact ? `, site artifact ${t.site_artifact}` : ""}${t.forecast_artifact ? `, forecast ${t.forecast_artifact}` : ""}.`,
+          }}
+        >
+          {PERCENTILE_NOTES.join(" ")}
+        </ProvenanceTip>
+      </div>
+      <div className="mt-2">
+        <Meter value={p.value} label="GriddyGrade percentile, 0 to 100" />
+      </div>
+      {!r.components.some((c) => c.metrics.some((m) => m.optional && m.state === "observed")) && (
+        <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">
+          Model signals are missing here but the reference sites had them, so compare this percentile with care.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade; result: FeasibilityResult }) {
   const load = g.scenarioLoad;
   return (
     <>
+      <PercentileHeader g={g} r={r} />
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{r.category}</span>
-          <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">out of 100 · data center site feasibility, preliminary screening</span>
+          <span className="block text-sm font-semibold">
+            Grade <span className="tabular-nums">{r.overallScore.toFixed(1)}</span>/100 · {r.category}
+          </span>
+          <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">data center site feasibility, preliminary screening</span>
         </span>
         <ProvenanceTip label="GriddyGrade" provenance={{ kind: "inferred", source: "Griddy feasibility heuristic (initial product weights)" }}>
-          GriddyGrade = {FORMULA}. A screening heuristic, not an approval decision or a prediction of interconnection, permitting or cost.
+          GriddyGrade = {FORMULA}, capped when a must-have is missing. A screening heuristic, not an approval decision or a prediction of interconnection, permitting or cost.
         </ProvenanceTip>
       </div>
       <div className="mt-2">
@@ -264,7 +330,7 @@ export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade
         </dd>
       </dl>
 
-      {g.intelPending && <p className="mt-2 text-[11px] text-zinc-400">Waiting for site screening (air quality); it counts as missing until it arrives.</p>}
+      {g.intelPending && <p className="mt-2 text-[11px] text-zinc-400">Waiting for site screening (air quality and model signals); it counts as missing until it arrives.</p>}
       {r.qualification && (
         <p
           className={`mt-3 rounded border px-2 py-1 text-[11px] ${
@@ -298,7 +364,15 @@ export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade
           ))}
         </ul>
         <p className="mt-1 text-right text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
-          Total {r.overallScoreRaw.toFixed(1)} points → GriddyGrade {r.overallScore}
+          Total {r.pointsTotal.toFixed(1)} points
+          {r.cap && (
+            <span className="text-red-700 dark:text-red-400">
+              {" "}
+              → capped at {r.cap.limit} ({r.cap.reason})
+            </span>
+          )}{" "}
+          → GriddyGrade {r.overallScore.toFixed(1)}
+          {g.percentile && ` → ${g.percentile.display.toFixed(1)} percentile`}
         </p>
       </section>
 
@@ -308,7 +382,7 @@ export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade
         <summary className="cursor-pointer">Method and limitations</summary>
         <p className="mt-1 tabular-nums">GriddyGrade = {FORMULA}, each component 0–100.</p>
         <ul className="mt-1 list-disc space-y-1 pl-4">
-          {r.explanatoryNotes.map((n) => (
+          {[...r.explanatoryNotes, ...(g.percentile ? [`Percentile: ranked against ${g.percentile.table.reference}.`, ...PERCENTILE_NOTES] : [])].map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
