@@ -94,6 +94,22 @@ export const QUEUE_RAMP: [mw: number, color: string][] = [
 export const QUEUE_FILL_OPACITY = 0.5;
 export const QUEUE_CREDIT = "LBNL Queued Up 2026 (CC BY 4.0)";
 
+/** Demand-growth choropleth (Phase 2 forecast): new P90 peak MW per county on one hue (orange, clear of the
+ *  teal queue ramp and the purple voltage ramp), light -> dark. Stops sit at the legend's evenly spaced
+ *  ticks; above 2,500 MW stays darkest and a decline (<= 0) takes the lightest step. */
+export const DEMAND_RAMP: [mw: number, color: string][] = [
+  [0, "#FFF7ED"],
+  [100, "#FED7AA"],
+  [250, "#FDBA74"],
+  [500, "#F97316"],
+  [1000, "#C2410C"],
+  [2500, "#7C2D12"],
+];
+export const DEMAND_FILL_OPACITY = 0.6;
+export const DEMAND_CREDIT = "Griddy demand forecast: EIA-930 load, Census population, CA DOF projections";
+/** Ring around recommended-site markers, so they read apart from EIA-860 plants (white ring). */
+export const REC_SITE_RING = "#111827";
+
 /** LBNL request types, in the order the Site panel lists them when tied. */
 export const QUEUE_TYPES = ["hybrid", "battery", "solar", "wind", "gas", "geothermal", "other"] as const;
 export type QueueType = (typeof QUEUE_TYPES)[number];

@@ -2,20 +2,24 @@
 // Layer toggles + a compact, foldable legend with data attribution, overlaid on the map.  OWNER: workstream A.
 // The toggles stay visible; the legend starts folded on a short or narrow map, and the whole
 // card starts folded on a tiny one (a phone), until the viewer opens or closes either themselves.
-// Optional layers (interconnection queue, 2.5D footprints) show a compact key under their toggle
-// while on, so they are explained even with the legend folded.
+// Optional layers (interconnection queue, demand growth, recommended sites, 2.5D footprints) show a
+// compact key under their toggle while on, so they are explained even with the legend folded.
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { DATA_KEYS, FOOTPRINT_OPACITY, FOOTPRINT_WIND_OPACITY, GROUP_LABEL, type LayerGroup } from "./mapStyle";
 import {
   ASSET_STROKE,
   CONTEXT_COLOR,
+  DEMAND_CREDIT,
+  DEMAND_FILL_OPACITY,
+  DEMAND_RAMP,
   FUEL_COLOR,
   FUEL_LABEL,
   FUELS,
   QUEUE_CREDIT,
   QUEUE_FILL_OPACITY,
   QUEUE_RAMP,
+  REC_SITE_RING,
   SITE_COLOR,
   UNKNOWN_VOLTAGE,
   UTILITY_TYPE_COLOR,
@@ -27,11 +31,23 @@ import { Dot, LineSwatch, Square } from "./Swatch";
  *  data for it (the toggle is disabled), undefined while loading. */
 export type LayerStatus = Partial<Record<LayerGroup, number | "error" | "unavailable">>;
 
-const GROUPS: LayerGroup[] = ["plants", "transmission", "substations", "boundaries", "utilities", "queue", "footprints"];
+const GROUPS: LayerGroup[] = ["plants", "transmission", "substations", "boundaries", "utilities", "queue", "demand", "sites", "footprints"];
 const UNAVAILABLE_HINT: Partial<Record<LayerGroup, string>> = {
   queue: "The backend has no interconnection-queue data",
+  demand: "The demand forecast is unavailable right now",
   footprints: "The technology catalog (land per MW) could not be loaded",
 };
+/** Groups listed only while they have something to show (no disabled row before the data exists). */
+const ONLY_WHEN_LOADED: ReadonlySet<LayerGroup> = new Set(["sites"]);
+const COUNT_UNIT: Partial<Record<LayerGroup, string>> = { queue: "counties", demand: "counties", sites: "sites" };
+/** Ticks of the demand legend; evenly spaced because DEMAND_RAMP has a stop at each. */
+const DEMAND_TICKS = DEMAND_RAMP.map(([v]) => (v >= 1000 ? `${v / 1000}k` : String(v)));
+const SITE_KEYS: { label: string; color: string }[] = [
+  { label: "Solar", color: FUEL_COLOR.solar },
+  { label: "Wind", color: FUEL_COLOR.wind },
+  { label: "Battery", color: FUEL_COLOR.battery },
+  { label: "Gas", color: FUEL_COLOR.gas },
+];
 /** Ticks of the queue legend; evenly spaced because QUEUE_RAMP has a stop at each. */
 const QUEUE_TICKS = QUEUE_RAMP.map(([mw]) => mw / 1000);
 const FOOTPRINT_KEYS: { label: string; color: string; opacity: number }[] = [
@@ -100,6 +116,47 @@ function QueueKey() {
   );
 }
 
+/** Sequential key for the demand-growth choropleth, drawn over the basemap's light gray at the map's fill opacity. */
+function DemandKey({ caption }: { caption?: string }) {
+  const stops = DEMAND_RAMP.map(([, c], i) => `${c} ${(i / (DEMAND_RAMP.length - 1)) * 100}%`).join(", ");
+  const last = DEMAND_TICKS.length - 1;
+  return (
+    <div className="mb-1 ml-5 mt-0.5">
+      <div className="rounded-sm bg-[#F2F3F0] ring-1 ring-black/10 dark:ring-white/20">
+        <div className="h-2 rounded-sm" style={{ backgroundImage: `linear-gradient(90deg, ${stops})`, opacity: DEMAND_FILL_OPACITY }} />
+      </div>
+      <div className="relative mt-0.5 h-3 text-[10px] tabular-nums text-zinc-500 dark:text-zinc-400">
+        {DEMAND_TICKS.map((t, i) => (
+          <span
+            key={t}
+            className="absolute top-0 whitespace-nowrap"
+            style={i === 0 ? { left: 0 } : i === last ? { right: 0 } : { left: `${(i / last) * 100}%`, transform: "translateX(-50%)" }}
+          >
+            {i === 0 ? "≤0" : t}
+          </span>
+        ))}
+      </div>
+      <p className="mt-0.5 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">{caption ?? "MW of new P90 peak per county"} · estimate</p>
+    </div>
+  );
+}
+
+function SitesKey() {
+  return (
+    <div className="mb-1 ml-5 mt-0.5">
+      <ul className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]">
+        {SITE_KEYS.map((k) => (
+          <li key={k.label} className="flex items-center gap-1">
+            <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: k.color, boxShadow: `0 0 0 1.5px #fff, 0 0 0 2.5px ${REC_SITE_RING}` }} />
+            {k.label}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-0.5 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">Size ∝ MW · screening candidates, not buildable sites</p>
+    </div>
+  );
+}
+
 function FootprintKey() {
   return (
     <div className="mb-1 ml-5 mt-0.5">
@@ -127,8 +184,10 @@ export function LayerControl(props: {
   overlays: { id: string; label: string }[];
   hiddenOverlays: ReadonlySet<string>;
   onToggleOverlay: (id: string) => void;
+  /** Caption of the demand-growth key, e.g. "MW of new P90 peak by 2035 · mid scenario". */
+  demandCaption?: string;
 }) {
-  const { container, visible, onToggle, status, overlays, hiddenOverlays, onToggleOverlay } = props;
+  const { container, visible, onToggle, status, overlays, hiddenOverlays, onToggleOverlay, demandCaption } = props;
   const size = useSizeClass(container);
   // null = follow the map size; a click pins the viewer's choice.
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
@@ -158,6 +217,7 @@ export function LayerControl(props: {
           <ul className={`space-y-0.5 px-3 pb-2 ${legendOpen ? "shrink-0" : "min-h-0 overflow-y-auto"}`}>
             {GROUPS.map((g) => {
               const s = status[g];
+              if (ONLY_WHEN_LOADED.has(g) && typeof s !== "number") return null;
               const unavailable = s === "unavailable";
               const on = visible[g] && !unavailable;
               return (
@@ -178,10 +238,12 @@ export function LayerControl(props: {
                       className={`tabular-nums ${s === "error" ? "text-red-600" : "text-zinc-400"}`}
                       title={s === "error" ? "Failed to load" : g === "queue" && typeof s === "number" ? "Counties with active interconnection requests" : undefined}
                     >
-                      {s === undefined ? "…" : s === "error" ? "failed" : s === "unavailable" ? "unavailable" : g === "queue" ? `${s} counties` : s.toLocaleString()}
+                      {s === undefined ? "…" : s === "error" ? "failed" : s === "unavailable" ? "unavailable" : COUNT_UNIT[g] ? `${s} ${COUNT_UNIT[g]}` : s.toLocaleString()}
                     </span>
                   </label>
                   {on && g === "queue" && <QueueKey />}
+                  {on && g === "demand" && <DemandKey caption={demandCaption} />}
+                  {on && g === "sites" && <SitesKey />}
                   {on && g === "footprints" && <FootprintKey />}
                 </li>
               );
@@ -283,7 +345,9 @@ export function LayerControl(props: {
               <p className="mt-2 border-t border-zinc-200 pt-1.5 text-[10px] leading-snug text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
                 Data: plants EIA-860 (2024); transmission lines and utility territories California Energy Commission (CC BY 4.0); substations © OpenStreetMap contributors
                 (ODbL; coverage incomplete); counties US Census; interconnection queue LBNL Queued Up 2026 (CC BY 4.0; requested capacity, not a build
-                forecast); footprints MW × acres/MW from the Evaluate catalog. Click empty map to select a site.
+                forecast); footprints MW × acres/MW from the Evaluate catalog.
+                {visible.demand && ` Demand growth: ${DEMAND_CREDIT} (a scenario, not a prediction).`}
+                {visible.sites && " Recommended sites: Griddy site ranking (screening only)."} Click empty map to select a site.
               </p>
             </div>
           )}
