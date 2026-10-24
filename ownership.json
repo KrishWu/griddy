@@ -32,7 +32,8 @@
     "frontend/components/shell/PanelGuard.tsx",
     "ml/__init__.py",
     "ml/README.md",
-    "ml/contract/**"
+    "ml/contract/**",
+    "backend/app/ml_bridge.py"
   ],
   "A": {
     "name": "Explore (GIS map + grid data layers)",
@@ -44,7 +45,10 @@
       "data/explore/**",
       "docs/workstreams/A-explore.md",
       "ml/demand_forecast/**",
-      "ml/artifacts/demand_forecast/**"
+      "ml/artifacts/demand_forecast/**",
+      "backend/app/forecast/**",
+      "backend/tests/test_forecast*.py",
+      "frontend/components/forecast/**"
     ]
   },
   "B": {
@@ -57,7 +61,10 @@
       "data/simulate/**",
       "docs/workstreams/B-simulate.md",
       "ml/site_location/**",
-      "ml/artifacts/site_location/**"
+      "ml/artifacts/site_location/**",
+      "backend/app/sites/**",
+      "backend/tests/test_sites*.py",
+      "frontend/components/sites/**"
     ]
   },
   "C": {

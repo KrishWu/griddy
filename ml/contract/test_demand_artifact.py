@@ -117,3 +117,22 @@ def test_rejects_incompatible_schema(tmp_path):
     (out / MANIFEST_FILE).write_text(json.dumps(m))
     with pytest.raises(ArtifactError, match="incompatible"):
         read_artifact(out)
+
+
+def test_optional_shape_and_population_roundtrip(tmp_path):
+    shape = pd.DataFrame({"region": ["PGAE", "SCE"], "year": [2035, 2035], "peak_ratio_p50": [1.7, 1.9], "peak_ratio_p90": [1.8, 2.0], "weather_years": [6, 6]})
+    pop = pd.DataFrame({"geoid": ["06029", "06029"], "year": [2024, 2035], "population": [915_000.0, 960_000.0]})
+    art = read_artifact(write_artifact(tmp_path / "o", _manifest(), _county(), shape=shape, population=pop))
+    assert art.shape.set_index("region").loc["SCE", "peak_ratio_p90"] == pytest.approx(2.0)
+    assert art.population["geoid"].iloc[0] == "06029"
+    bad = shape.assign(peak_ratio_p50=0.8)
+    with pytest.raises(ArtifactError, match="peak_ratio"):
+        write_artifact(tmp_path / "p", _manifest(), _county(), shape=bad)
+
+
+def test_reader_accepts_older_minor_version(tmp_path):
+    out = write_artifact(tmp_path / "v", _manifest(), _county())
+    m = json.loads((out / MANIFEST_FILE).read_text())
+    m["schema_version"] = "1.0"
+    (out / MANIFEST_FILE).write_text(json.dumps(m))
+    assert read_artifact(out).shape is None

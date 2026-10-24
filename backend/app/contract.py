@@ -319,6 +319,126 @@ class SiteIntel(Model):
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 2: demand forecast (A, app/forecast) and site recommendations (B, app/sites)
+# Both are served from model artifacts under ml/artifacts/ (see ml/README.md).
+# ---------------------------------------------------------------------------
+
+
+class ForecastRequest(Model):
+    """What-if inputs for the demand forecast. Unset fields take the named scenario's preset."""
+
+    scenario: str = Field(default="mid", description='Preset to start from: "low", "mid", "high" (see the artifact)')
+    year: int = Field(default=2035, ge=2025, le=2070)
+    population_growth: float | None = Field(default=None, description="Per year; used only when use_dof_population is false")
+    use_dof_population: bool | None = Field(default=None, description="County population from CA DOF P-2A projections instead of a flat rate")
+    electrification_growth: float | None = Field(default=None, description="Per year: EVs, heat pumps, industry")
+    efficiency_offset: float | None = Field(default=None, description="Per year, subtracted")
+    data_center_mw: dict[str, float] | None = Field(default=None, description="New data-center peak MW by 5-digit county FIPS")
+    data_center_load_factor: float | None = Field(default=None, gt=0, le=1)
+    data_center_flexible_share: float | None = Field(
+        default=None, ge=0, le=1, description="Share of data-center load that shifts off the peak (carbon-aware scheduling)"
+    )
+
+
+class RegionForecast(Model):
+    region: str = Field(description="EIA-930 load region, e.g. PGAE")
+    name: str
+    base_peak_mw: float
+    base_energy_mwh: float
+    peak_mw_p50: float
+    peak_mw_p90: float
+    energy_mwh: float
+    growth_peak_mw_p90: float = Field(description="peak_mw_p90 minus the base-year peak")
+    trajectory: list[dict[str, float]] = Field(
+        default_factory=list, description="[{year, peak_mw_p50, peak_mw_p90, energy_mwh}] from the base year to the target year"
+    )
+
+
+class CountyForecast(Model):
+    geoid: str = Field(description="5-digit county FIPS")
+    county: str
+    region: str = Field(description="Region holding most of the county's load")
+    base_peak_mw: float
+    peak_mw_p50: float
+    peak_mw_p90: float
+    energy_mwh: float
+    growth_peak_mw_p90: float
+    added_load_mw: float = 0.0
+
+
+class DemandForecast(Model):
+    """What GET /api/forecast and POST /api/forecast/whatif return."""
+
+    available: bool
+    mode: Literal["ml", "scenario_on_observed", "unavailable"] = Field(
+        description="ml: trained model's weather-adjusted shapes; scenario_on_observed: growth applied to observed base-year load"
+    )
+    artifact_id: str | None = None
+    base_year: int | None = None
+    scenario: str
+    year: int
+    params: dict[str, Any] = Field(default_factory=dict, description="The assumptions actually used")
+    scenarios: dict[str, dict[str, Any]] = Field(default_factory=dict, description="Available presets")
+    years: list[int] = Field(default_factory=list, description="Years with stored model output")
+    regions: list[RegionForecast] = Field(default_factory=list)
+    counties: list[CountyForecast] = Field(default_factory=list)
+    total_growth_peak_mw_p90: float = 0.0
+    metrics: dict[str, Any] = Field(default_factory=dict, description="Held-out model accuracy")
+    provenance: list[Provenance] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    extras: dict[str, Any] = Field(default_factory=dict, description="Escape hatch: new outputs ship here first, typed fields later")
+
+
+class SiteRequest(Model):
+    """What-if inputs for site recommendations: a forecast plus how to cover its growth."""
+
+    forecast: ForecastRequest = Field(default_factory=ForecastRequest)
+    mix: dict[str, float] | None = Field(
+        default=None, description="Share of the new firm peak each AssetKind covers, e.g. {solar_pv: 0.4, battery: 0.4, gas_cc: 0.2}"
+    )
+    weights: dict[str, float] | None = Field(default=None, description="Ranking weights: suitability, grid, queue, growth, air")
+
+
+class SiteCandidate(Model):
+    id: str
+    kind: AssetKind
+    mw: float = Field(description="Nameplate MW placed here")
+    location: LngLat
+    county: str | None = None
+    region: str
+    suitability: float = Field(ge=0, le=1, description="Similarity to where plants of this kind were built (model) or heuristic score")
+    d_line_hv_km: float
+    d_sub_hv_km: float | None = None
+    queue_mw: float = Field(default=0.0, description="Active interconnection requests in the county (LBNL)")
+    growth_150km_gwh: float = Field(default=0.0, description="New annual demand within 150 km in the target year")
+    in_nonattainment: bool = False
+    capex_usd: float | None = Field(default=None, description="Plant CAPEX from the catalog (one-time)")
+    gen_tie_usd: float | None = Field(default=None, description="New line to the nearest 220 kV+ line (one-time)")
+    reason: str
+
+
+class SiteRecommendation(Model):
+    """What GET /api/sites and POST /api/sites/whatif return. Screening candidates, not buildable sites."""
+
+    available: bool
+    mode: Literal["model", "heuristic", "unavailable"]
+    artifact_id: str | None = None
+    scenario: str
+    year: int
+    need_mw_by_region: dict[str, float] = Field(default_factory=dict, description="New P90 peak to cover, MW")
+    nameplate_need_mw: dict[str, float] = Field(default_factory=dict, description='"region/kind" -> nameplate MW')
+    allocated_mw: dict[str, float] = Field(default_factory=dict, description='"region/kind" -> MW placed')
+    unmet_mw: dict[str, float] = Field(default_factory=dict, description='"region/kind" -> MW with no suitable cell')
+    capacity_credit: dict[str, float] = Field(default_factory=dict, description="AssetKind -> share of nameplate counted at the peak")
+    sites: list[SiteCandidate] = Field(default_factory=list)
+    total_capex_usd: float | None = None
+    model_metrics: dict[str, Any] = Field(default_factory=dict)
+    provenance: list[Provenance] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    extras: dict[str, Any] = Field(default_factory=dict, description="Escape hatch: new outputs ship here first, typed fields later")
+
+
 class ScenarioResult(Model):
     """Everything POST /api/run returns. The dashboard renders only this."""
 

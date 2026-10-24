@@ -1,19 +1,22 @@
 "use client";
 // Interactive grid map.  OWNER: workstream A (Explore / GIS).
 // California grid layers (EIA-860 plants, CEC transmission, OSM substations, Census counties,
-// CEC utility territories), popups, click-to-select-site, overlays from other modules,
+// CEC utility territories, LBNL interconnection queue by county), 2.5D footprints of the
+// scenario's assets, popups, click-to-select-site, overlays from other modules,
 // layer toggles + legend, and a bundled fallback basemap if the tile provider is down.
 // Our sources/layers are (re)added on every 'style.load', so a basemap swap keeps them.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Popup } from "maplibre-gl";
 
 import { api, request } from "@/lib/api";
-import type { Asset, LngLat, SiteSummary } from "@/lib/contract";
+import type { Asset, Catalog, LngLat, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
-import { CA_BOUNDS, EMPTY_FC, circleRing, locKey } from "./geo";
+import { footprintBounds, footprintsFC, loadCatalog } from "./footprints";
+import { CA_BOUNDS, EMPTY_FC, circleRing, locKey, num } from "./geo";
 import { LayerControl, type LayerStatus } from "./LayerControl";
 import {
+  AREA_LAYER_IDS,
   BASEMAP,
   CLICKABLE_LAYER_IDS,
   DATA_KEYS,
@@ -37,9 +40,71 @@ type FC = GeoJSON.FeatureCollection;
 const STYLE_TIMEOUT_MS = 8000;
 const STYLE_PROBE_MS = 10000; // after the timeout, how long the basemap style URL gets to answer before we give up
 const HIT_PX = 5; // query box half-size, so thin lines are clickable
-const HOVER_LAYER_IDS = CLICKABLE_LAYER_IDS.filter((id) => id !== "utilities-fill"); // a fill would make every pixel "clickable"
+const HOVER_LAYER_IDS = CLICKABLE_LAYER_IDS.filter((id) => !AREA_LAYER_IDS.includes(id)); // a fill would make every pixel "clickable"
 const SITE_ZOOM = 9; // the 25 km ring fits comfortably
 const SELECT_DELAY_MS = 250; // wait this long after a click on empty map, so a double-click zooms instead of moving the site
+const FOOTPRINT_PITCH = 50;
+const REFRAME_DELAY_MS = 300; // footprints on: refit this long after the asset set or site settles
+
+/** Queue status from the boundaries layer: counties with active requests, or "unavailable" when the
+ *  backend's queue file is missing (no county carries queue_active_mw). */
+function queueStatus(fc: FC): number | "unavailable" {
+  if (!fc.features.some((f) => num(f.properties?.queue_active_mw) !== null)) return "unavailable";
+  return fc.features.filter((f) => (num(f.properties?.queue_active_projects) ?? 0) > 0).length;
+}
+
+type Padding = { top: number; right: number; bottom: number; left: number };
+
+// D's AppShell floats the Site cards over the map from this viewport width (its LARGE query), as
+// "absolute bottom-8 left-3 w-80 max-h-[55%]"; they reach that max height once the site summary and
+// site intelligence load. Below it they sit in the sidebar. Map pixels throughout.
+const FLOATING_CARDS_QUERY = "(min-width: 1024px)";
+const CARDS = { left: 12, width: 320, bottom: 32, maxShare: 0.55 };
+// The layers card wrapper below: right-2.5 top-[106px], holding the w-56 LayerControl.
+const LAYERS_CARD = { right: 10, top: 106, width: 224 };
+
+function siteCardsRect(h: number): { right: number; top: number } | null {
+  if (typeof window === "undefined" || !window.matchMedia(FLOATING_CARDS_QUERY).matches) return null;
+  return { right: CARDS.left + CARDS.width, top: h - CARDS.bottom - CARDS.maxShare * h };
+}
+
+/** Layers card max height: 45% of the map, clear of the scale bar; but when the map is too narrow for it to
+ *  sit beside the floating Site cards (which paint on top), it stops above them so its toggles stay clickable.
+ *  An overlap up to 8 px is fine: the card's 12 px left padding keeps the checkboxes clear. */
+function layersMaxHeight(w: number, h: number): number {
+  const base = Math.min(0.45 * h, h - 176);
+  const cards = siteCardsRect(h);
+  if (!cards || cards.right - (w - LAYERS_CARD.right - LAYERS_CARD.width) <= 8) return base;
+  return Math.max(96, Math.min(base, cards.top - 8 - LAYERS_CARD.top));
+}
+
+/** Camera padding for framing footprints: the largest clear rectangle of the map, away from the view
+ *  buttons (top-left), the layers card (top-right), D's floating Site cards (bottom-left) and the scale bar.
+ *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds. */
+function framePadding(m: MLMap): Padding {
+  const { clientWidth: w, clientHeight: h } = m.getContainer();
+  const cards = siteCardsRect(h);
+  const layersLeft = w - LAYERS_CARD.right - LAYERS_CARD.width;
+  const layersBottom = LAYERS_CARD.top + layersMaxHeight(w, h);
+  const gap = 12;
+  const top = 48; // below the view buttons
+  const floor = 40; // scale bar and attribution
+  const aboveCards = cards ? h - cards.top + gap : floor;
+  const candidates: Padding[] = [
+    { top, left: gap, right: w - layersLeft + gap, bottom: aboveCards }, // beside the layers card
+    { top: layersBottom + gap, left: cards ? cards.right + gap : gap, right: gap, bottom: floor }, // below it
+    { top: layersBottom + gap, left: gap, right: gap, bottom: aboveCards }, // between it and the cards
+  ];
+  const size = (p: Padding) => [w - p.left - p.right, h - p.top - p.bottom] as const;
+  const area = (p: Padding) => Math.max(0, size(p)[0]) * Math.max(0, size(p)[1]);
+  const best = candidates.reduce((a, b) => (area(b) > area(a) ? b : a));
+  const [bw, bh] = size(best);
+  if (bw >= 120 && bh >= 100) return { ...best, bottom: best.bottom + Math.round(Math.min(0.08 * h, 0.25 * bh)) };
+  // No clear rectangle (a map under ~380 px with floating cards): stay above the Site cards, which can't
+  // be moved, and accept the layers card, which folds.
+  if (cards && h - top - aboveCards >= 100) return { top, left: gap, right: gap, bottom: aboveCards };
+  return { top: 40, right: 40, bottom: 40, left: 40 };
+}
 
 // One fetch per layer per page load, shared across remounts (StrictMode, error-boundary resets).
 const layerCache = new Map<DataKey, Promise<FC>>();
@@ -126,13 +191,23 @@ export function MapView() {
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
   const retryBasemap = useRef<(() => void) | null>(null);
+  // Map size, so the layers card can stop above D's floating Site cards when the map is narrow.
+  const [layersMaxH, setLayersMaxH] = useState<number | null>(null);
+  useEffect(() => {
+    const node = el.current;
+    if (!node) return;
+    const ro = new ResizeObserver(() => setLayersMaxH(Math.round(layersMaxHeight(node.clientWidth, node.clientHeight))));
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
 
   // Latest values for map event handlers (they're registered once).
   const selectRef = useRef(selectSite);
   const visibleRef = useRef(visible);
   const hiddenOverlaysRef = useRef(hiddenOverlays);
   const layerData = useRef<Partial<Record<DataKey, FC>>>({});
-  const localData = useRef<Record<LocalSource, FC>>({ "site-context": EMPTY_FC, assets: EMPTY_FC, site: EMPTY_FC });
+  const localData = useRef<Record<LocalSource, FC>>({ "site-context": EMPTY_FC, assets: EMPTY_FC, site: EMPTY_FC, footprints: EMPTY_FC });
+  const [catalog, setCatalog] = useState<Catalog | "error" | null>(null);
   // View state: ease to the site once, unless the user already moved the map.
   const userMoved = useRef(false);
   const didInitialEase = useRef(false);
@@ -158,15 +233,26 @@ export function MapView() {
           if (cancelled) return;
           layerData.current[key] = fc;
           map.current?.getSource<GeoJSONSource>(key)?.setData(fc);
-          setStatus((s) => ({ ...s, [key]: fc.features.length }));
+          setStatus((s) => ({ ...s, [key]: fc.features.length, ...(key === "boundaries" ? { queue: queueStatus(fc) } : {}) }));
         },
         (err: unknown) => {
           if (cancelled) return;
           console.warn(`layer ${key} failed to load`, err);
-          setStatus((s) => ({ ...s, [key]: "error" }));
+          setStatus((s) => ({ ...s, [key]: "error", ...(key === "boundaries" ? { queue: "error" as const } : {}) }));
         },
       );
     }
+    // C's technology catalog (land per MW) sizes the 2.5D footprints; without it that toggle is unavailable.
+    loadCatalog().then(
+      (c) => {
+        if (!cancelled) setCatalog(c);
+      },
+      (err: unknown) => {
+        if (cancelled) return;
+        console.warn("catalog failed to load; asset footprints unavailable", err);
+        setCatalog("error");
+      },
+    );
 
     (async () => {
       const maplibregl = await import("maplibre-gl");
@@ -264,7 +350,7 @@ export function MapView() {
       const openPopup = (f: MapGeoJSONFeature, at: MLLngLat): Popup => {
         const g = f.geometry;
         const anchor: [number, number] = g.type === "Point" ? [g.coordinates[0], g.coordinates[1]] : [at.lng, at.lat];
-        return new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8 })
+        return new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8, className: "z-20" }) // above the z-10 layers card
           .setLngLat(anchor)
           .setDOMContent(popupContent(f.layer.id, f.properties))
           .addTo(m);
@@ -276,20 +362,21 @@ export function MapView() {
         popup?.remove();
         popup = null;
         const hits = hitsAt(e.point, CLICKABLE_LAYER_IDS); // topmost first
-        const feature = hits.find((f) => f.layer.id !== "utilities-fill");
+        const feature = hits.find((f) => !AREA_LAYER_IDS.includes(f.layer.id));
         if (feature) {
           popup = openPopup(feature, e.lngLat);
           return;
         }
         if (e.originalEvent.detail > 1) return; // 2nd click of a double-click: the map zooms instead
-        // Empty map (or only a utility territory): select a site here, unless a double-click follows.
+        // Empty map (or only an area fill): select a site here, unless a double-click follows, then
+        // show the topmost area's popup (a queue county above a utility territory).
         const ll = e.lngLat.wrap(); // a click on a world copy still means -180..180
         const p = { lon: ll.lng, lat: ll.lat };
-        const territory = hits.find((f) => f.layer.id === "utilities-fill");
+        const area = hits.find((f) => AREA_LAYER_IDS.includes(f.layer.id));
         selectTimer = setTimeout(() => {
           clickedKey.current = locKey(p);
           trackSiteSelection(p, selectRef.current(p));
-          if (territory) popup = openPopup(territory, e.lngLat);
+          if (area) popup = openPopup(area, e.lngLat);
         }, SELECT_DELAY_MS);
       });
       m.on("dblclick", () => clearTimeout(selectTimer));
@@ -329,16 +416,18 @@ export function MapView() {
     };
   }, []);
 
-  // Client-side sources: selected site, placed assets, site context (ring + links).
+  // Client-side sources: selected site, placed assets, site context (ring + links), asset footprints
+  // (live with the scenario's capacities, e.g. D's sliders).
   const site = useMemo(() => siteFC(center, siteName), [center, siteName]);
   const placed = useMemo(() => assetsFC(assets), [assets]);
   const context = useMemo(() => contextFC(center, summary), [center, summary]);
+  const footprints = useMemo(() => (catalog && catalog !== "error" ? footprintsFC(assets, center, catalog) : EMPTY_FC), [assets, center, catalog]);
   useEffect(() => {
-    localData.current = { site, assets: placed, "site-context": context };
+    localData.current = { site, assets: placed, "site-context": context, footprints };
     const m = map.current;
     if (!m) return;
     for (const id of LOCAL_SOURCES) m.getSource<GeoJSONSource>(id)?.setData(localData.current[id]);
-  }, [site, placed, context]);
+  }, [site, placed, context, footprints]);
 
   // Camera: ease to the site the first time it is known (unless the user already moved);
   // later, follow it only if it changed without a map click and is off-screen (e.g. a preset switch).
@@ -419,14 +508,60 @@ export function MapView() {
 
   const fitCalifornia = useCallback(() => {
     userMoved.current = true; // an explicit view choice: don't auto-ease to the site afterwards
-    map.current?.fitBounds(CA_BOUNDS, { padding: 24, duration: 900 });
+    map.current?.fitBounds(CA_BOUNDS, { padding: 24, pitch: 0, duration: 900 });
   }, []);
+  // Footprints on: tilt to 2.5D and frame them with the site; off: back to a flat map.
+  const tiltForFootprints = useCallback(
+    (on: boolean) => {
+      const m = map.current;
+      if (!m) return;
+      userMoved.current = true;
+      if (!on) {
+        m.easeTo({ pitch: 0, duration: 900 });
+        return;
+      }
+      const bounds = footprintBounds(localData.current.footprints, center);
+      if (bounds) m.fitBounds(bounds, { padding: framePadding(m), pitch: FOOTPRINT_PITCH, maxZoom: 14, duration: 1400 });
+      else m.easeTo({ pitch: FOOTPRINT_PITCH, duration: 900 });
+    },
+    [center],
+  );
+  // Footprints on: refit when the asset set or the site changes (a preset switch), debounced, but not
+  // on capacity edits, so dragging a slider doesn't move the camera. The toggle itself already framed them.
+  const footprintKey = useMemo(
+    () => JSON.stringify([(assets ?? []).map((a) => [a.id, a.kind, a.location ? locKey(a.location) : null]), center ? locKey(center) : null]),
+    [assets, center],
+  );
+  const framedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visible.footprints) {
+      framedKey.current = null;
+      return;
+    }
+    if (framedKey.current === null) {
+      framedKey.current = footprintKey; // just toggled on: toggleGroup framed this set
+      return;
+    }
+    if (footprintKey === framedKey.current) return;
+    const t = setTimeout(() => {
+      framedKey.current = footprintKey;
+      tiltForFootprints(true);
+    }, REFRAME_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [visible.footprints, footprintKey, tiltForFootprints]);
   const flyToSite = useCallback(() => {
     if (!center) return;
     userMoved.current = true;
     map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, duration: 1200 });
   }, [center]);
-  const toggleGroup = useCallback((g: LayerGroup) => setVisible((v) => ({ ...v, [g]: !v[g] })), []);
+  const toggleGroup = useCallback(
+    (g: LayerGroup) => {
+      const on = !visibleRef.current[g];
+      setVisible((v) => ({ ...v, [g]: on }));
+      if (g === "footprints") tiltForFootprints(on);
+    },
+    [tiltForFootprints],
+  );
   const toggleOverlay = useCallback(
     (id: string) =>
       setHiddenOverlays((prev) => {
@@ -439,14 +574,18 @@ export function MapView() {
   );
 
   const pending = DATA_KEYS.filter((k) => status[k] === undefined).length;
+  const groupStatus: LayerStatus = {
+    ...status,
+    footprints: catalog === "error" ? "unavailable" : catalog ? footprints.features.length : undefined,
+  };
   const button =
     "px-2.5 py-1 font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
   return (
     <div className="relative h-full w-full">
       <div ref={el} className="h-full w-full" />
-      {/* Top-left column: view buttons, basemap notice, layers + legend (capped at ~45% of the map height). */}
-      <div className="pointer-events-none absolute bottom-2 left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+      {/* Top-left: view buttons and the basemap notice (D's Site cards float over the bottom-left). */}
+      <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
             California
@@ -463,11 +602,19 @@ export function MapView() {
             </button>
           </span>
         )}
+      </div>
+      {/* Top-right, below MapLibre's zoom/compass control (10 px margin + 3 x 29 px buttons): layers + legend,
+          capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right),
+          and of the floating Site cards on narrow maps (layersMaxHeight). */}
+      <div
+        className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end"
+        style={layersMaxH !== null ? { maxHeight: layersMaxH } : undefined}
+      >
         <LayerControl
           container={el}
           visible={visible}
           onToggle={toggleGroup}
-          status={status}
+          status={groupStatus}
           overlays={overlays.map((o) => ({ id: o.id, label: o.label }))}
           hiddenOverlays={hiddenOverlays}
           onToggleOverlay={toggleOverlay}
