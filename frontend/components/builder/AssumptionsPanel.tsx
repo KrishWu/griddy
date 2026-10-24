@@ -25,7 +25,7 @@ export function AssumptionsPanel() {
     return (
       <Panel title="Assumptions" owner="D · Build">
         <button className="w-full text-left text-xs text-zinc-600 dark:text-zinc-400" onClick={() => setOpen(true)}>
-          Discount {((a.discount_rate ?? 0.07) * 100).toFixed(1)}% · Gas ${(a.gas_price_usd_per_mmbtu ?? 4).toFixed(2)}/MMBtu · Carbon $
+          Discount {((a.discount_rate ?? 0.07) * 100).toFixed(1)}% · Gas ${(a.gas_price_usd_per_mmbtu ?? 3.65).toFixed(2)}/MMBtu · Carbon $
           {(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t <span className="text-emerald-700 dark:text-emerald-400">Edit</span>
         </button>
       </Panel>
@@ -52,7 +52,7 @@ export function AssumptionsPanel() {
         <SliderField
           label="Gas price (annual average)"
           unit="$/MMBtu"
-          value={a.gas_price_usd_per_mmbtu ?? 4}
+          value={a.gas_price_usd_per_mmbtu ?? 3.65}
           onChange={(v) => set({ gas_price_usd_per_mmbtu: v })}
           min={1}
           max={12}
