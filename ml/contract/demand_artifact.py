@@ -6,6 +6,9 @@ under ml/artifacts/demand_forecast/<artifact_id>/, or attached to a PR:
     manifest.json          Manifest (below): what, when, which data, which model, metrics
     county_demand.csv      one row per (geoid, region, scenario, year): annual energy and peaks
     region_hourly.csv.gz   optional: hourly demand per (region, scenario, year), P10/P50/P90
+    region_shape.csv       optional (1.1): peak/mean ratio per (region, year) before new data centers,
+                           so the website can recompute any what-if scenario without the model
+    county_population.csv  optional (1.1): projected population per (geoid, year), e.g. CA DOF P-2A
 
 Two kinds exist:
   - "baseline": observed demand for the base year only (scenario "base"), downscaled from
@@ -33,12 +36,14 @@ import pandas as pd
 
 from ml.contract.regions import REGIONS
 
-SCHEMA_VERSION = "1.0"  # bump the major version on any breaking change to the columns below
+SCHEMA_VERSION = "1.1"  # major: breaking column changes; minor: new optional files (1.1: shape + population)
 BASE_SCENARIO = "base"
 
 MANIFEST_FILE = "manifest.json"
 COUNTY_FILE = "county_demand.csv"
 HOURLY_FILE = "region_hourly.csv.gz"
+SHAPE_FILE = "region_shape.csv"
+POPULATION_FILE = "county_population.csv"
 
 ArtifactKind = Literal["baseline", "forecast"]
 RowKind = Literal["observed_downscaled", "forecast"]
@@ -69,6 +74,18 @@ HOURLY_COLUMNS: dict[str, str] = {
     "demand_mw_p90": "float64",
 }
 HOURLY_KEY = ["region", "scenario", "year", "hour"]
+
+SHAPE_COLUMNS: dict[str, str] = {
+    "region": "string",
+    "year": "int64",
+    "peak_ratio_p50": "float64",  # annual P50 peak / annual mean load (median over replayed weather years)
+    "peak_ratio_p90": "float64",  # annual P90 peak / annual mean load (90th percentile over weather years)
+    "weather_years": "int64",  # how many weather years went into the ratios
+}
+SHAPE_KEY = ["region", "year"]
+
+POPULATION_COLUMNS: dict[str, str] = {"geoid": "string", "year": "int64", "population": "float64"}
+POPULATION_KEY = ["geoid", "year"]
 
 
 class ArtifactError(ValueError):
@@ -106,6 +123,8 @@ class DemandArtifact:
     manifest: Manifest
     county: pd.DataFrame
     hourly: pd.DataFrame | None = None
+    shape: pd.DataFrame | None = None
+    population: pd.DataFrame | None = None
 
     def county_year(self, scenario: str, year: int) -> pd.DataFrame:
         """County rows for one scenario/year, summed over regions (a county can span two)."""
@@ -188,9 +207,35 @@ def _validate(manifest: Manifest, county: pd.DataFrame, hourly: pd.DataFrame | N
     return county, hourly
 
 
-def write_artifact(out_dir: str | Path, manifest: Manifest, county: pd.DataFrame, hourly: pd.DataFrame | None = None) -> Path:
+def _validate_optional(shape: pd.DataFrame | None, population: pd.DataFrame | None) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    if shape is not None:
+        shape = _coerce(shape, SHAPE_COLUMNS, SHAPE_FILE)
+        if shape.duplicated(SHAPE_KEY).any():
+            raise ArtifactError(f"{SHAPE_FILE}: duplicate rows for key {SHAPE_KEY}")
+        if set(shape["region"]) - set(REGIONS):
+            raise ArtifactError(f"{SHAPE_FILE}: unknown regions {sorted(set(shape['region']) - set(REGIONS))}")
+        if (shape["peak_ratio_p50"] < 1.0).any() or (shape["peak_ratio_p90"] < shape["peak_ratio_p50"] - 1e-9).any():
+            raise ArtifactError(f"{SHAPE_FILE}: need 1 <= peak_ratio_p50 <= peak_ratio_p90")
+    if population is not None:
+        population = _coerce(population, POPULATION_COLUMNS, POPULATION_FILE)
+        if population.duplicated(POPULATION_KEY).any():
+            raise ArtifactError(f"{POPULATION_FILE}: duplicate rows for key {POPULATION_KEY}")
+        if (population["population"] < 0).any() or not population["geoid"].str.fullmatch(r"\d{5}").all():
+            raise ArtifactError(f"{POPULATION_FILE}: population must be >= 0 and geoid a 5-digit FIPS string")
+    return shape, population
+
+
+def write_artifact(
+    out_dir: str | Path,
+    manifest: Manifest,
+    county: pd.DataFrame,
+    hourly: pd.DataFrame | None = None,
+    shape: pd.DataFrame | None = None,
+    population: pd.DataFrame | None = None,
+) -> Path:
     """Validate and write an artifact directory atomically (a failed write leaves no partial artifact)."""
     county, hourly = _validate(manifest, county, hourly)
+    shape, population = _validate_optional(shape, population)
     out = Path(out_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=f".{out.name}-", dir=out.parent))
@@ -199,6 +244,10 @@ def write_artifact(out_dir: str | Path, manifest: Manifest, county: pd.DataFrame
         county.sort_values(COUNTY_KEY).to_csv(tmp / COUNTY_FILE, index=False, float_format="%.3f")
         if hourly is not None:
             hourly.sort_values(HOURLY_KEY).to_csv(tmp / HOURLY_FILE, index=False, float_format="%.2f", compression="gzip")
+        if shape is not None:
+            shape.sort_values(SHAPE_KEY).to_csv(tmp / SHAPE_FILE, index=False, float_format="%.5f")
+        if population is not None:
+            population.sort_values(POPULATION_KEY).to_csv(tmp / POPULATION_FILE, index=False, float_format="%.0f")
         if out.exists():
             shutil.rmtree(out)
         tmp.replace(out)
@@ -216,5 +265,8 @@ def read_artifact(path: str | Path, *, load_hourly: bool = True) -> DemandArtifa
     manifest = Manifest.from_dict(json.loads((p / MANIFEST_FILE).read_text(encoding="utf-8")))
     county = pd.read_csv(p / COUNTY_FILE, dtype={"geoid": "string"})
     hourly = pd.read_csv(p / HOURLY_FILE) if load_hourly and (p / HOURLY_FILE).is_file() else None
+    shape = pd.read_csv(p / SHAPE_FILE) if (p / SHAPE_FILE).is_file() else None
+    population = pd.read_csv(p / POPULATION_FILE, dtype={"geoid": "string"}) if (p / POPULATION_FILE).is_file() else None
     county, hourly = _validate(manifest, county, hourly)
-    return DemandArtifact(manifest=manifest, county=county, hourly=hourly)
+    shape, population = _validate_optional(shape, population)
+    return DemandArtifact(manifest=manifest, county=county, hourly=hourly, shape=shape, population=population)

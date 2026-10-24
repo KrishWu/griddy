@@ -10,6 +10,7 @@ import gzip
 import json
 import math
 import re
+import shutil
 import time
 from collections.abc import Iterator
 
@@ -330,6 +331,154 @@ def test_missing_data_files_degrade_gracefully(no_data: None):
 
 
 # ---------------------------------------------------------------------------
+# Interconnection queue (LBNL Queued Up, aggregated by county)
+# ---------------------------------------------------------------------------
+
+QUEUE_KEYS = {
+    "county", "active_projects", "active_mw", "generation_mw", "storage_mw", "ia_executed_projects", "ia_executed_mw",
+    "by_type_mw", "largest", "rank", "counties_ranked", "statewide_active_mw", "source", "as_of", "url",
+}  # fmt: skip
+
+
+def _queue_finding(s: SiteSummary):
+    return next((f for f in s.findings if f.id == "interconnection_queue"), None)
+
+
+def test_queue_at_demo_site():
+    s = summarize_site(KERN)
+    _check_summary_invariants(s)
+    qc = s.extras["queue_county"]
+    assert QUEUE_KEYS <= set(qc) and qc["county"] == "Kern"
+    assert qc["active_mw"] > 10_000 and qc["rank"] <= 3 and qc["counties_ranked"] == 58
+    assert 0 < qc["ia_executed_projects"] <= qc["active_projects"]
+    assert 0 < qc["ia_executed_mw"] <= qc["active_mw"] < qc["statewide_active_mw"]
+    assert sum(qc["by_type_mw"].values()) == pytest.approx(qc["active_mw"], abs=1)
+    assert 1 <= len(qc["largest"]) <= 3 and qc["url"].startswith("https://") and qc["as_of"]
+    assert all(p["name"] is None or p["name"] != p["name"].upper() for p in qc["largest"])  # ALL CAPS title-cased
+    f = _queue_finding(s)
+    assert f is not None and f.module == "explore" and f.severity == "warn"
+    assert f.metric == qc["active_mw"]
+    assert f.title.startswith("Kern County: ") and "active interconnection requests" in f.title and "GW" in f.title
+    assert "Midway" in f.detail and "nearest 220 kV+ substation" in f.detail and "13%" in f.detail
+    queue_prov = [p for p in s.provenance if p.source.startswith("LBNL Queued Up")]
+    assert len(queue_prov) == 1 and queue_prov[0].kind == "observed" and queue_prov[0].url == qc["url"]
+    assert "queue" not in s.extras["missing_data"]
+
+
+@pytest.mark.parametrize("site", [TRACY, LOS_BANOS], ids=["san_joaquin", "merced"])
+def test_queue_at_candidate_sites(site: LngLat):
+    s = summarize_site(site)
+    qc = s.extras["queue_county"]
+    assert qc["county"] == s.site.county and qc["active_projects"] > 0 and 1 <= qc["rank"] <= 58
+    f = _queue_finding(s)
+    assert f is not None and f.severity == ("warn" if qc["active_mw"] >= 10_000 else "info")
+    assert f.title.startswith(f"{s.site.county} County: ")
+
+
+def test_substation_key_and_line_heuristics():
+    assert service._substation_key("Midway Substation") == "midway"
+    assert service._substation_key("Los Banos Substation") == "los banos"
+    assert service._substation_key("230kV Switching Station") is None  # a voltage names nothing
+    assert service._substation_key("500 kV Tesla Substation") == "tesla"
+    assert service._poi_is_line("DELEVAN-CORTINA")
+    assert service._poi_is_line("Midway-Kern Line #2")
+    assert not service._poi_is_line("Vaca-Dixon 230 kV")
+    assert not service._poi_is_line("Vaca-Dixon 230 kV", "Vaca-Dixon Substation")
+    assert not service._poi_is_line("Midway 230 kV", "Midway Substation")
+    # Two stations on either side of the hyphen: a line, even with a kV.
+    assert service._poi_is_line("QUINTO SW STA- FINK SW STA 230 kV", "Fink Switching Station")
+    assert service._poi_is_line("Westly-Quinto 230 kV", "Quinto Substation")
+
+
+def test_queue_finding_names_a_line_as_a_line():
+    """A Stanislaus site nearest Fink Switching Station: the matching POI is the Quinto-Fink line."""
+    s = service.summarize_site(LngLat(lon=-121.4, lat=37.25))
+    hv = s.extras.get("nearest_hv_substation") or {}
+    if "fink" not in (hv.get("name") or "").lower():
+        pytest.skip("substation data changed; this site no longer resolves to Fink")
+    q = next((f for f in s.findings if f.id == "interconnection_queue"), None)
+    if q is None or "FINK SW STA" not in q.detail:
+        pytest.skip("queue data changed; no Fink request among the county's largest")
+    assert "on the QUINTO SW STA- FINK SW STA 230 kV, which runs to Fink" in q.detail
+
+
+def test_voltage_named_substation_claims_no_queue_poi():
+    # Nearest 220 kV+ substation is SCE's "230kV Switching Station" (Torrance); it must not match
+    # LADWP's "Haynes 230kV Switchyard" in the LA County top-3 list.
+    s = summarize_site(LngLat(lon=-118.37, lat=33.86))
+    f = _queue_finding(s)
+    assert f is not None and "nearest 220 kV+" not in f.detail
+
+
+def test_county_without_queue_requests_gets_info_finding():
+    s = summarize_site(SANTA_BARBARA)  # no active requests in Santa Barbara County
+    qc = s.extras["queue_county"]
+    assert qc["county"] == "Santa Barbara" and qc["active_projects"] == 0 and qc["active_mw"] == 0 and qc["largest"] == []
+    f = _queue_finding(s)
+    assert f is not None and f.severity == "info" and f.metric == 0
+    assert f.title == "No active interconnection requests in Santa Barbara County"
+
+
+@pytest.mark.parametrize("site", [RENO, PACIFIC], ids=["reno", "pacific"])
+def test_queue_outside_california(site: LngLat):
+    s = summarize_site(site)
+    assert s.extras["queue_county"] is None
+    assert _queue_finding(s) is None
+    assert not any(p.source.startswith("LBNL Queued Up") for p in s.provenance)
+
+
+def test_boundaries_carry_queue_properties():
+    feats = get_layer("boundaries")["features"]
+    for f in feats:
+        p = f["properties"]
+        assert isinstance(p["queue_active_mw"], float) and p["queue_active_mw"] >= 0, p
+        assert isinstance(p["queue_active_projects"], int) and p["queue_active_projects"] >= 0, p
+        assert isinstance(p["queue_ia_executed_mw"], float) and 0 <= p["queue_ia_executed_mw"] <= p["queue_active_mw"], p
+    statewide = service._queue().statewide_active_mw
+    assert statewide > 50_000
+    assert sum(f["properties"]["queue_active_mw"] for f in feats) == pytest.approx(statewide, rel=0.001)
+    kern = next(f["properties"] for f in feats if f["properties"]["name"] == "Kern")
+    assert kern["queue_active_mw"] == summarize_site(KERN).extras["queue_county"]["active_mw"]
+    served = json.loads(service.layer_bytes("boundaries"))["features"]  # the ETag'd bytes include the join
+    assert all("queue_active_mw" in f["properties"] for f in served)
+
+
+def test_readable_project_names():
+    assert service._readable("SANBORN HYBRID 3") == "Sanborn Hybrid 3"
+    assert service._readable("POTENTIA-VIRIDI") == "Potentia-Viridi"
+    assert service._readable("LASSEN LODGE HYDROELECTRIC II") == "Lassen Lodge Hydroelectric II"
+    assert service._readable("Carissalito Creek") == "Carissalito Creek"  # mixed case is left alone
+
+
+@pytest.fixture(params=["missing", "corrupt", "wrong_shape"])
+def no_queue(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path) -> Iterator[None]:
+    """Only the counties layer, plus a missing / corrupt / malformed queue file."""
+    shutil.copy(service.EXPLORE_DIR / service._DATASETS["boundaries"]["file"], tmp_path)
+    if request.param == "corrupt":
+        (tmp_path / service.QUEUE_FILE).write_text('{"counties": {"Kern": ', encoding="utf-8")
+    elif request.param == "wrong_shape":
+        (tmp_path / service.QUEUE_FILE).write_text('[{"county": "Kern"}]', encoding="utf-8")
+    monkeypatch.setattr(service, "EXPLORE_DIR", tmp_path)
+    service.clear_caches()
+    yield
+    monkeypatch.undo()
+    service.clear_caches()
+
+
+def test_missing_queue_degrades_gracefully(no_queue: None):
+    s = summarize_site(KERN)
+    assert SiteSummary.model_validate_json(s.model_dump_json()) == s
+    assert s.site.county == "Kern"
+    assert s.extras["queue_county"] is None and "queue" in s.extras["missing_data"]
+    assert _queue_finding(s) is None
+    assert not any(p.source.startswith("LBNL Queued Up") for p in s.provenance)
+    feats = get_layer("boundaries")["features"]
+    assert len(feats) == 58 and not any(k.startswith("queue_") for f in feats for k in f["properties"])
+    assert service.layer_info()["queue"]["available"] is False
+    assert client.get("/api/explore/queue").status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -385,3 +534,15 @@ def test_fallback_style_endpoint():
         assert r.status_code == 404
     else:
         assert r.status_code == 200 and isinstance(r.json(), dict)
+
+
+def test_queue_endpoint():
+    r = client.get("/api/explore/queue", headers={"Accept-Encoding": "gzip"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/json")
+    assert r.headers["cache-control"] == "public, max-age=300" and r.headers["content-encoding"] == "gzip"
+    body = r.json()
+    assert len(body["counties"]) == 58 and body["statewide"]["active_mw"] > 50_000
+    assert body["as_of"] and body["page_url"].startswith("https://") and "CC BY" in body["license"]
+    assert client.get("/api/explore/queue", headers={"If-None-Match": r.headers["etag"]}).status_code == 304
+    info = client.get("/api/explore/layers").json()["queue"]
+    assert info["layer"] is False and info["available"] is True and info["count"] == 58 and info["updated"] == body["as_of"]

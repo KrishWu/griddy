@@ -10,13 +10,16 @@ from app.builder.router import router as builder_router
 from app.contract import SCHEMA_VERSION, Scenario, ScenarioResult
 from app.evaluate.router import router as evaluate_router
 from app.explore.router import router as explore_router
+from app.forecast.router import router as forecast_router
 from app.pipeline import run_scenario
 from app.simulate.router import router as simulate_router
 from app.site_intel.router import router as site_intel_router
+from app.sites.router import router as sites_router
 
 app = FastAPI(title="Griddy API", version=SCHEMA_VERSION)
 
-for r in (explore_router, simulate_router, evaluate_router, builder_router, site_intel_router):
+# Phase 2 (forecast, sites) serve model artifacts from ml/artifacts/ via app/ml_bridge.py.
+for r in (explore_router, simulate_router, evaluate_router, builder_router, site_intel_router, forecast_router, sites_router):
     app.include_router(r)
 
 
