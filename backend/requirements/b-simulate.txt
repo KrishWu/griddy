@@ -1,3 +1,4 @@
 # Workstream B (Simulate + Stress Test)
 gridstatus==0.37.0
 scipy==1.18.1
+pvlib==0.16.1

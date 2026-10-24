@@ -96,7 +96,8 @@
           "type": "number"
         },
         "gas_price_usd_per_mmbtu": {
-          "default": 4.0,
+          "default": 3.65,
+          "description": "Annual-average gas price. Default: EIA 2024 California citygate price (series N3050CA3, $3.79/Mcf / 1.038 MMBtu/Mcf)",
           "title": "Gas Price Usd Per Mmbtu",
           "type": "number"
         },

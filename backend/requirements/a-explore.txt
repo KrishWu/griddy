@@ -2,3 +2,4 @@
 geopandas==1.2.0
 shapely==2.2.0
 pyproj==3.8.0
+openpyxl==3.1.5   # prep scripts only: reading EIA-860 spreadsheets
