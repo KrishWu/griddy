@@ -140,3 +140,15 @@ def test_site_findings_hook_cannot_break_a_run(monkeypatch):
     monkeypatch.setattr(pipeline, "site_findings", boom)
     result = pipeline.run_scenario(list_presets()[0])
     assert any(f.id == "site_findings_error" for f in result.findings)
+
+
+def test_nan_is_rejected_with_field_name():
+    """A NaN from a pandas gap must fail loudly here, not reach the frontend as null."""
+    import math
+
+    from pydantic import ValidationError
+
+    from app.contract import CostLine, Provenance
+
+    with pytest.raises(ValidationError, match="usd"):
+        CostLine(category="fuel", item="gas", usd=math.nan, provenance=Provenance(kind="assumption", source="x"))

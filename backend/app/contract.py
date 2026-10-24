@@ -32,7 +32,8 @@ ProvenanceKind = Literal["observed", "assumption", "simulated", "inferred"]
 
 
 class Model(BaseModel):
-    model_config = {"extra": "forbid"}
+    # NaN/inf fail validation with the field name instead of reaching the UI as null.
+    model_config = {"extra": "forbid", "allow_inf_nan": False}
 
 
 # ---------------------------------------------------------------------------

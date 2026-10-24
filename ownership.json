@@ -28,7 +28,8 @@
     "frontend/lib/api.ts",
     "frontend/lib/format.ts",
     "frontend/eslint.config.mjs",
-    "backend/.env.example"
+    "backend/.env.example",
+    "frontend/components/shell/PanelGuard.tsx"
   ],
   "A": {
     "name": "Explore (GIS map + grid data layers)",

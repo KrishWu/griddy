@@ -13,6 +13,8 @@ interface GridForgeState {
   setScenario: (s: Scenario) => void;
   updateScenario: (fn: (s: Scenario) => Scenario) => void;
   result: ScenarioResult | null;
+  /** Increments with every new result; AppShell keys panel error boundaries on it. */
+  resultVersion: number;
   running: boolean;
   error: string | null;
   run: () => Promise<void>;
@@ -28,6 +30,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const [presets, setPresets] = useState<Scenario[]>([]);
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [result, setResult] = useState<ScenarioResult | null>(null);
+  const [resultVersion, setResultVersion] = useState(0);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [siteSummary, setSiteSummary] = useState<SiteSummary | null>(null);
@@ -54,7 +57,10 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const r = await api.run(scenario);
-      if (my === runSeq.current) setResult(r);
+      if (my === runSeq.current) {
+        setResult(r);
+        setResultVersion((v) => v + 1);
+      }
     } catch (e) {
       if (my === runSeq.current) setError((e as Error).message);
     } finally {
@@ -107,6 +113,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       setScenario,
       updateScenario,
       result,
+      resultVersion,
       running,
       error,
       run,
@@ -115,7 +122,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       siteIntel,
       overlays: siteIntel?.overlays ?? [],
     }),
-    [presets, scenario, updateScenario, result, running, error, run, selectSite, siteSummary, siteIntel],
+    [presets, scenario, updateScenario, result, resultVersion, running, error, run, selectSite, siteSummary, siteIntel],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
