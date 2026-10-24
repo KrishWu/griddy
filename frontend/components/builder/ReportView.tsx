@@ -12,6 +12,7 @@ import { Term } from "@/components/glossary/Term";
 import type { Finding, Provenance, ScenarioResult, SiteIntel, SiteSummary } from "@/lib/contract";
 import { mw, mwh, pct, tons, usd } from "@/lib/format";
 import type { GlossaryKey } from "@/lib/glossary";
+import { useGriddyGrade } from "@/components/site_intel/useGriddyGrade";
 import { useGridForge } from "@/lib/store";
 
 import { ASSET_META } from "./assetMeta";
@@ -93,6 +94,7 @@ function FindingList({ findings }: { findings: Finding[] }) {
 
 export function ReportView() {
   const { result, siteSummary, siteIntel } = useGridForge();
+  const grade = useGriddyGrade();
 
   if (!result) {
     return (
@@ -114,6 +116,7 @@ export function ReportView() {
   const loc = sc.site.location;
   const summary = siteSummary && sameSpot(siteSummary.site.location, loc) ? siteSummary : null;
   const intel = siteIntel && sameSpot(siteIntel.location, loc) ? siteIntel : null;
+  const gradeHere = grade.location && sameSpot(grade.location, loc) ? grade : null;
   const sources = allProvenance(result, [summary, intel].filter((x): x is SiteSummary | SiteIntel => x !== null));
   const syntheticPrices = simulation.provenance.some((p) => /^(STUB|PLACEHOLDER)/.test(p.source));
   const placeholder = sources.some((p) => /^(STUB|PLACEHOLDER)/.test(p.source));
@@ -171,6 +174,18 @@ export function ReportView() {
               </div>
             ))}
           </div>
+          {gradeHere?.result && (
+            <p className="text-sm">
+              <span className="font-semibold">
+                GriddyGrade{" "}
+                {gradeHere.percentile ? `${gradeHere.percentile.display.toFixed(1)} percentile` : `${gradeHere.result.overallScore.toFixed(1)}/100`}
+              </span>
+              {gradeHere.percentile && <> among plausible California sites (grade {gradeHere.result.overallScore.toFixed(1)}/100)</>}
+              {" · "}
+              {gradeHere.result.category}
+              {gradeHere.result.completenessLabel === "Low" ? " · provisional" : ""}. Preliminary site screening, not a utility study.
+            </p>
+          )}
           <p className="text-[11px] text-zinc-500">Financial boundary: {e.financial_boundary}</p>
         </Section>
 

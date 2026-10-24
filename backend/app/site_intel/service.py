@@ -100,9 +100,9 @@ def _site_intel(loc: LngLat) -> SiteIntel:
             _finding(
                 "land_screening_unavailable",
                 "warn",
-                "Satellite screening unavailable here",
-                "No offline screening covers this site and Earth Engine isn't configured (EE_PROJECT). "
-                "Click inside a demo area (Kern, Tracy or Los Banos) or set up Earth Engine.",
+                "Land screening covers the demo areas only",
+                "Satellite land screening (land cover, slope, protected land, water) is precomputed for the "
+                "Kern, Tracy and Los Banos demo areas; live screening of other sites isn't enabled on this deployment.",
             )
         )
 

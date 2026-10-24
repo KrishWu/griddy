@@ -12,7 +12,8 @@ export type RightTab = "summary" | "simulate" | "costs" | "stress" | "report";
 type Slot = "left" | "right";
 
 const KEY = "griddy:tabs";
-const DEFAULTS: Record<Slot, string> = { left: "plan", right: "simulate" };
+// A first visit opens on Site, so the GriddyGrade is the first thing on screen; saved choices still win.
+const DEFAULTS: Record<Slot, string> = { left: "site", right: "simulate" };
 
 let tabs: Record<Slot, string> | null = null;
 const listeners = new Set<() => void>();
