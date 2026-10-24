@@ -81,6 +81,46 @@ export const ASSET_LABEL: Record<AssetKind, string> = {
   battery: "Battery storage",
 };
 
+/** Interconnection-queue choropleth: active requested MW per county on one hue (teal, clear of the
+ *  purple voltage ramp), light -> dark. Piecewise-linear stops sit exactly at the legend's evenly
+ *  spaced ticks (0, 5, 10, 20, 30 GW); above 30 GW stays darkest. Counties with 0 MW are not filled. */
+export const QUEUE_RAMP: [mw: number, color: string][] = [
+  [0, "#F0FDFA"],
+  [5000, "#99F6E4"],
+  [10000, "#2DD4BF"],
+  [20000, "#0D9488"],
+  [30000, "#134E4A"],
+];
+export const QUEUE_FILL_OPACITY = 0.5;
+export const QUEUE_CREDIT = "LBNL Queued Up 2026 (CC BY 4.0)";
+
+/** LBNL request types, in the order the Site panel lists them when tied. */
+export const QUEUE_TYPES = ["hybrid", "battery", "solar", "wind", "gas", "geothermal", "other"] as const;
+export type QueueType = (typeof QUEUE_TYPES)[number];
+export const QUEUE_TYPE_LABEL: Record<QueueType, string> = {
+  hybrid: "Hybrid",
+  battery: "Battery",
+  solar: "Solar",
+  wind: "Wind",
+  gas: "Gas",
+  geothermal: "Geothermal",
+  other: "Other",
+};
+/** Same hues as the fuel palette; a hybrid (mostly solar + battery) is drawn as a split swatch. */
+export const QUEUE_TYPE_COLOR: Record<QueueType, [string] | [string, string]> = {
+  hybrid: [FUEL_COLOR.solar, FUEL_COLOR.battery],
+  battery: [FUEL_COLOR.battery],
+  solar: [FUEL_COLOR.solar],
+  wind: [FUEL_COLOR.wind],
+  gas: [FUEL_COLOR.gas],
+  geothermal: [FUEL_COLOR.geothermal],
+  other: [FUEL_COLOR.other],
+};
+
+export function asQueueType(v: unknown): QueueType {
+  return typeof v === "string" && (QUEUE_TYPES as readonly string[]).includes(v) ? (v as QueueType) : "other";
+}
+
 /** Attribution strings for our GeoJSON sources (MapLibre's attribution control shows them). */
 export const ATTRIBUTION = {
   plants: "EIA-860 2024",

@@ -7,10 +7,10 @@ import { Panel } from "@/components/shell/Panel";
 import type { Provenance, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
-import { fmtKm, fmtKv, fmtMw, safeUrl } from "./geo";
-import { FUEL_COLOR, FUEL_LABEL, voltageClass } from "./palette";
+import { countyLabel, fmtCap, fmtKm, fmtKv, fmtMw, readableName, safeUrl } from "./geo";
+import { FUEL_COLOR, FUEL_LABEL, QUEUE_TYPE_COLOR, QUEUE_TYPE_LABEL, voltageClass, type QueueType } from "./palette";
 import { Dot, LineSwatch } from "./Swatch";
-import { readSummary, useSiteSummary, type SiteView, type SubstationRef } from "./useSiteSummary";
+import { readSummary, useSiteSummary, type QueueView, type SiteView, type SubstationRef } from "./useSiteSummary";
 
 const KIND_BADGE: Record<Provenance["kind"], string> = {
   observed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
@@ -74,8 +74,8 @@ function Fact({ label, value, title }: { label: string; value: string | null; ti
   );
 }
 
-/** List row: swatch, full name (wraps) and distance, with details on a second line. */
-function Row({ swatch, name, title, detail, km }: { swatch: ReactNode; name: ReactNode; title?: string; detail: ReactNode; km: number | null }) {
+/** List row: swatch, full name (wraps) and a right-aligned value (distance by default), with details on a second line. */
+function Row({ swatch, name, title, detail, km, value }: { swatch: ReactNode; name: ReactNode; title?: string; detail: ReactNode; km?: number | null; value?: string }) {
   return (
     <li className="flex items-start gap-2">
       <span className="flex h-5 shrink-0 items-center">{swatch}</span>
@@ -85,7 +85,7 @@ function Row({ swatch, name, title, detail, km }: { swatch: ReactNode; name: Rea
         </div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400">{detail}</div>
       </div>
-      <span className="w-14 shrink-0 text-right tabular-nums">{fmtKm(km)}</span>
+      <span className="w-16 shrink-0 text-right tabular-nums">{value ?? fmtKm(km)}</span>
     </li>
   );
 }
@@ -104,6 +104,83 @@ function SubstationRow({ s, note }: { s: SubstationRef; note?: string }) {
       detail={fmtKv(s.voltage_kv)}
       km={s.distance_km}
     />
+  );
+}
+
+function QueueDot({ type, size = 8 }: { type: QueueType; size?: number }) {
+  const [color, split] = QUEUE_TYPE_COLOR[type];
+  return <Dot color={color} split={split} size={size} />;
+}
+
+/** LBNL interconnection queue in the site's county: what is already proposed nearby. */
+function QueueSection({ q }: { q: QueueView }) {
+  const county = countyLabel(q.county);
+  const url = safeUrl(q.url);
+  const n = q.activeProjects;
+  return (
+    <Section title="Interconnection queue">
+      {n > 0 ? (
+        <>
+          <p>
+            <span className="font-medium">{county}</span>
+            {q.rank !== null && (
+              <span className="tabular-nums" title="Rank among California counties by active requested MW">
+                {" "}
+                · #{q.rank}
+                {q.countiesRanked !== null ? ` of ${q.countiesRanked}` : ""}
+              </span>
+            )}{" "}
+            · <span className="tabular-nums">{n.toLocaleString()}</span> active request{n === 1 ? "" : "s"} ·{" "}
+            <span className="font-medium tabular-nums">{fmtCap(q.activeMw)}</span>
+          </p>
+          {q.iaExecutedMw !== null && q.iaExecutedMw > 0 && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="tabular-nums">{fmtCap(q.iaExecutedMw)}</span> with signed agreements
+              {q.iaExecutedProjects !== null && <span className="tabular-nums"> ({q.iaExecutedProjects.toLocaleString()} requests)</span>}
+            </p>
+          )}
+          {q.byType.length > 0 && (
+            <ul className="mt-1.5 flex flex-wrap gap-1">
+              {q.byType.map(([type, mw]) => (
+                <li key={type} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800">
+                  <QueueDot type={type} />
+                  {QUEUE_TYPE_LABEL[type]} <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{fmtCap(mw)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {q.largest.length > 0 && (
+            <ul className="mt-2 space-y-1.5">
+              {q.largest.slice(0, 3).map((r, i) => {
+                const name = r.name ? readableName(r.name) : `Unnamed ${r.tech ?? QUEUE_TYPE_LABEL[r.type].toLowerCase()} request`;
+                return (
+                  <Row
+                    key={`${r.name ?? "unnamed"}-${i}`}
+                    swatch={<QueueDot type={r.type} />}
+                    name={name}
+                    title={[name, r.phase, r.queueYear !== null ? `queued ${r.queueYear}` : null].filter(Boolean).join(" · ")}
+                    detail={[r.tech ?? QUEUE_TYPE_LABEL[r.type], r.poi].filter(Boolean).join(" · ")}
+                    value={fmtMw(r.mw)}
+                  />
+                );
+              })}
+            </ul>
+          )}
+        </>
+      ) : (
+        <p className="text-zinc-500">No active interconnection requests in {county}.</p>
+      )}
+      <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400" title={q.asOf ? `Requests through ${q.asOf}` : undefined}>
+        {url ? (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="underline decoration-zinc-300 hover:decoration-zinc-500">
+            LBNL Queued Up 2026
+          </a>
+        ) : (
+          "LBNL Queued Up 2026"
+        )}{" "}
+        · requested capacity, not a build forecast
+      </p>
+    </Section>
   );
 }
 
@@ -202,6 +279,8 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
           <p className="text-zinc-500">No operating plants (≥ 1 MW) within 25 km.</p>
         )}
       </Section>
+
+      {v.queue && <QueueSection q={v.queue} />}
 
       <Section title="Population within 10 km">
         <p className="tabular-nums">
