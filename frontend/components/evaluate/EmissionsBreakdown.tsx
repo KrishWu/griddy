@@ -7,7 +7,9 @@
 // OWNER: workstream C (Evaluate).
 import { useId, useState } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import type { Provenance, ScenarioResult } from "@/lib/contract";
+import type { GlossaryKey } from "@/lib/glossary";
 
 import { CHART_VARS } from "./chartTheme";
 import { carbFactorText, type EvalExtras, type ProvenanceMetric } from "./extras";
@@ -22,6 +24,13 @@ const SOURCE_LABEL: Record<string, string> = {
   upstream_methane: "Upstream methane",
 };
 const sourceLabel = (k: string) => SOURCE_LABEL[k] ?? k.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+// Glossary entry per source row (the first place each of these words shows up in the panel).
+const SOURCE_TERM: Record<string, GlossaryKey> = {
+  gas_cc: "gas_cc",
+  gas_ct: "gas_ct",
+  grid_imports: "imports",
+  upstream_methane: "upstream_methane",
+};
 
 interface BarRow {
   key: string;
@@ -30,6 +39,8 @@ interface BarRow {
   display: string;
   color: string;
   emphasis?: boolean;
+  /** Glossary entry explaining the label. */
+  term?: GlossaryKey;
 }
 
 /** Labeled horizontal bars in HTML: every value is printed, so no hover is needed to read it. */
@@ -39,7 +50,7 @@ function BarList({ rows, max, labelWidth = "w-[42%]" }: { rows: BarRow[]; max: n
       {rows.map((r) => (
         <li key={r.key} className="flex items-center gap-2 text-[11px]">
           <span className={`${labelWidth} shrink-0 truncate ${r.emphasis ? "font-medium text-zinc-900 dark:text-zinc-100" : "text-zinc-600 dark:text-zinc-400"}`} title={r.label}>
-            {r.label}
+            {r.term ? <Term k={r.term}>{r.label}</Term> : r.label}
           </span>
           <span className="relative h-2.5 flex-1">
             <span
@@ -100,7 +111,7 @@ export function EmissionsBreakdown({
   const sourceRows: BarRow[] = Object.entries(bySource)
     .filter(([, v]) => Math.abs(v) >= 0.5)
     .sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => ({ key: k, label: sourceLabel(k), value: v, display: tonsFine(v), color: "var(--ev-accent)" }));
+    .map(([k, v]) => ({ key: k, label: sourceLabel(k), value: v, display: tonsFine(v), color: "var(--ev-accent)", term: SOURCE_TERM[k] }));
 
   // ---- intensity comparison (kg CO2e per MWh) --------------------------------
   const gen = sim.summary.generation_mwh ?? {};
@@ -122,15 +133,16 @@ export function EmissionsBreakdown({
   const year = finite(result.scenario.assumptions?.weather_year) ?? 2024;
 
   const ctx = "var(--ev-context)";
-  const intensityRows: BarRow[] = [
+  const intensityCandidates: (Omit<BarRow, "display" | "value"> & { value: number | undefined })[] = [
     { key: "scenario", label: "This scenario (per MWh served)", value: intensity, color: "var(--ev-accent)", emphasis: true },
     { key: "gas_cc", label: "On-site gas CC", value: gasCc, color: ctx },
     { key: "gas_ct", label: "On-site gas CT", value: gasCt, color: ctx },
     { key: "imports", label: "Grid imports, import-weighted", value: importWeighted, color: ctx },
-    { key: "grid_mean", label: `CAISO grid, ${year} hourly mean`, value: gridMean, color: ctx },
-    { key: "egrid", label: `eGRID CAMX${xc?.egrid_year ? ` ${xc.egrid_year}` : ""}`, value: xc?.egrid_camx_kg_per_mwh, color: ctx },
-    { key: "carb", label: "CARB unspecified-import default", value: carbFactor, color: ctx },
-  ]
+    { key: "grid_mean", label: `CAISO grid, ${year} hourly mean`, value: gridMean, color: ctx, term: "caiso" },
+    { key: "egrid", label: `eGRID CAMX${xc?.egrid_year ? ` ${xc.egrid_year}` : ""}`, value: xc?.egrid_camx_kg_per_mwh, color: ctx, term: "egrid" },
+    { key: "carb", label: "CARB unspecified-import default", value: carbFactor, color: ctx, term: "carb" },
+  ];
+  const intensityRows: BarRow[] = intensityCandidates
     .filter((r): r is Omit<BarRow, "display"> & { value: number } => r.value !== undefined && Number.isFinite(r.value))
     .map((r) => ({ ...r, display: Math.round(r.value).toLocaleString() }));
   const intensityMax = Math.max(0, ...intensityRows.map((r) => r.value));
@@ -242,7 +254,9 @@ export function EmissionsBreakdown({
 
       {sourceRows.length > 0 && (
         <div>
-          <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">By source, t CO2e/yr</div>
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
+            By source, <Term k="t_co2e">t CO2e</Term>/yr
+          </div>
           <BarList rows={sourceRows} max={sourceMax} />
         </div>
       )}
@@ -271,22 +285,36 @@ export function EmissionsBreakdown({
           <div className="grid grid-cols-2 gap-3">
             <StatTip
               label="NOx / yr"
+              term="nox"
               value={tonsFine(ex.nox_t_per_yr)}
               provenance={prov.nox_t_per_yr}
               sub={
                 gasMwh <= 0
                   ? "no on-site combustion"
                   : ex.nox_t_per_yr_scr !== undefined
-                    ? `${tonsFine(ex.nox_t_per_yr_scr)} with SCR (CA BACT)`
-                    : "AP-42 lean-premix"
+                    ? (
+                        <>
+                          {tonsFine(ex.nox_t_per_yr_scr)} with <Term k="scr_bact">SCR (CA BACT)</Term>
+                        </>
+                      )
+                    : (
+                        <>
+                          <Term k="ap42">AP-42</Term> lean-premix
+                        </>
+                      )
               }
               tipExtra={ex.nox_basis}
             />
             <StatTip
               label="PM2.5 / yr"
+              term="pm25"
               value={ex.pm25_t_per_yr !== undefined ? tonsFine(ex.pm25_t_per_yr) : DASH}
               provenance={prov.pm25_t_per_yr}
-              sub="AP-42 natural-gas turbines"
+              sub={
+                <>
+                  <Term k="ap42">AP-42</Term> natural-gas turbines
+                </>
+              }
             />
           </div>
         </div>

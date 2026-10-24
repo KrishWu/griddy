@@ -4,7 +4,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { Term } from "@/components/glossary/Term";
 import { Panel, Stat } from "@/components/shell/Panel";
+import { usePanelActive } from "@/components/shell/panelActive";
 import { post } from "@/lib/api";
 import type { Provenance } from "@/lib/contract";
 import { mwh, tons } from "@/lib/format";
@@ -63,6 +65,7 @@ export function CarbonAwarePanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const seq = useRef(0);
+  const shown = usePanelActive(); // hidden sidebar tab: no chart (it would measure 0 x 0)
 
   // Re-run on every new result (auto-run replaces it without remounting) and slider move.
   useEffect(() => {
@@ -96,7 +99,7 @@ export function CarbonAwarePanel() {
   return (
     <Panel title="Carbon-aware load" owner="E · Green Software">
       <label className="mb-3 block text-xs text-zinc-500">
-        Flexible share of load: <span className="font-semibold text-zinc-800 dark:text-zinc-200">{Math.round(share * 100)}%</span>
+        <Term k="flexible_load">Flexible share</Term> of load: <span className="font-semibold text-zinc-800 dark:text-zinc-200">{Math.round(share * 100)}%</span>
         {loading && <span className="ml-2 text-zinc-400">updating…</span>}
         <input type="range" min={0} max={0.6} step={0.05} value={share} onChange={(e) => setShare(Number(e.target.value))} className="w-full" />
       </label>
@@ -106,10 +109,15 @@ export function CarbonAwarePanel() {
           <div className="mb-3 grid grid-cols-3 gap-3">
             <Stat label="Avoided CO₂e / yr" value={`${tons(data.avoided_t_co2e)} (${(data.avoided_pct * 100).toFixed(1)}%)`} />
             <Stat label="Load shifted / yr" value={mwh(data.shifted_mwh_per_yr)} />
-            <Stat
-              label="SCI, g CO₂e / GPU-hour"
-              value={sciBefore != null && sciAfter != null ? `${Math.round(sciBefore)} → ${Math.round(sciAfter)}` : "–"}
-            />
+            {/* Stat's markup, with a glossary term in the label (Stat takes a plain string). */}
+            <div>
+              <div className="text-[11px] text-zinc-500">
+                <Term k="sci">SCI</Term>, g CO₂e / GPU-hour
+              </div>
+              <div className="text-lg font-semibold tabular-nums">
+                {sciBefore != null && sciAfter != null ? `${Math.round(sciBefore)} → ${Math.round(sciAfter)}` : "–"}
+              </div>
+            </div>
           </div>
           {data.avoided_pct < 0.01 && (
             <p className="mb-2 text-[11px] text-amber-700 dark:text-amber-400">
@@ -120,21 +128,23 @@ export function CarbonAwarePanel() {
             {dayLabel(year, data.day)} (the day this saves most){best && <> · best 4-h window {best}</>}
           </div>
           <div className="h-44">
-            <ResponsiveContainer>
-              <ComposedChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
-                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
-                <XAxis dataKey="hour" fontSize={11} tickFormatter={(h: number) => `${h}h`} />
-                <YAxis yAxisId="mw" fontSize={11} domain={["auto", "auto"]} />
-                <YAxis yAxisId="kg" orientation="right" fontSize={11} />
-                <Tooltip
-                  formatter={(v, name) => [name === "Marginal CO₂" ? `${Math.round(Number(v))} kg/MWh` : `${Math.round(Number(v))} MW`, name]}
-                  labelFormatter={(h) => `${String(h).padStart(2, "0")}:00 PST`}
-                />
-                <Area yAxisId="mw" dataKey="shifted" name="Shifted load" stroke="#059669" fill="#10b981" fillOpacity={0.3} />
-                <Line yAxisId="mw" dataKey="baseline" name="Baseline load" stroke="#52525b" strokeDasharray="4 3" dot={false} />
-                <Line yAxisId="kg" dataKey="marginal" name="Marginal CO₂" stroke="#ea580c" dot={false} strokeWidth={1.5} />
-              </ComposedChart>
-            </ResponsiveContainer>
+            {shown && (
+              <ResponsiveContainer>
+                <ComposedChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
+                  <XAxis dataKey="hour" fontSize={11} tickFormatter={(h: number) => `${h}h`} />
+                  <YAxis yAxisId="mw" fontSize={11} domain={["auto", "auto"]} />
+                  <YAxis yAxisId="kg" orientation="right" fontSize={11} />
+                  <Tooltip
+                    formatter={(v, name) => [name === "Marginal CO₂" ? `${Math.round(Number(v))} kg/MWh` : `${Math.round(Number(v))} MW`, name]}
+                    labelFormatter={(h) => `${String(h).padStart(2, "0")}:00 PST`}
+                  />
+                  <Area yAxisId="mw" dataKey="shifted" name="Shifted load" stroke="#059669" fill="#10b981" fillOpacity={0.3} />
+                  <Line yAxisId="mw" dataKey="baseline" name="Baseline load" stroke="#52525b" strokeDasharray="4 3" dot={false} />
+                  <Line yAxisId="kg" dataKey="marginal" name="Marginal CO₂" stroke="#ea580c" dot={false} strokeWidth={1.5} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
           </div>
           <details className="mt-2 text-[11px] text-zinc-500">
             <summary className="cursor-pointer">Method and sources</summary>

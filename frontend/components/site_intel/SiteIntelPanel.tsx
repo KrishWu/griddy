@@ -1,5 +1,6 @@
 "use client";
 // Satellite + environmental screening, then carbon-aware load.  OWNER: workstream E (Site Intelligence).
+import { Term } from "@/components/glossary/Term";
 import { FindingsList } from "@/components/shell/FindingsList";
 import { Panel, Stat } from "@/components/shell/Panel";
 import { PanelGuard } from "@/components/shell/PanelGuard";
@@ -107,7 +108,9 @@ function Nonattainment({ intel }: { intel: SiteIntel }) {
   if (!areas.length) return null;
   return (
     <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-      <span className="font-semibold">EPA nonattainment:</span>{" "}
+      <span className="font-semibold">
+        EPA <Term k="nonattainment">nonattainment</Term>:
+      </span>{" "}
       {areas
         .map((a) => [str(a.naaqs) ?? str(a.pollutant), str(a.classification)].filter(Boolean).join(" · "))
         .filter(Boolean)
@@ -154,9 +157,20 @@ function Screening({ intel }: { intel: SiteIntel }) {
     <>
       <div className="mb-3 grid grid-cols-3 gap-3">
         <Stat label="Mean slope" value={intel.mean_slope_deg != null ? `${intel.mean_slope_deg.toFixed(1)}°` : "–"} />
-        <Stat label="Solar (GHI)" value={intel.solar_ghi_kwh_m2_day != null ? `${intel.solar_ghi_kwh_m2_day.toFixed(1)} kWh/m²/d` : "–"} />
+        {/* Stat's markup, with a glossary term in the label (Stat takes a plain string). */}
         <div>
-          <div className="text-[11px] text-zinc-500">AQI{str(aq?.pollutant) ? ` · ${str(aq?.pollutant)}` : ""}</div>
+          <div className="text-[11px] text-zinc-500">
+            Solar (<Term k="ghi">GHI</Term>)
+          </div>
+          <div className="text-lg font-semibold tabular-nums">
+            {intel.solar_ghi_kwh_m2_day != null ? `${intel.solar_ghi_kwh_m2_day.toFixed(1)} kWh/m²/d` : "–"}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-zinc-500">
+            <Term k="aqi">AQI</Term>
+            {str(aq?.pollutant) ? ` · ${str(aq?.pollutant)}` : ""}
+          </div>
           <div className="flex items-center gap-1.5 text-lg font-semibold tabular-nums">
             {aqi ?? "–"}
             {category && <span className="h-2.5 w-2.5 rounded-full border border-zinc-300" style={{ background: AQI_COLOR[category] ?? "#a1a1aa" }} title={category} />}

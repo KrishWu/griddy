@@ -2,11 +2,15 @@
 // Selected-site summary: grid context, nearby plants, findings and sources.  OWNER: workstream A (Explore / GIS).
 import { useMemo, type ReactNode } from "react";
 
+import { countyByName, scenarioLabel, signedMw } from "@/components/forecast/forecastData";
+import { forecastAdjusted, usePhase2 } from "@/components/forecast/usePhase2";
+import { Term } from "@/components/glossary/Term";
 import { FindingsList } from "@/components/shell/FindingsList";
 import { Panel } from "@/components/shell/Panel";
 import type { Provenance, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
+import { openForecastDrawer } from "./forecastDrawer";
 import { countyLabel, fmtCap, fmtKm, fmtKv, fmtMw, readableName, safeUrl } from "./geo";
 import { FUEL_COLOR, FUEL_LABEL, QUEUE_TYPE_COLOR, QUEUE_TYPE_LABEL, voltageClass, type QueueType } from "./palette";
 import { Dot, LineSwatch } from "./Swatch";
@@ -35,6 +39,7 @@ export function SitePanel() {
         <span className="block font-medium">{name}</span>
         {!name.includes(coords) && <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{coords}</span>}
       </p>
+      <DemandOutlook county={view?.county ?? scenario.site.county} />
       {summary && view ? (
         <SiteDetails summary={summary} v={view} />
       ) : loading ? (
@@ -53,7 +58,32 @@ export function SitePanel() {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** The Phase 2 forecast for the site's county (same scenario as the forecast drawer), with a link to it. */
+function DemandOutlook({ county }: { county: string | null | undefined }) {
+  const forecast = usePhase2((s) => s.forecast);
+  const { setView } = useGridForge();
+  const c = countyByName(forecast, county);
+  if (!forecast?.available || !c) return null;
+  const scenario = `${scenarioLabel(forecast.scenario).toLowerCase()} scenario${forecastAdjusted(forecast) ? ", adjusted" : ""}`;
+  return (
+    <p className="-mt-1 mb-3 text-xs text-zinc-600 dark:text-zinc-400" title={`New P90 peak demand vs ${forecast.base_year ?? 2024}; county demand is an estimate`}>
+      <span className="font-medium text-zinc-800 dark:text-zinc-200">Demand outlook</span> · {c.county} County: peak{" "}
+      <span className="font-medium tabular-nums text-zinc-800 dark:text-zinc-200">{signedMw(c.growth_peak_mw_p90)}</span> by {forecast.year} ({scenario}) ·{" "}
+      <button
+        type="button"
+        className="font-medium text-sky-700 underline decoration-sky-300 hover:decoration-sky-600 dark:text-sky-400 dark:decoration-sky-700"
+        onClick={() => {
+          setView("single"); // the drawer lives on the map
+          openForecastDrawer();
+        }}
+      >
+        Open forecast
+      </button>
+    </p>
+  );
+}
+
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <section>
       <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{title}</h3>
@@ -63,7 +93,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** One label/value row of a two-column <dl>; long values wrap instead of truncating. */
-function Fact({ label, value, title }: { label: string; value: string | null; title?: string | null }) {
+function Fact({ label, value, title }: { label: ReactNode; value: string | null; title?: string | null }) {
   return (
     <>
       <dt className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</dt>
@@ -118,7 +148,7 @@ function QueueSection({ q }: { q: QueueView }) {
   const url = safeUrl(q.url);
   const n = q.activeProjects;
   return (
-    <Section title="Interconnection queue">
+    <Section title={<Term k="interconnection_queue">Interconnection queue</Term>}>
       {n > 0 ? (
         <>
           <p>
@@ -202,11 +232,17 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
 
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5">
         <Fact label="County" value={v.county} />
-        <Fact label="Utility" value={v.utility} title={v.utilityTitle} />
-        <Fact label="Balancing authority" value={v.balancingAuthority} title={v.balancingAuthorityTitle} />
+        <Fact label={<Term k="utility_territory">Utility</Term>} value={v.utility} title={v.utilityTitle} />
+        <Fact label={<Term k="balancing_authority">Balancing authority</Term>} value={v.balancingAuthority} title={v.balancingAuthorityTitle} />
       </dl>
 
-      <Section title="Nearest substations">
+      <Section
+        title={
+          <>
+            Nearest <Term k="substation">substations</Term>
+          </>
+        }
+      >
         {v.substations.length || hv ? (
           <ul className="space-y-1.5">
             {near.map((s) => (
@@ -219,7 +255,13 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
         )}
       </Section>
 
-      <Section title="Nearest 220 kV+ line">
+      <Section
+        title={
+          <>
+            Nearest <Term k="transmission_line">220 kV+ line</Term>
+          </>
+        }
+      >
         {v.hvLine ? (
           <p className="flex items-center gap-2">
             <LineSwatch color={voltageClass(v.hvLine.voltage_kv).color} />

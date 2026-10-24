@@ -1,0 +1,80 @@
+{
+  "artifact_id": "sites-model-20261024-111437",
+  "mode": "model",
+  "created_utc": "2026-10-24T11:14:37+00:00",
+  "demand_artifact_id": "forecast-2024-20261024-105524",
+  "scenario": "mid",
+  "year": 2035,
+  "kinds": [
+    "solar_pv",
+    "onshore_wind",
+    "battery",
+    "gas_cc"
+  ],
+  "grid_spacing_km": 5.0,
+  "producer": {
+    "package": "ml.site_location",
+    "model_version": "sites-20261024-104126"
+  },
+  "model_metrics": {
+    "solar_pv": {
+      "spatial_cv_roc_auc": 0.9369233196854055,
+      "spatial_cv_pr_auc": 0.6820806118846365,
+      "positives": 347
+    },
+    "onshore_wind": {
+      "spatial_cv_roc_auc": 0.9634067952249771,
+      "spatial_cv_pr_auc": 0.8166201954874671,
+      "positives": 66
+    },
+    "battery": {
+      "spatial_cv_roc_auc": 0.9589481373265157,
+      "spatial_cv_pr_auc": 0.7515827192223502,
+      "positives": 74
+    },
+    "gas_cc": {
+      "spatial_cv_roc_auc": 0.9243613419513698,
+      "spatial_cv_pr_auc": 0.711468087266346,
+      "positives": 114
+    }
+  },
+  "provenance": [
+    {
+      "kind": "observed",
+      "source": "EIA-860 2024 operating plants (where each technology was built)",
+      "url": "https://www.eia.gov/electricity/data/eia860/",
+      "note": null
+    },
+    {
+      "kind": "observed",
+      "source": "CEC transmission lines (CC BY 4.0) and OpenStreetMap substations (ODbL)",
+      "url": null,
+      "note": "Distances to 220 kV+ lines and substations"
+    },
+    {
+      "kind": "observed",
+      "source": "ERA5 reanalysis via Open-Meteo: 2024 mean solar irradiance and 100 m wind",
+      "url": "https://open-meteo.com/en/docs/historical-weather-api",
+      "note": "0.5 degree grid, interpolated to 5 km cells"
+    },
+    {
+      "kind": "observed",
+      "source": "US EPA nonattainment areas (ozone, PM)",
+      "url": "https://www.epa.gov/green-book",
+      "note": "Air-permit risk for combustion plants"
+    },
+    {
+      "kind": "observed",
+      "source": "LBNL Queued Up 2026: active interconnection requests by county (CC BY 4.0)",
+      "url": "https://emp.lbl.gov/queues",
+      "note": "Congestion signal"
+    },
+    {
+      "kind": "observed",
+      "source": "US Census 2020 block-group population",
+      "url": null,
+      "note": null
+    }
+  ],
+  "schema_version": "1.0"
+}

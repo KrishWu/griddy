@@ -111,7 +111,11 @@ function adaptPreset(p: Scenario, cur: Scenario | null, scale: boolean): Scenari
     // a community microgrid ties into distribution, not the campus's transmission line.
     grid: sameMode ? { ...p.grid, interconnection_km: cur.grid.interconnection_km, poi_voltage_kv: cur.grid.poi_voltage_kv } : p.grid,
     assumptions: cur.assumptions ?? p.assumptions,
+    options: { ...cur.options, ...p.options },
   };
+  // Keep household and project assumptions across presets; a prior sizing result
+  // does not describe the newly selected preset.
+  if (next.options) delete next.options.sizing;
   if (scale && sameMode && p.demand.peak_mw > 0 && cur.demand.peak_mw !== p.demand.peak_mw) {
     next = scaleScenario({ ...next, demand: { ...next.demand, peak_mw: cur.demand.peak_mw } }, cur.demand.peak_mw / p.demand.peak_mw);
   }
@@ -142,9 +146,11 @@ function designKey(s: Scenario): string {
   return JSON.stringify({
     mode: s.mode ?? "industrial",
     site: [r(s.site.location.lon * 1000), r(s.site.location.lat * 1000)],
+    footprint: s.site.footprint ?? null,
+    options: s.options ?? {},
     demand: [r(s.demand.peak_mw), s.demand.load_factor, s.demand.pue, s.demand.profile, s.demand.flexible_share],
     assets: s.assets.map((a) => [a.kind, r(a.capacity_mw), r(a.duration_h)]).sort(),
-    grid: [r(s.grid.import_limit_mw), r(s.grid.export_limit_mw), r(s.grid.interconnection_km), r(s.grid.poi_voltage_kv)],
+    grid: [s.grid.connected, s.grid.new_substation, r(s.grid.import_limit_mw), r(s.grid.export_limit_mw), r(s.grid.interconnection_km), r(s.grid.poi_voltage_kv)],
     assumptions: s.assumptions ?? {},
   });
 }

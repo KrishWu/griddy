@@ -1,0 +1,75 @@
+geoid,county,region,scenario,year,annual_energy_mwh,avg_mw,peak_mw_p50,peak_mw_p90,added_load_mw,population_share,kind
+06001,Alameda,PGAE,base,2024,12126127.006,1380.479,2597.887,2597.887,0.000,0.123,observed_downscaled
+06005,Amador,PGAE,base,2024,291730.014,33.212,62.500,62.500,0.000,0.003,observed_downscaled
+06007,Butte,PGAE,base,2024,1525409.061,173.658,326.802,326.802,0.000,0.015,observed_downscaled
+06009,Calaveras,PGAE,base,2024,326457.375,37.165,69.940,69.940,0.000,0.003,observed_downscaled
+06011,Colusa,PGAE,base,2024,157411.963,17.920,33.724,33.724,0.000,0.002,observed_downscaled
+06013,Contra Costa,PGAE,base,2024,8403812.328,956.718,1800.423,1800.423,0.000,0.085,observed_downscaled
+06017,El Dorado,PGAE,base,2024,1159366.243,131.986,248.381,248.381,0.000,0.012,observed_downscaled
+06019,Fresno,PGAE,base,2024,7265413.684,827.119,1556.534,1556.534,0.000,0.074,observed_downscaled
+06019,Fresno,SCE,base,2024,4759.037,0.542,1.147,1.147,0.000,0.000,observed_downscaled
+06021,Glenn,PGAE,base,2024,208429.036,23.728,44.654,44.654,0.000,0.002,observed_downscaled
+06023,Humboldt,PGAE,base,2024,983603.126,111.977,210.726,210.726,0.000,0.010,observed_downscaled
+06025,Imperial,IID,base,2024,1515684.692,172.551,451.616,451.616,0.000,0.384,observed_downscaled
+06025,Imperial,SCE,base,2024,5344.985,0.608,1.288,1.288,0.000,0.000,observed_downscaled
+06025,Imperial,SDGE,base,2024,200011.206,22.770,52.265,52.265,0.000,0.011,observed_downscaled
+06027,Inyo,LDWP,base,2024,27921.549,3.179,7.513,7.513,0.000,0.001,observed_downscaled
+06027,Inyo,SCE,base,2024,99546.771,11.333,23.996,23.996,0.000,0.001,observed_downscaled
+06029,Kern,PGAE,base,2024,5115337.388,582.347,1095.904,1095.904,0.000,0.052,observed_downscaled
+06029,Kern,SCE,base,2024,1425881.907,162.327,343.718,343.718,0.000,0.013,observed_downscaled
+06031,Kings,PGAE,base,2024,610893.058,69.546,130.877,130.877,0.000,0.006,observed_downscaled
+06031,Kings,SCE,base,2024,483992.670,55.099,116.669,116.669,0.000,0.005,observed_downscaled
+06033,Lake,PGAE,base,2024,491307.826,55.932,105.257,105.257,0.000,0.005,observed_downscaled
+06035,Lassen,PGAE,base,2024,233584.389,26.592,50.043,50.043,0.000,0.002,observed_downscaled
+06037,Los Angeles,LDWP,base,2024,22856414.951,2602.051,6150.487,6150.487,0.000,0.999,observed_downscaled
+06037,Los Angeles,SCE,base,2024,41768313.029,4755.045,10068.510,10068.510,0.000,0.394,observed_downscaled
+06039,Madera,PGAE,base,2024,1126260.645,128.217,241.289,241.289,0.000,0.011,observed_downscaled
+06041,Marin,PGAE,base,2024,1877793.028,213.774,402.296,402.296,0.000,0.019,observed_downscaled
+06043,Mariposa,PGAE,base,2024,109739.326,12.493,23.510,23.510,0.000,0.001,observed_downscaled
+06045,Mendocino,PGAE,base,2024,660245.121,75.165,141.450,141.450,0.000,0.007,observed_downscaled
+06047,Merced,PGAE,base,2024,593630.287,67.581,127.179,127.179,0.000,0.006,observed_downscaled
+06047,Merced,TIDC,base,2024,1404664.661,159.912,340.625,340.625,0.000,0.477,observed_downscaled
+06051,Mono,SCE,base,2024,84426.466,9.611,20.352,20.352,0.000,0.001,observed_downscaled
+06053,Monterey,PGAE,base,2024,3164492.927,360.256,677.957,677.957,0.000,0.032,observed_downscaled
+06055,Napa,PGAE,base,2024,994818.521,113.253,213.129,213.129,0.000,0.010,observed_downscaled
+06057,Nevada,PGAE,base,2024,614590.678,69.967,131.669,131.669,0.000,0.006,observed_downscaled
+06059,Orange,SCE,base,2024,20596820.702,2344.811,4964.991,4964.991,0.000,0.194,observed_downscaled
+06059,Orange,SDGE,base,2024,1535084.119,174.759,401.135,401.135,0.000,0.084,observed_downscaled
+06061,Placer,BANC,base,2024,1211953.434,137.973,319.259,319.259,0.000,0.068,observed_downscaled
+06061,Placer,PGAE,base,2024,1734659.791,197.479,371.632,371.632,0.000,0.018,observed_downscaled
+06063,Plumas,PGAE,base,2024,142643.104,16.239,30.560,30.560,0.000,0.001,observed_downscaled
+06065,Riverside,IID,base,2024,2434483.308,277.150,725.384,725.384,0.000,0.616,observed_downscaled
+06065,Riverside,SCE,base,2024,15556514.235,1771.006,3749.994,3749.994,0.000,0.147,observed_downscaled
+06065,Riverside,SDGE,base,2024,17458.456,1.988,4.562,4.562,0.000,0.001,observed_downscaled
+06067,Sacramento,BANC,base,2024,12748251.173,1451.304,3358.209,3358.209,0.000,0.712,observed_downscaled
+06067,Sacramento,PGAE,base,2024,15734.709,1.791,3.371,3.371,0.000,0.000,observed_downscaled
+06069,San Benito,PGAE,base,2024,462808.037,52.688,99.151,99.151,0.000,0.005,observed_downscaled
+06071,San Bernardino,SCE,base,2024,15546846.100,1769.905,3747.663,3747.663,0.000,0.147,observed_downscaled
+06073,San Diego,SDGE,base,2024,16608696.719,1890.790,4340.038,4340.038,0.000,0.905,observed_downscaled
+06075,San Francisco,PGAE,base,2024,6299397.682,717.145,1349.576,1349.576,0.000,0.064,observed_downscaled
+06077,San Joaquin,BANC,base,2024,459380.998,52.297,121.012,121.012,0.000,0.026,observed_downscaled
+06077,San Joaquin,PGAE,base,2024,5205096.588,592.566,1115.134,1115.134,0.000,0.053,observed_downscaled
+06079,San Luis Obispo,PGAE,base,2024,2028249.427,230.903,434.530,434.530,0.000,0.021,observed_downscaled
+06081,San Mateo,PGAE,base,2024,5509973.698,627.274,1180.450,1180.450,0.000,0.056,observed_downscaled
+06083,Santa Barbara,PGAE,base,2024,1728929.560,196.827,370.404,370.404,0.000,0.018,observed_downscaled
+06083,Santa Barbara,SCE,base,2024,1488864.122,169.497,358.900,358.900,0.000,0.014,observed_downscaled
+06085,Santa Clara,PGAE,base,2024,13956240.188,1588.825,2989.969,2989.969,0.000,0.141,observed_downscaled
+06087,Santa Cruz,PGAE,base,2024,1952322.067,222.259,418.263,418.263,0.000,0.020,observed_downscaled
+06089,Shasta,BANC,base,2024,840780.926,95.717,221.483,221.483,0.000,0.047,observed_downscaled
+06089,Shasta,PGAE,base,2024,549669.686,62.576,117.761,117.761,0.000,0.006,observed_downscaled
+06091,Sierra,PGAE,base,2024,13356.123,1.521,2.861,2.861,0.000,0.000,observed_downscaled
+06095,Solano,PGAE,base,2024,3268689.426,372.119,700.280,700.280,0.000,0.033,observed_downscaled
+06097,Sonoma,PGAE,base,2024,3523645.053,401.144,754.902,754.902,0.000,0.036,observed_downscaled
+06099,Stanislaus,BANC,base,2024,2567308.026,292.271,676.293,676.293,0.000,0.143,observed_downscaled
+06099,Stanislaus,PGAE,base,2024,114373.965,13.021,24.503,24.503,0.000,0.001,observed_downscaled
+06099,Stanislaus,TIDC,base,2024,1539717.839,175.287,373.375,373.375,0.000,0.523,observed_downscaled
+06101,Sutter,PGAE,base,2024,718138.472,81.755,153.853,153.853,0.000,0.007,observed_downscaled
+06103,Tehama,PGAE,base,2024,474484.733,54.017,101.653,101.653,0.000,0.005,observed_downscaled
+06105,Trinity,BANC,base,2024,74947.444,8.532,19.743,19.743,0.000,0.004,observed_downscaled
+06105,Trinity,PGAE,base,2024,48998.879,5.578,10.497,10.497,0.000,0.000,observed_downscaled
+06107,Tulare,PGAE,base,2024,404748.906,46.078,86.713,86.713,0.000,0.004,observed_downscaled
+06107,Tulare,SCE,base,2024,2979493.233,339.195,718.225,718.225,0.000,0.028,observed_downscaled
+06109,Tuolumne,PGAE,base,2024,414638.059,47.204,88.832,88.832,0.000,0.004,observed_downscaled
+06111,Ventura,SCE,base,2024,6017459.743,685.048,1450.546,1450.546,0.000,0.057,observed_downscaled
+06113,Yolo,PGAE,base,2024,1549699.474,176.423,332.006,332.006,0.000,0.016,observed_downscaled
+06115,Yuba,PGAE,base,2024,587979.342,66.938,125.968,125.968,0.000,0.006,observed_downscaled

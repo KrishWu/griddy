@@ -1,12 +1,16 @@
 "use client";
+import { ProjectDetails } from "@/components/evaluate/ProjectSummary";
+import { projectOf, resilienceOf } from "@/components/evaluate/project";
 // Printable scenario report: headline numbers, design, assumptions, every cost
 // line with its source, BOM, emissions, findings.  OWNER: workstream D.
 // Lives at /report; state comes from GridForgeProvider in the root layout.
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import type { Finding, Provenance, ScenarioResult, SiteIntel, SiteSummary } from "@/lib/contract";
 import { mw, mwh, pct, tons, usd } from "@/lib/format";
+import type { GlossaryKey } from "@/lib/glossary";
 import { useGridForge } from "@/lib/store";
 
 import { ASSET_META } from "./assetMeta";
@@ -60,6 +64,10 @@ function allProvenance(r: ScenarioResult, site: (SiteSummary | SiteIntel)[]): Pr
   r.simulation.provenance.forEach(add);
   r.evaluation.economics.lines.forEach((l) => add(l.provenance));
   r.evaluation.emissions.provenance.forEach(add);
+  const project = projectOf(r);
+  if (project) { add(project.provenance); add(project.jobs.provenance); project.area.demographics?.provenance.forEach(add); }
+  const resilience = resilienceOf(r);
+  if (resilience) add(resilience.provenance);
   site.forEach((x) => x.provenance.forEach(add));
   return [...seen.values()];
 }
@@ -142,18 +150,22 @@ export function ReportView() {
 
         <Section title="Headline results">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              ["CAPEX", usd(e.capex_total_usd)],
-              ["Annual OPEX", usd(e.annual_opex_usd)],
-              ["Net present cost", usd(e.npc_usd)],
-              ["LCOE", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`],
-              ["CO2e per year", tons(em.annual_t_co2e)],
-              ["Carbon intensity", `${Math.round(em.intensity_kg_per_mwh)} kg/MWh`],
-              ["On-site clean share", pct(s.onsite_clean_share)],
-              ["Unmet demand", `${s.hours_unmet} h (${mwh(s.unmet_mwh)})`],
-            ].map(([label, value]) => (
+            {(
+              [
+                ["CAPEX", usd(e.capex_total_usd), "capex"],
+                ["Annual OPEX", usd(e.annual_opex_usd), "opex"],
+                ["Net present cost", usd(e.npc_usd), "npc"],
+                ["LCOE", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`, "lcoe"],
+                ["CO2e per year", tons(em.annual_t_co2e), "co2e"],
+                ["Carbon intensity", `${Math.round(em.intensity_kg_per_mwh)} kg/MWh`, "co2_intensity"],
+                ["On-site clean share", pct(s.onsite_clean_share), "onsite_clean_share"],
+                ["Unmet demand", `${s.hours_unmet} h (${mwh(s.unmet_mwh)})`, "unmet"],
+              ] as [string, string, GlossaryKey][]
+            ).map(([label, value, term]) => (
               <div key={label} className="rounded border border-zinc-200 p-2">
-                <div className="text-[11px] text-zinc-500">{label}</div>
+                <div className="text-[11px] text-zinc-500">
+                  <Term k={term}>{label}</Term>
+                </div>
                 <div className="text-base font-semibold tabular-nums">{value}</div>
               </div>
             ))}
@@ -184,15 +196,15 @@ export function ReportView() {
                   ? [["Peak demand", mw(sc.demand.peak_mw)]]
                   : [
                       ["IT load (compute)", mw(sc.demand.peak_mw / (sc.demand.pue ?? 1.2))],
-                      ["PUE", (sc.demand.pue ?? 1.2).toFixed(2)],
+                      [<Term key="t" k="pue">PUE</Term>, (sc.demand.pue ?? 1.2).toFixed(2)],
                       ["Facility peak (IT × PUE)", mw(sc.demand.peak_mw)],
                     ]),
-                ["Load factor", (sc.demand.load_factor ?? 0.9).toFixed(2)],
+                [<Term key="t" k="load_factor">Load factor</Term>, (sc.demand.load_factor ?? 0.9).toFixed(2)],
                 ["Load profile", sc.demand.profile ?? "flat"],
                 ["Annual demand", mwh(s.demand_mwh)],
                 ["Peak grid import", mw(s.peak_import_mw)],
                 ["New line to grid", `${(sc.grid.interconnection_km ?? 0).toFixed(0)} km`],
-                ["Point of interconnection", sc.grid.poi_voltage_kv ? `${Math.round(sc.grid.poi_voltage_kv)} kV` : "not yet known"],
+                [<Term key="t" k="poi">Point of interconnection</Term>, sc.grid.poi_voltage_kv ? `${Math.round(sc.grid.poi_voltage_kv)} kV` : "not yet known"],
               ]}
             />
           </Section>
@@ -204,7 +216,7 @@ export function ReportView() {
             rows={[
               ["Weather / price year", String(a.weather_year ?? 2024)],
               ["Analysis period", `${a.analysis_years ?? 20} years`],
-              ["Discount rate", `${((a.discount_rate ?? 0.07) * 100).toFixed(1)}%`],
+              [<Term key="t" k="discount_rate">Discount rate</Term>, `${((a.discount_rate ?? 0.07) * 100).toFixed(1)}%`],
               ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 3.65).toFixed(2)}/MMBtu`],
               ["Carbon price (on-site combustion)", `$${(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t`],
               [
@@ -215,10 +227,12 @@ export function ReportView() {
                     ? "Synthetic hourly placeholder (CAISO 2024 pending)"
                     : "CAISO 2024 hourly, per the simulation sources below",
               ],
-              ["Import delivery adder", `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
+              [<Term key="t" k="import_adder">Import delivery adder</Term>, `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
             ]}
           />
         </Section>
+
+        <ProjectDetails result={result} expanded />
 
         <Section title="Costs">
           <Table

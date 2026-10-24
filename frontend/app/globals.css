@@ -1,8 +1,27 @@
 @import "tailwindcss";
+/* `dark:` matches the Dark theme anywhere, and in Mixed (html[data-theme="mixed"]) only the chrome:
+   elements marked data-chrome (header, sidebars, tabs, panels) and their descendants. The map area
+   carries no data-chrome, so it stays light. A subtree can also opt in with data-theme="dark". */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, [data-theme="mixed"] [data-chrome], [data-theme="mixed"] [data-chrome] *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eff6f3;
+  --foreground: #183b32;
+  --tone-50: #eff6f3;
+  --tone-100: #e4eee9;
+  --tone-200: #cdded5;
+  --tone-300: #aec8bb;
+  --tone-400: #789a89;
+  --tone-500: #5c786b;
+  --tone-600: #496357;
+  --tone-700: #334f42;
+  --tone-800: #244034;
+  --tone-900: #183429;
+  --tone-950: #10261e;
+  --black: #070e1a;
+  /* Settings > Text size (data-text-size on <html>, below). */
+  --text-scale: 1;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -10,19 +29,95 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-zinc-50: var(--tone-50);
+  --color-zinc-100: var(--tone-100);
+  --color-zinc-200: var(--tone-200);
+  --color-zinc-300: var(--tone-300);
+  --color-zinc-400: var(--tone-400);
+  --color-zinc-500: var(--tone-500);
+  --color-zinc-600: var(--tone-600);
+  --color-zinc-700: var(--tone-700);
+  --color-zinc-800: var(--tone-800);
+  --color-zinc-900: var(--tone-900);
+  --color-zinc-950: var(--tone-950);
+  --color-black: var(--black);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme="dark"] {
+  --background: #070e1a;
+  --foreground: #e4edf8;
+  --tone-50: #f0f5fc;
+  --tone-100: #e3edf9;
+  --tone-200: #c9d9eb;
+  --tone-300: #aebfd5;
+  --tone-400: #91a8c2;
+  --tone-500: #869ab2;
+  --tone-600: #596e89;
+  --tone-700: #344963;
+  --tone-800: #24364e;
+  --tone-900: #142238;
+  --tone-950: #0c182a;
+  color-scheme: dark;
+}
+
+/* Mixed theme chrome: true near-black with neutral grays (no blue tint), white text. On #0a0a0a panels
+   every text tone from 50 to 600 passes WCAG AA (600 = 4.8:1, 500 = 7.4:1, 300 = 13:1). */
+[data-theme="mixed"] [data-chrome] {
+  --background: #000000;
+  --foreground: #fafafa;
+  --tone-50: #fafafa;
+  --tone-100: #f4f4f4;
+  --tone-200: #e4e4e4;
+  --tone-300: #d2d2d2;
+  --tone-400: #adadad;
+  --tone-500: #9e9e9e;
+  --tone-600: #808080;
+  --tone-700: #3d3d3d;
+  --tone-800: #2a2a2a;
+  --tone-900: #1a1a1a;
+  --tone-950: #0a0a0a;
+  --black: #000000;
+  color-scheme: dark;
+}
+/* Text that only inherits its color (no text-* class) would inherit the light page's dark ink, computed
+   outside the chrome: restart it at the chrome root. In the base layer, so any text-* utility still wins. */
+@layer base {
+  [data-theme="mixed"] [data-chrome] { color: var(--foreground); }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+button, input, select { accent-color: #047857; }
+[data-theme="dark"] button, [data-theme="dark"] input, [data-theme="dark"] select,
+[data-theme="mixed"] [data-chrome] :is(button, input, select) { accent-color: #67e8f9; }
+[data-theme="dark"] .maplibregl-ctrl-group { background: #142238; }
+[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
+[data-theme="dark"] .maplibregl-popup-content { background: #e3edf9; color: #142238; }
+
+/* Settings > Map contrast / brightness: MapView sets --map-filter on its wrapper. Only the canvas is
+   filtered, so popups, controls and attribution keep their real colors. */
+.maplibregl-canvas-container { filter: var(--map-filter, none); }
+
+/* Settings > Text size scales the root font size, so every rem-based size, gap and padding follows.
+   The small px labels the panels use (text-[9px] .. text-[11px]) scale with it too. Unlayered, so
+   these win over Tailwind's utilities layer; only active off the default size. */
+html[data-text-size="small"] { font-size: 87.5%; --text-scale: 0.875; }
+html[data-text-size="large"] { font-size: 112.5%; --text-scale: 1.125; }
+html[data-text-size] .text-\[9px\] { font-size: calc(9px * var(--text-scale)); }
+html[data-text-size] .text-\[10px\] { font-size: calc(10px * var(--text-scale)); }
+html[data-text-size] .text-\[11px\] { font-size: calc(11px * var(--text-scale)); }
+
+/* Settings > Reduce motion (or the OS preference when unset): no transitions, animations or smooth
+   scrolling. MapView also turns its camera moves into jumps. */
+html[data-reduce-motion] *, html[data-reduce-motion] *::before, html[data-reduce-motion] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* Printable report (/report): plain paper, sensible margins.  OWNER: workstream D. */
@@ -33,5 +128,6 @@ body {
   body {
     background: #fff;
     color: #000;
+    color-scheme: light;
   }
 }

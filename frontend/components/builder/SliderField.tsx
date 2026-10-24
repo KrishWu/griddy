@@ -2,10 +2,11 @@
 // Slider + number input that never writes a half-typed value into the scenario.
 // While you type, the box shows your draft; only finite, in-range numbers are
 // committed. On blur it snaps back to the committed value.  OWNER: workstream D.
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 interface Props {
-  label: string;
+  /** Text, or text with a glossary <Term> inside (the range is labelled by this element either way). */
+  label: ReactNode;
   value: number;
   onChange: (v: number) => void;
   min: number;
@@ -13,7 +14,7 @@ interface Props {
   max: number;
   inputMax?: number;
   step?: number;
-  unit?: string;
+  unit?: ReactNode;
   /** Multiply for display (e.g. 100 to edit a 0.07 fraction as 7 %). */
   displayScale?: number;
   hint?: string;
@@ -40,7 +41,7 @@ export function SliderField({ label, value, onChange, min, max, inputMax, step =
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-2">
-        <label htmlFor={id} className="text-xs text-zinc-600 dark:text-zinc-400">
+        <label id={`${id}-label`} htmlFor={id} className="text-xs text-zinc-600 dark:text-zinc-400">
           {label}
         </label>
         <span className="flex items-baseline gap-1">
@@ -64,7 +65,7 @@ export function SliderField({ label, value, onChange, min, max, inputMax, step =
       {slider && (
         <input
           type="range"
-          aria-label={label}
+          aria-labelledby={`${id}-label`}
           className="w-full accent-emerald-600"
           // Start the range on the step grid so a drag lands on round values (10, 20, ... not 1, 11, ...).
           min={Math.ceil(min / step) * step}

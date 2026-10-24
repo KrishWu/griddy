@@ -2,19 +2,57 @@
 // Contract cost lines grouped by category with subtotals; each line carries its own
 // provenance marker. CAPEX is year-0 spend; every other category is a year-1 amount.
 // OWNER: workstream C (Evaluate).
+import type { ReactNode } from "react";
+
+import { Term } from "@/components/glossary/Term";
 import type { CostLine } from "@/lib/contract";
 
 import { finite, signedUsd } from "./fmt";
 import { ProvenanceTip } from "./ProvenanceTip";
 
-const ORDER: { cat: CostLine["category"]; label: string }[] = [
-  { cat: "capex", label: "Capital, year 0" },
-  { cat: "fixed_om", label: "Fixed O&M, per year" },
+const ORDER: { cat: CostLine["category"]; label: ReactNode }[] = [
+  {
+    cat: "capex",
+    label: (
+      <>
+        <Term k="capex">Capital</Term>, year 0
+      </>
+    ),
+  },
+  {
+    cat: "fixed_om",
+    label: (
+      <>
+        Fixed <Term k="om">O&amp;M</Term>, per year
+      </>
+    ),
+  },
   { cat: "var_om", label: "Variable O&M, per year" },
   { cat: "fuel", label: "Fuel, per year" },
-  { cat: "purchased_power", label: "Purchased power, per year" },
-  { cat: "carbon", label: "Carbon cost, per year" },
-  { cat: "export_revenue", label: "Export credit, per year" },
+  {
+    cat: "purchased_power",
+    label: (
+      <>
+        <Term k="imports">Purchased power</Term>, per year
+      </>
+    ),
+  },
+  {
+    cat: "carbon",
+    label: (
+      <>
+        <Term k="carbon_price">Carbon cost</Term>, per year
+      </>
+    ),
+  },
+  {
+    cat: "export_revenue",
+    label: (
+      <>
+        <Term k="exports">Export credit</Term>, per year
+      </>
+    ),
+  },
 ];
 
 export function CostLinesTable({ lines }: { lines: CostLine[] }) {

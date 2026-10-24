@@ -1,6 +1,7 @@
 "use client";
 // Scenario builder: presets, demand, the asset portfolio, and grid connection.
 // Edits auto-run (debounced in the store).  OWNER: workstream D (Build + Report + UI).
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import type { Asset, AssetKind, DemandSpec } from "@/lib/contract";
 import { itLoadMw, useGridForge } from "@/lib/store";
@@ -95,14 +96,27 @@ export function BuildPanel() {
 
         <Section title={community ? "Community demand" : "Data center demand"}>
           {community ? (
-            <SliderField label="Peak demand" unit="MW" value={peak} onChange={setPeakMw} min={1} max={100} inputMax={10000} step={1} />
+            <SliderField
+              label={<Term k="peak_demand">Peak demand</Term>}
+              unit={<Term k="mw">MW</Term>}
+              value={peak}
+              onChange={setPeakMw}
+              min={1}
+              max={100}
+              inputMax={10000}
+              step={1}
+            />
           ) : (
             <>
               {/* Facility peak = IT x PUE (the contract's peak_mw), so better cooling means
                   less grid energy for the same compute. */}
               <SliderField
-                label="IT load (compute)"
-                unit="MW"
+                label={
+                  <>
+                    <Term k="it_load">IT load</Term> (compute)
+                  </>
+                }
+                unit={<Term k="mw">MW</Term>}
                 value={itLoadMw(scenario)}
                 onChange={setItLoadMw}
                 min={10}
@@ -112,7 +126,11 @@ export function BuildPanel() {
                 decimals={0}
               />
               <SliderField
-                label="PUE (cooling + power overhead)"
+                label={
+                  <>
+                    <Term k="pue">PUE</Term> (cooling + power overhead)
+                  </>
+                }
                 value={scenario.demand.pue ?? 1.2}
                 onChange={setPue}
                 min={1.05}
@@ -122,7 +140,7 @@ export function BuildPanel() {
                 hint="Lower PUE = less grid energy for the same compute."
               />
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                Facility peak at the meter: <span className="font-medium tabular-nums">{Math.round(peak).toLocaleString()} MW</span> (IT × PUE)
+                Facility <Term k="peak_demand">peak</Term> at the meter: <span className="font-medium tabular-nums">{Math.round(peak).toLocaleString()} MW</span> (IT × PUE)
               </p>
             </>
           )}
@@ -131,7 +149,11 @@ export function BuildPanel() {
             Scale portfolio with demand
           </label>
           <SliderField
-            label="Load factor (average / peak)"
+            label={
+              <>
+                <Term k="load_factor">Load factor</Term> (average / peak)
+              </>
+            }
             value={scenario.demand.load_factor ?? 0.9}
             onChange={(v) => setDemand({ load_factor: v })}
             min={0.2}
@@ -167,10 +189,12 @@ export function BuildPanel() {
               <div key={a.id} className="space-y-2 rounded border border-zinc-200 p-2 dark:border-zinc-800">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: meta.color }} />
-                  <span className="font-medium">{meta.label}</span>
+                  <span className="font-medium">
+                    {a.kind === "gas_cc" || a.kind === "gas_ct" ? <Term k={a.kind}>{meta.label}</Term> : meta.label}
+                  </span>
                   {a.kind === "battery" && (
                     <span className="text-[11px] text-zinc-500">
-                      {Math.round(a.capacity_mw * (a.duration_h ?? 4)).toLocaleString()} MWh
+                      {Math.round(a.capacity_mw * (a.duration_h ?? 4)).toLocaleString()} <Term k="mwh">MWh</Term>
                     </span>
                   )}
                   <button
@@ -221,7 +245,7 @@ export function BuildPanel() {
 
         <Section title="Grid connection">
           <SliderField
-            label="Import limit"
+            label={<Term k="imports">Import limit</Term>}
             unit="MW"
             value={scenario.grid.import_limit_mw}
             onChange={(v) => setGrid({ import_limit_mw: v })}
@@ -231,7 +255,7 @@ export function BuildPanel() {
             step={community ? 1 : 10}
           />
           <SliderField
-            label="Export limit"
+            label={<Term k="exports">Export limit</Term>}
             unit="MW"
             value={scenario.grid.export_limit_mw ?? 0}
             onChange={(v) => setGrid({ export_limit_mw: v })}
@@ -241,7 +265,7 @@ export function BuildPanel() {
             step={community ? 1 : 10}
           />
           <SliderField
-            label="New line to grid"
+            label={<Term k="interconnection">New line to grid</Term>}
             unit="km"
             value={scenario.grid.interconnection_km ?? 5}
             onChange={(v) => setGrid({ interconnection_km: v })}
@@ -252,8 +276,14 @@ export function BuildPanel() {
             hint={lineKm != null ? `Nearest line from the site summary: ${lineKm.toFixed(1)} km` : "Select a site on the map to prefill"}
           />
           <p className="text-[11px] text-zinc-500">
-            Point of interconnection:{" "}
-            {scenario.grid.poi_voltage_kv ? `${Math.round(scenario.grid.poi_voltage_kv)} kV` : "voltage unknown until a site is selected"}
+            <Term k="poi">Point of interconnection</Term>:{" "}
+            {scenario.grid.poi_voltage_kv ? (
+              <>
+                {Math.round(scenario.grid.poi_voltage_kv)} <Term k="kv">kV</Term>
+              </>
+            ) : (
+              "voltage unknown until a site is selected"
+            )}
           </p>
         </Section>
 
