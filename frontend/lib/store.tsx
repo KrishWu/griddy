@@ -23,8 +23,13 @@ interface GridForgeState {
   loadCompared: (id: string) => void;
   /** Switch Industrial / Community: loads that mode's default preset. No-op if already in it. */
   setMode: (mode: Mode) => void;
-  /** Change peak demand; rescales assets and grid limits when scaleWithDemand is on. */
+  /** Change the facility peak; rescales assets and grid limits when scaleWithDemand is on. */
   setPeakMw: (peakMw: number) => void;
+  /** Change IT (compute) load at the current PUE: facility peak = IT x PUE. */
+  setItLoadMw: (itMw: number) => void;
+  /** Change PUE at the current IT load: facility peak = IT x PUE, so better cooling means
+   *  less grid energy for the same compute. */
+  setPue: (pue: number) => void;
   scaleWithDemand: boolean;
   setScaleWithDemand: (on: boolean) => void;
   autoRun: boolean;
@@ -82,6 +87,17 @@ function scaleScenario(s: Scenario, factor: number): Scenario {
       export_limit_mw: (s.grid.export_limit_mw ?? 0) * factor,
     },
   };
+}
+
+/** Set the facility peak, scaling the portfolio and grid limits with it when `scale` is on. */
+function withPeak(s: Scenario, peakMw: number, scale: boolean): Scenario {
+  const next = { ...s, demand: { ...s.demand, peak_mw: peakMw } };
+  return scale && s.demand.peak_mw > 0 ? scaleScenario(next, peakMw / s.demand.peak_mw) : next;
+}
+
+/** IT (compute) load implied by the contract's facility peak: peak_mw = IT x PUE. */
+export function itLoadMw(s: Scenario): number {
+  return s.demand.peak_mw / (s.demand.pue ?? 1.2);
 }
 
 /** A preset as it would apply to the current scenario: same site, grid context, assumptions, and (optionally) demand. */
@@ -262,11 +278,21 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   );
 
   const setPeakMw = useCallback(
-    (peakMw: number) =>
+    (peakMw: number) => setScenario((s) => (s ? withPeak(s, peakMw, scaleWithDemand) : s)),
+    [scaleWithDemand],
+  );
+
+  const setItLoadMw = useCallback(
+    (itMw: number) => setScenario((s) => (s ? withPeak(s, itMw * (s.demand.pue ?? 1.2), scaleWithDemand) : s)),
+    [scaleWithDemand],
+  );
+
+  const setPue = useCallback(
+    (pue: number) =>
       setScenario((s) => {
         if (!s) return s;
-        const next = { ...s, demand: { ...s.demand, peak_mw: peakMw } };
-        return scaleWithDemand && s.demand.peak_mw > 0 ? scaleScenario(next, peakMw / s.demand.peak_mw) : next;
+        const next = withPeak(s, itLoadMw(s) * pue, scaleWithDemand);
+        return { ...next, demand: { ...next.demand, pue } };
       }),
     [scaleWithDemand],
   );
@@ -350,6 +376,8 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       loadCompared,
       setMode,
       setPeakMw,
+      setItLoadMw,
+      setPue,
       scaleWithDemand,
       setScaleWithDemand,
       autoRun,
@@ -382,6 +410,8 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       loadCompared,
       setMode,
       setPeakMw,
+      setItLoadMw,
+      setPue,
       scaleWithDemand,
       autoRun,
       result,
