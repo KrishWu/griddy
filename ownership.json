@@ -32,6 +32,7 @@
     "frontend/components/shell/PanelGuard.tsx",
     "ml/__init__.py",
     "ml/README.md",
+    "ml/TRAINING.md",
     "ml/contract/**",
     "backend/app/ml_bridge.py"
   ],

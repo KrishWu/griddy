@@ -80,7 +80,9 @@ XGBoost's CUDA backend (`--device cuda`, the default). The pip wheels for Linux 
 Windows include CUDA support; an NVIDIA driver is all that's needed. `--device cpu` works
 everywhere and is useful for a quick check on a laptop.
 
-Each package's README has the exact commands, expected runtimes and outputs.
+Each package's README has the exact commands, expected runtimes and outputs. To have a coding agent
+do the training, paste the prompts in [`ml/TRAINING.md`](TRAINING.md): a step-by-step runbook with
+acceptance checks and stop conditions for each machine.
 
 ## Rules for Phase 2
 
