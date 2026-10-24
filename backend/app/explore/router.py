@@ -1,7 +1,8 @@
 """Explore endpoints.  OWNER: workstream A.
 
-Layers are served as bytes serialized and gzipped once (service.layer_bytes / layer_gzip)
-with a weak ETag, so the map's first load is a cache lookup per layer and reloads are 304s.
+Layers (and the interconnection-queue JSON) are served as bytes serialized and gzipped once
+(service.layer_bytes / layer_gzip / queue_payload) with a weak ETag, so the map's first load is a
+cache lookup per layer and reloads are 304s.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from app.explore.service import (
     layer_etag,
     layer_gzip,
     layer_info,
+    queue_payload,
     summarize_site,
 )
 
@@ -56,6 +58,16 @@ def _etag_matches(if_none_match: str | None, etag: str) -> bool:
     return any(tag.strip() == "*" or tag.strip().removeprefix("W/") == opaque for tag in if_none_match.split(","))
 
 
+def _cached_json(request: Request, raw: bytes, gz: bytes, etag: str) -> Response:
+    """Pre-serialized JSON (and its gzip) with a weak ETag: 304 on a match, gzip when the client accepts it."""
+    headers = {"ETag": etag, "Cache-Control": CACHE_CONTROL, "Vary": "Accept-Encoding"}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    if _accepts_gzip(request.headers.get("accept-encoding")):
+        return Response(gz, media_type="application/json", headers={**headers, "Content-Encoding": "gzip"})
+    return Response(raw, media_type="application/json", headers=headers)
+
+
 @router.get(
     "/layers/{layer}",
     response_class=Response,
@@ -68,13 +80,7 @@ def _etag_matches(if_none_match: str | None, etag: str) -> bool:
 def layer(layer: str, request: Request) -> Response:
     if layer not in LAYERS:
         raise HTTPException(404, f"Unknown layer {layer!r}; expected one of {LAYERS}")
-    etag = layer_etag(layer)
-    headers = {"ETag": etag, "Cache-Control": CACHE_CONTROL, "Vary": "Accept-Encoding"}
-    if _etag_matches(request.headers.get("if-none-match"), etag):
-        return Response(status_code=304, headers=headers)
-    if _accepts_gzip(request.headers.get("accept-encoding")):
-        return Response(layer_gzip(layer), media_type="application/json", headers={**headers, "Content-Encoding": "gzip"})
-    return Response(layer_bytes(layer), media_type="application/json", headers=headers)
+    return _cached_json(request, layer_bytes(layer), layer_gzip(layer), layer_etag(layer))
 
 
 @router.get("/site/summary", response_model=SiteSummary)
@@ -98,3 +104,21 @@ def fallback_style() -> FileResponse:
     if path is None:
         raise HTTPException(404, "No bundled fallback basemap style (data/explore/basemap_fallback.json)")
     return FileResponse(path, media_type="application/json", headers={"Cache-Control": CACHE_CONTROL})
+
+
+@router.get(
+    "/explore/queue",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/json": {}}, "description": "LBNL interconnection queue aggregated by California county"},
+        304: {"description": "Not modified (If-None-Match matched the ETag)"},
+        404: {"description": "Queue data unavailable"},
+    },
+)
+def interconnection_queue(request: Request) -> Response:
+    """Active interconnection requests by county (LBNL Queued Up 2026, CC BY 4.0): statewide totals,
+    per-county MW by type and the largest requests."""
+    payload = queue_payload()
+    if payload is None:
+        raise HTTPException(404, "Interconnection-queue data unavailable (data/explore/queue_ca_by_county.json)")
+    return _cached_json(request, *payload)

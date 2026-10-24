@@ -1,19 +1,22 @@
 "use client";
 // Interactive grid map.  OWNER: workstream A (Explore / GIS).
 // California grid layers (EIA-860 plants, CEC transmission, OSM substations, Census counties,
-// CEC utility territories), popups, click-to-select-site, overlays from other modules,
+// CEC utility territories, LBNL interconnection queue by county), 2.5D footprints of the
+// scenario's assets, popups, click-to-select-site, overlays from other modules,
 // layer toggles + legend, and a bundled fallback basemap if the tile provider is down.
 // Our sources/layers are (re)added on every 'style.load', so a basemap swap keeps them.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Popup } from "maplibre-gl";
 
 import { api, request } from "@/lib/api";
-import type { Asset, LngLat, SiteSummary } from "@/lib/contract";
+import type { Asset, Catalog, LngLat, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
-import { CA_BOUNDS, EMPTY_FC, circleRing, locKey } from "./geo";
+import { footprintBounds, footprintsFC, loadCatalog } from "./footprints";
+import { CA_BOUNDS, EMPTY_FC, circleRing, locKey, num } from "./geo";
 import { LayerControl, type LayerStatus } from "./LayerControl";
 import {
+  AREA_LAYER_IDS,
   BASEMAP,
   CLICKABLE_LAYER_IDS,
   DATA_KEYS,
@@ -37,9 +40,27 @@ type FC = GeoJSON.FeatureCollection;
 const STYLE_TIMEOUT_MS = 8000;
 const STYLE_PROBE_MS = 10000; // after the timeout, how long the basemap style URL gets to answer before we give up
 const HIT_PX = 5; // query box half-size, so thin lines are clickable
-const HOVER_LAYER_IDS = CLICKABLE_LAYER_IDS.filter((id) => id !== "utilities-fill"); // a fill would make every pixel "clickable"
+const HOVER_LAYER_IDS = CLICKABLE_LAYER_IDS.filter((id) => !AREA_LAYER_IDS.includes(id)); // a fill would make every pixel "clickable"
 const SITE_ZOOM = 9; // the 25 km ring fits comfortably
 const SELECT_DELAY_MS = 250; // wait this long after a click on empty map, so a double-click zooms instead of moving the site
+const FOOTPRINT_PITCH = 50;
+const REFRAME_DELAY_MS = 300; // footprints on: refit this long after the asset set or site settles
+
+/** Queue status from the boundaries layer: counties with active requests, or "unavailable" when the
+ *  backend's queue file is missing (no county carries queue_active_mw). */
+function queueStatus(fc: FC): number | "unavailable" {
+  if (!fc.features.some((f) => num(f.properties?.queue_active_mw) !== null)) return "unavailable";
+  return fc.features.filter((f) => (num(f.properties?.queue_active_projects) ?? 0) > 0).length;
+}
+
+/** Camera padding for framing footprints: clear of the layers card (top-right) and of D's floating
+ *  Site cards (bottom-left, up to 55% of the map height + 32 px), when the map is big enough to afford it.
+ *  The extra 8% of the height at the bottom covers what the pitch and extrusions push below the fitted bounds. */
+function framePadding(m: MLMap): { top: number; right: number; bottom: number; left: number } {
+  const { clientWidth: w, clientHeight: h } = m.getContainer();
+  if (w < 640 || h < 600) return { top: 40, right: 40, bottom: 40, left: 40 };
+  return { top: 60, right: 250, bottom: Math.round(h * 0.63) + 64, left: 50 };
+}
 
 // One fetch per layer per page load, shared across remounts (StrictMode, error-boundary resets).
 const layerCache = new Map<DataKey, Promise<FC>>();
@@ -132,7 +153,8 @@ export function MapView() {
   const visibleRef = useRef(visible);
   const hiddenOverlaysRef = useRef(hiddenOverlays);
   const layerData = useRef<Partial<Record<DataKey, FC>>>({});
-  const localData = useRef<Record<LocalSource, FC>>({ "site-context": EMPTY_FC, assets: EMPTY_FC, site: EMPTY_FC });
+  const localData = useRef<Record<LocalSource, FC>>({ "site-context": EMPTY_FC, assets: EMPTY_FC, site: EMPTY_FC, footprints: EMPTY_FC });
+  const [catalog, setCatalog] = useState<Catalog | "error" | null>(null);
   // View state: ease to the site once, unless the user already moved the map.
   const userMoved = useRef(false);
   const didInitialEase = useRef(false);
@@ -158,15 +180,26 @@ export function MapView() {
           if (cancelled) return;
           layerData.current[key] = fc;
           map.current?.getSource<GeoJSONSource>(key)?.setData(fc);
-          setStatus((s) => ({ ...s, [key]: fc.features.length }));
+          setStatus((s) => ({ ...s, [key]: fc.features.length, ...(key === "boundaries" ? { queue: queueStatus(fc) } : {}) }));
         },
         (err: unknown) => {
           if (cancelled) return;
           console.warn(`layer ${key} failed to load`, err);
-          setStatus((s) => ({ ...s, [key]: "error" }));
+          setStatus((s) => ({ ...s, [key]: "error", ...(key === "boundaries" ? { queue: "error" as const } : {}) }));
         },
       );
     }
+    // C's technology catalog (land per MW) sizes the 2.5D footprints; without it that toggle is unavailable.
+    loadCatalog().then(
+      (c) => {
+        if (!cancelled) setCatalog(c);
+      },
+      (err: unknown) => {
+        if (cancelled) return;
+        console.warn("catalog failed to load; asset footprints unavailable", err);
+        setCatalog("error");
+      },
+    );
 
     (async () => {
       const maplibregl = await import("maplibre-gl");
@@ -264,7 +297,7 @@ export function MapView() {
       const openPopup = (f: MapGeoJSONFeature, at: MLLngLat): Popup => {
         const g = f.geometry;
         const anchor: [number, number] = g.type === "Point" ? [g.coordinates[0], g.coordinates[1]] : [at.lng, at.lat];
-        return new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8 })
+        return new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8, className: "z-20" }) // above the z-10 layers card
           .setLngLat(anchor)
           .setDOMContent(popupContent(f.layer.id, f.properties))
           .addTo(m);
@@ -276,20 +309,21 @@ export function MapView() {
         popup?.remove();
         popup = null;
         const hits = hitsAt(e.point, CLICKABLE_LAYER_IDS); // topmost first
-        const feature = hits.find((f) => f.layer.id !== "utilities-fill");
+        const feature = hits.find((f) => !AREA_LAYER_IDS.includes(f.layer.id));
         if (feature) {
           popup = openPopup(feature, e.lngLat);
           return;
         }
         if (e.originalEvent.detail > 1) return; // 2nd click of a double-click: the map zooms instead
-        // Empty map (or only a utility territory): select a site here, unless a double-click follows.
+        // Empty map (or only an area fill): select a site here, unless a double-click follows, then
+        // show the topmost area's popup (a queue county above a utility territory).
         const ll = e.lngLat.wrap(); // a click on a world copy still means -180..180
         const p = { lon: ll.lng, lat: ll.lat };
-        const territory = hits.find((f) => f.layer.id === "utilities-fill");
+        const area = hits.find((f) => AREA_LAYER_IDS.includes(f.layer.id));
         selectTimer = setTimeout(() => {
           clickedKey.current = locKey(p);
           trackSiteSelection(p, selectRef.current(p));
-          if (territory) popup = openPopup(territory, e.lngLat);
+          if (area) popup = openPopup(area, e.lngLat);
         }, SELECT_DELAY_MS);
       });
       m.on("dblclick", () => clearTimeout(selectTimer));
@@ -329,16 +363,18 @@ export function MapView() {
     };
   }, []);
 
-  // Client-side sources: selected site, placed assets, site context (ring + links).
+  // Client-side sources: selected site, placed assets, site context (ring + links), asset footprints
+  // (live with the scenario's capacities, e.g. D's sliders).
   const site = useMemo(() => siteFC(center, siteName), [center, siteName]);
   const placed = useMemo(() => assetsFC(assets), [assets]);
   const context = useMemo(() => contextFC(center, summary), [center, summary]);
+  const footprints = useMemo(() => (catalog && catalog !== "error" ? footprintsFC(assets, center, catalog) : EMPTY_FC), [assets, center, catalog]);
   useEffect(() => {
-    localData.current = { site, assets: placed, "site-context": context };
+    localData.current = { site, assets: placed, "site-context": context, footprints };
     const m = map.current;
     if (!m) return;
     for (const id of LOCAL_SOURCES) m.getSource<GeoJSONSource>(id)?.setData(localData.current[id]);
-  }, [site, placed, context]);
+  }, [site, placed, context, footprints]);
 
   // Camera: ease to the site the first time it is known (unless the user already moved);
   // later, follow it only if it changed without a map click and is off-screen (e.g. a preset switch).
@@ -419,14 +455,60 @@ export function MapView() {
 
   const fitCalifornia = useCallback(() => {
     userMoved.current = true; // an explicit view choice: don't auto-ease to the site afterwards
-    map.current?.fitBounds(CA_BOUNDS, { padding: 24, duration: 900 });
+    map.current?.fitBounds(CA_BOUNDS, { padding: 24, pitch: 0, duration: 900 });
   }, []);
+  // Footprints on: tilt to 2.5D and frame them with the site; off: back to a flat map.
+  const tiltForFootprints = useCallback(
+    (on: boolean) => {
+      const m = map.current;
+      if (!m) return;
+      userMoved.current = true;
+      if (!on) {
+        m.easeTo({ pitch: 0, duration: 900 });
+        return;
+      }
+      const bounds = footprintBounds(localData.current.footprints, center);
+      if (bounds) m.fitBounds(bounds, { padding: framePadding(m), pitch: FOOTPRINT_PITCH, maxZoom: 14, duration: 1400 });
+      else m.easeTo({ pitch: FOOTPRINT_PITCH, duration: 900 });
+    },
+    [center],
+  );
+  // Footprints on: refit when the asset set or the site changes (a preset switch), debounced, but not
+  // on capacity edits, so dragging a slider doesn't move the camera. The toggle itself already framed them.
+  const footprintKey = useMemo(
+    () => JSON.stringify([(assets ?? []).map((a) => [a.id, a.kind, a.location ? locKey(a.location) : null]), center ? locKey(center) : null]),
+    [assets, center],
+  );
+  const framedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visible.footprints) {
+      framedKey.current = null;
+      return;
+    }
+    if (framedKey.current === null) {
+      framedKey.current = footprintKey; // just toggled on: toggleGroup framed this set
+      return;
+    }
+    if (footprintKey === framedKey.current) return;
+    const t = setTimeout(() => {
+      framedKey.current = footprintKey;
+      tiltForFootprints(true);
+    }, REFRAME_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [visible.footprints, footprintKey, tiltForFootprints]);
   const flyToSite = useCallback(() => {
     if (!center) return;
     userMoved.current = true;
     map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, duration: 1200 });
   }, [center]);
-  const toggleGroup = useCallback((g: LayerGroup) => setVisible((v) => ({ ...v, [g]: !v[g] })), []);
+  const toggleGroup = useCallback(
+    (g: LayerGroup) => {
+      const on = !visibleRef.current[g];
+      setVisible((v) => ({ ...v, [g]: on }));
+      if (g === "footprints") tiltForFootprints(on);
+    },
+    [tiltForFootprints],
+  );
   const toggleOverlay = useCallback(
     (id: string) =>
       setHiddenOverlays((prev) => {
@@ -439,14 +521,18 @@ export function MapView() {
   );
 
   const pending = DATA_KEYS.filter((k) => status[k] === undefined).length;
+  const groupStatus: LayerStatus = {
+    ...status,
+    footprints: catalog === "error" ? "unavailable" : catalog ? footprints.features.length : undefined,
+  };
   const button =
     "px-2.5 py-1 font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
   return (
     <div className="relative h-full w-full">
       <div ref={el} className="h-full w-full" />
-      {/* Top-left column: view buttons, basemap notice, layers + legend (capped at ~45% of the map height). */}
-      <div className="pointer-events-none absolute bottom-2 left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+      {/* Top-left: view buttons and the basemap notice (D's Site cards float over the bottom-left). */}
+      <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
             California
@@ -463,11 +549,15 @@ export function MapView() {
             </button>
           </span>
         )}
+      </div>
+      {/* Top-right, below MapLibre's zoom/compass control (10 px margin + 3 x 29 px buttons): layers + legend,
+          capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right). */}
+      <div className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end">
         <LayerControl
           container={el}
           visible={visible}
           onToggle={toggleGroup}
-          status={status}
+          status={groupStatus}
           overlays={overlays.map((o) => ({ id: o.id, label: o.label }))}
           hiddenOverlays={hiddenOverlays}
           onToggleOverlay={toggleOverlay}
