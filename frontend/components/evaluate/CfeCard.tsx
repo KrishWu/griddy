@@ -3,9 +3,11 @@
 // hourly matching vs annual netting, and the hour-of-day / month profile of matched hours.
 // Renders nothing when the backend didn't report cfe_score_24_7.
 // OWNER: workstream C (Evaluate).
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from "recharts";
 
+import { Term } from "@/components/glossary/Term";
+import { usePanelActive } from "@/components/shell/panelActive";
 import type { Provenance } from "@/lib/contract";
 import { pct } from "@/lib/format";
 
@@ -35,7 +37,7 @@ function ShareTooltip({ active, payload }: TooltipContentProps) {
   );
 }
 
-function Meter({ label, value, emphasis }: { label: string; value: number; emphasis?: boolean }) {
+function Meter({ label, value, emphasis }: { label: ReactNode; value: number; emphasis?: boolean }) {
   return (
     <div className="flex items-center gap-2 text-[11px]">
       <span className={`w-[42%] shrink-0 ${emphasis ? "font-medium text-zinc-900 dark:text-zinc-100" : "text-zinc-600 dark:text-zinc-400"}`}>{label}</span>
@@ -51,6 +53,7 @@ export function CfeCard({ ex, provenance }: { ex: EvalExtras; provenance: Proven
   const hourly = ex.cfe_by_hour_of_day;
   const monthly = ex.cfe_by_month;
   const [view, setView] = useState<"hour" | "month">(hourly ? "hour" : "month");
+  const shown = usePanelActive(); // hidden sidebar tab: no chart (it would measure 0 x 0)
   const score = ex.cfe_score_24_7;
   if (score === undefined) return null;
 
@@ -68,7 +71,9 @@ export function CfeCard({ ex, provenance }: { ex: EvalExtras; provenance: Proven
 
   return (
     <section className={`${CHART_VARS} space-y-2`}>
-      <h3 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">24/7 carbon-free energy</h3>
+      <h3 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+        <Term k="cfe_247">24/7 carbon-free energy</Term>
+      </h3>
       <div className="flex items-end gap-3">
         <div className="flex items-center gap-1">
           <span className="text-3xl font-semibold leading-none text-zinc-900 dark:text-zinc-100">{pct(score)}</span>
@@ -83,7 +88,7 @@ export function CfeCard({ ex, provenance }: { ex: EvalExtras; provenance: Proven
       {(energy !== undefined || netting !== undefined) && (
         <div className="space-y-1">
           {energy !== undefined && <Meter label="Hourly-matched energy" value={energy} emphasis />}
-          {netting !== undefined && <Meter label="Annual netting" value={netting} />}
+          {netting !== undefined && <Meter label={<Term k="annual_netting">Annual netting</Term>} value={netting} />}
           {gap !== undefined && netting !== undefined && gap > 0.005 && (
             <p className="text-[10px] text-zinc-500">
               Annual netting would claim {pct(netting)}, {(gap * 100).toFixed(0)} points more clean energy than hour-by-hour matching delivers.
@@ -131,33 +136,36 @@ export function CfeCard({ ex, provenance }: { ex: EvalExtras; provenance: Proven
             )}
           </div>
           <div className="h-32">
-            <ResponsiveContainer>
-              <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap={view === "hour" ? 2 : 4}>
-                <CartesianGrid vertical={false} stroke="var(--ev-grid)" />
-                <XAxis dataKey="tick" tick={TICK} tickLine={false} axisLine={{ stroke: "var(--ev-axis)" }} interval={view === "hour" ? 5 : 0} />
-                <YAxis
-                  domain={[0, 1]}
-                  ticks={[0, 0.5, 1]}
-                  tickFormatter={(v: number) => pct(v)}
-                  tick={TICK}
-                  tickLine={false}
-                  axisLine={false}
-                  width={34}
-                />
-                <Tooltip content={ShareTooltip} cursor={{ fill: "var(--ev-cursor)" }} isAnimationActive={false} />
-                <Bar dataKey="share" fill="var(--ev-clean)" radius={[2, 2, 0, 0]} maxBarSize={16} isAnimationActive={false} />
-              </BarChart>
-            </ResponsiveContainer>
+            {shown && (
+              <ResponsiveContainer>
+                <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap={view === "hour" ? 2 : 4}>
+                  <CartesianGrid vertical={false} stroke="var(--ev-grid)" />
+                  <XAxis dataKey="tick" tick={TICK} tickLine={false} axisLine={{ stroke: "var(--ev-axis)" }} interval={view === "hour" ? 5 : 0} />
+                  <YAxis
+                    domain={[0, 1]}
+                    ticks={[0, 0.5, 1]}
+                    tickFormatter={(v: number) => pct(v)}
+                    tick={TICK}
+                    tickLine={false}
+                    axisLine={false}
+                    width={34}
+                  />
+                  <Tooltip content={ShareTooltip} cursor={{ fill: "var(--ev-cursor)" }} isAnimationActive={false} />
+                  <Bar dataKey="share" fill="var(--ev-clean)" radius={[2, 2, 0, 0]} maxBarSize={16} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       )}
 
       <p className="text-[10px] leading-snug text-zinc-500">
+        <Term k="grid_clean_share">Clean share of grid imports</Term>{" "}
         {ex.cfe_grid_share_source === "inferred_from_grid_co2"
-          ? "Clean share of grid imports inferred hour by hour from grid CO2 intensity against a gas-fleet rate (inferred; Simulate did not report it)."
+          ? "inferred hour by hour from grid CO2 intensity against a gas-fleet rate (inferred; Simulate did not report it)."
           : ex.cfe_grid_share_source === "simulate"
-            ? "Clean share of grid imports per hour from the simulation."
-            : "Clean share of grid imports per hour as reported by the evaluation backend."}{" "}
+            ? "per hour from the simulation."
+            : "per hour as reported by the evaluation backend."}{" "}
         Hours are hour-beginning PST.
       </p>
     </section>

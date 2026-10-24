@@ -2,33 +2,36 @@
 // Interactive grid map.  OWNER: workstream A (Explore / GIS).
 // California grid layers (EIA-860 plants, CEC transmission, OSM substations, Census counties,
 // CEC utility territories, LBNL interconnection queue by county), 2.5D footprints of the
-// scenario's assets, popups, click-to-select-site, overlays from other modules,
-// layer toggles + legend, and a bundled fallback basemap if the tile provider is down.
+// scenario's assets, popups, click-to-select-site, overlays from other modules, and a bundled
+// fallback basemap if the tile provider is down. Layer toggles + legend live in the sidebar's Layers
+// tab (LayerControl); visibility is shared with it through layerState.tsx.
 // Phase 2: a "Forecast & sites" drawer (ForecastView) over the right of the map, a county
 // demand-growth choropleth and recommended-site markers, all from the shared Phase 2 state.
 // Our sources/layers are (re)added on every 'style.load', so a basemap swap keeps them.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// Settings (lib/settings.tsx) pick the basemap (follow theme / light / dark; Mixed keeps it light),
+// filter the canvas (contrast, brightness) and turn camera animations off under reduced motion.
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Popup } from "maplibre-gl";
 
 import { countyByGeoid, scenarioLabel } from "@/components/forecast/forecastData";
 import { ForecastView } from "@/components/forecast/ForecastView";
 import { forecastAdjusted, usePhase2 } from "@/components/forecast/usePhase2";
 import { PanelGuard } from "@/components/shell/PanelGuard";
+import { showLeftTabFromMap } from "@/components/shell/sidebarTabs";
 import { api, request } from "@/lib/api";
 import type { Asset, Catalog, DemandForecast, LngLat, SiteRecommendation, SiteSummary } from "@/lib/contract";
+import { prefersReducedMotion, useSettings } from "@/lib/settings";
 import { useGridForge } from "@/lib/store";
 
 import { closeForecastDrawer, isForecastDrawerOpen, subscribeForecastDrawer, toggleForecastDrawer, useForecastDrawer } from "./forecastDrawer";
 import { footprintBounds, footprintsFC, loadCatalog } from "./footprints";
 import { CA_BOUNDS, EMPTY_FC, circleRing, locKey, num } from "./geo";
-import { LayerControl, type LayerStatus } from "./LayerControl";
+import { useLayerState, type LayerStatus } from "./layerState";
 import {
   AREA_LAYER_IDS,
   BASEMAP,
   CLICKABLE_LAYER_IDS,
   DATA_KEYS,
-  DEFAULT_VISIBLE,
-  EXCLUSIVE_GROUPS,
   INLINE_FALLBACK_STYLE,
   LAYERS,
   LAYER_IDS,
@@ -44,7 +47,6 @@ import {
 import { demandCard, popupContent, recSiteCard, type DemandInfo } from "./popup";
 import { ProjectMapTools } from "./ProjectMapTools";
 import { MapSearch } from "./MapSearch";
-import { useTheme } from "@/components/builder/ThemeToggle";
 import { readSummary, trackSiteSelection, useSiteSummary } from "./useSiteSummary";
 
 type FC = GeoJSON.FeatureCollection;
@@ -67,16 +69,11 @@ function queueStatus(fc: FC): number | "unavailable" {
 
 type Padding = { top: number; right: number; bottom: number; left: number };
 
-// D's AppShell floats the Site cards over the map from this viewport width (its LARGE query), as
-// "absolute bottom-8 left-3 w-80 max-h-[55%]"; they reach that max height once the site summary and
-// site intelligence load. Below it they sit in the sidebar. Map pixels throughout.
-const FLOATING_CARDS_QUERY = "(min-width: 1024px)";
-const CARDS = { left: 12, width: 320, bottom: 32, maxShare: 0.55 };
-// The layers card wrapper below: right-2.5 top-[106px], holding the w-56 LayerControl.
-const LAYERS_CARD = { right: 10, top: 106, width: 224 };
+const DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
+const styleUrl = (tone: "light" | "dark") => (tone === "dark" ? DARK_STYLE : BASEMAP);
+
 // "Forecast & sites" drawer over the right of the map; on a map too narrow to keep a useful strip
-// beside it, it takes the full width. While it is open, the layers card and MapLibre's controls move
-// to its left edge.
+// beside it, it takes the full width. While it is open, MapLibre's controls move to its left edge.
 const DRAWER_W = 420;
 const DRAWER_FULL_BELOW = 680;
 
@@ -85,52 +82,28 @@ function drawerWidth(open: boolean, w: number | null): number {
   return w !== null && w < DRAWER_FULL_BELOW ? w : DRAWER_W;
 }
 
-function siteCardsRect(h: number): { right: number; top: number } | null {
-  if (typeof window === "undefined" || !window.matchMedia(FLOATING_CARDS_QUERY).matches) return null;
-  return { right: CARDS.left + CARDS.width, top: h - CARDS.bottom - CARDS.maxShare * h };
+/** Camera options for our own moves: a jump instead of an animation under reduced motion (the
+ *  setting, or the OS when unset), and `essential` so MapLibre follows our setting, not only the OS. */
+function motion(): { animate: boolean; essential: true } {
+  return { animate: !prefersReducedMotion(), essential: true };
 }
 
-/** Layers card max height: 45% of the map, clear of the scale bar; but when the map is too narrow for it to
- *  sit beside the floating Site cards (which paint on top), it stops above them so its toggles stay clickable.
- *  An overlap up to 8 px is fine: the card's 12 px left padding keeps the checkboxes clear. */
-function layersMaxHeight(w: number, h: number): number {
-  const base = Math.min(0.45 * h, h - 176);
-  const cards = siteCardsRect(h);
-  if (!cards || cards.right - (w - LAYERS_CARD.right - LAYERS_CARD.width) <= 8) return base;
-  return Math.max(96, Math.min(base, cards.top - 8 - LAYERS_CARD.top));
-}
-
-/** Camera padding for framing footprints: the largest clear rectangle of the map, away from the view
- *  buttons (top-left), the layers card (top-right), D's floating Site cards (bottom-left) and the scale bar.
+/** Camera padding for framing footprints: the map minus the overlays that stay on it (search, view
+ *  buttons and Highlight area at the top left, zoom/compass at the top right, scale bar and attribution
+ *  at the bottom). The Site cards and layers card used to float here; they live in the sidebars now.
  *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds.
- *  `shift`: px on the right covered by the forecast drawer (the layers card sits at its left edge). */
+ *  `shift`: px on the right covered by the forecast drawer. */
 function framePadding(m: MLMap, shift = 0): Padding {
   const p = framePaddingIn(m.getContainer().clientWidth - shift, m.getContainer().clientHeight);
   return { ...p, right: p.right + shift };
 }
 
 function framePaddingIn(w: number, h: number): Padding {
-  const cards = siteCardsRect(h);
-  const layersLeft = w - LAYERS_CARD.right - LAYERS_CARD.width;
-  const layersBottom = LAYERS_CARD.top + layersMaxHeight(w, h);
-  const gap = 12;
-  const top = 48; // below the view buttons
-  const floor = 40; // scale bar and attribution
-  const aboveCards = cards ? h - cards.top + gap : floor;
-  const candidates: Padding[] = [
-    { top, left: gap, right: w - layersLeft + gap, bottom: aboveCards }, // beside the layers card
-    { top: layersBottom + gap, left: cards ? cards.right + gap : gap, right: gap, bottom: floor }, // below it
-    { top: layersBottom + gap, left: gap, right: gap, bottom: aboveCards }, // between it and the cards
-  ];
-  const size = (p: Padding) => [w - p.left - p.right, h - p.top - p.bottom] as const;
-  const area = (p: Padding) => Math.max(0, size(p)[0]) * Math.max(0, size(p)[1]);
-  const best = candidates.reduce((a, b) => (area(b) > area(a) ? b : a));
-  const [bw, bh] = size(best);
-  if (bw >= 120 && bh >= 100) return { ...best, bottom: best.bottom + Math.round(Math.min(0.08 * h, 0.25 * bh)) };
-  // No clear rectangle (a map under ~380 px with floating cards): stay above the Site cards, which can't
-  // be moved, and accept the layers card, which folds.
-  if (cards && h - top - aboveCards >= 100) return { top, left: gap, right: gap, bottom: aboveCards };
-  return { top: 40, right: 40, bottom: 40, left: 40 };
+  const p: Padding = { top: Math.round(Math.min(124, 0.3 * h)), left: 16, right: 52, bottom: 40 };
+  const bw = w - p.left - p.right;
+  const bh = h - p.top - p.bottom;
+  if (bw < 120 || bh < 100) return { top: 24, right: 24, bottom: 24, left: 24 };
+  return { ...p, bottom: p.bottom + Math.round(Math.min(0.08 * h, 0.25 * bh)) };
 }
 
 // One fetch per layer per page load, shared across remounts (StrictMode, error-boundary resets).
@@ -240,10 +213,11 @@ function contextFC(p: LngLat | undefined, summary: SiteSummary | null): FC {
   return { type: "FeatureCollection", features };
 }
 
-export function MapView({ advanced = true }: { advanced?: boolean }) {
-  const theme = useTheme();
-  const themeRef = useRef(theme);
-  const appliedTheme = useRef(theme);
+export function MapView() {
+  // Basemap tone: "follow theme" means dark in Dark, light in Light and Mixed (Mixed keeps the map light).
+  const { settings, basemap: tone } = useSettings();
+  const toneRef = useRef(tone);
+  const appliedTone = useRef(tone);
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
   const areaClick = useRef<((p: LngLat) => void) | null>(null);
@@ -262,20 +236,20 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
   const [styleGen, setStyleGen] = useState(0);
   const ready = styleGen > 0;
   const drawn = useRef(new Map<string, string>()); // overlay id -> signature currently on the map
-  const [visible, setVisible] = useState(DEFAULT_VISIBLE);
-  const [hiddenOverlays, setHiddenOverlays] = useState<ReadonlySet<string>>(() => new Set());
+  // Layer visibility is shared with the sidebar's Layers tab (layerState.tsx, provided by AppShell).
+  const { visible, setVisible, hiddenOverlays, setStatus: publishStatus } = useLayerState();
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
   const retryBasemap = useRef<(() => void) | null>(null);
   useEffect(() => {
-    themeRef.current = theme;
-    if (appliedTheme.current !== theme) {
-      appliedTheme.current = theme;
+    toneRef.current = tone;
+    if (appliedTone.current !== tone) {
+      appliedTone.current = tone;
       retryBasemap.current?.();
     }
-  }, [theme]);
-  // Map size, so the layers card can stop above D's floating Site cards when the map is narrow, and the
-  // forecast drawer can size itself.
+  }, [tone]);
+  // Map size, so the forecast drawer can size itself. MapLibre tracks its container too; the explicit
+  // resize() below keeps the canvas in step the moment a sidebar collapses or expands (no stretched frame).
   const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
   useEffect(() => {
     const node = el.current;
@@ -284,6 +258,7 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
       const w = node.clientWidth;
       const h = node.clientHeight;
       setMapSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+      map.current?.resize();
     });
     ro.observe(node);
     return () => ro.disconnect();
@@ -291,7 +266,6 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
   const drawerPx = drawerWidth(drawerOpen, mapSize?.w ?? null);
   // Px on the right the drawer covers while a strip of map stays beside it (0 when closed or full width).
   const shift = drawerOpen && (mapSize === null || drawerPx < mapSize.w) ? drawerPx : 0;
-  const layersMaxH = mapSize ? Math.round(layersMaxHeight(mapSize.w - shift, mapSize.h)) : null;
 
   // Latest values for map event handlers (they're registered once).
   const selectRef = useRef(selectSite);
@@ -360,10 +334,11 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
       maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs"); // copied to public/ by npm postinstall
       const m = new maplibregl.Map({
         container: el.current,
-        style: themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP,
+        style: styleUrl(toneRef.current),
         bounds: CA_BOUNDS,
         fitBoundsOptions: { padding: 24 },
         attributionControl: { compact: true },
+        reduceMotion: prefersReducedMotion(), // pan/zoom inertia; our own camera moves use motion()
       });
       map.current = m;
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
@@ -400,13 +375,13 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
         setStyleGen(0);
         setFallback(true);
         const fallbackStyle = fetched ?? INLINE_FALLBACK_STYLE;
-        m.setStyle(themeRef.current === "dark" ? { ...fallbackStyle, layers: [{ id: "background", type: "background", paint: { "background-color": "#0c182a" } }] } : fallbackStyle, { diff: false });
+        m.setStyle(toneRef.current === "dark" ? { ...fallbackStyle, layers: [{ id: "background", type: "background", paint: { "background-color": "#0c182a" } }] } : fallbackStyle, { diff: false });
       };
       // Slow is not down (venue Wi-Fi, a busy laptop): after the timeout, fall back only if the
       // basemap's style URL is actually unreachable. Real load errors fall back right away (below).
       const probeThenSwap = async () => {
         if (styleLoaded) return;
-        const url = themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP;
+        const url = styleUrl(toneRef.current);
         const reachable = await fetch(url, { signal: AbortSignal.timeout(STYLE_PROBE_MS) }).then((r) => r.ok, () => false);
         if (!reachable && !styleLoaded) void swapToFallback(`basemap unreachable after ${STYLE_TIMEOUT_MS / 1000} s`);
       };
@@ -422,7 +397,7 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
         drawn.current.clear();
         setStyleGen(0);
         setFallback(false);
-        m.setStyle(themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP, { diff: false });
+        m.setStyle(styleUrl(toneRef.current), { diff: false });
         armFallbackTimer();
       };
 
@@ -454,7 +429,8 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
         userMoved.current = true;
         clickedKey.current = locKey(p);
         trackSiteSelection(p, selectRef.current(p));
-        m.flyTo({ center: [p.lon, p.lat], zoom: Math.max(m.getZoom(), SITE_ZOOM), offset: [-shiftRef.current / 2, 0], duration: 1200 });
+        showLeftTabFromMap("site"); // the new site's summary, where the viewer looks next
+        m.flyTo({ center: [p.lon, p.lat], zoom: Math.max(m.getZoom(), SITE_ZOOM), offset: [-shiftRef.current / 2, 0], duration: 1200, ...motion() });
       };
       const contentFor = (f: MapGeoJSONFeature, pop: Popup): HTMLElement => {
         if (f.layer.id === "demand-fill") return demandCard(f.properties, demandInfo(forecastRef.current, f.properties?.geoid));
@@ -470,7 +446,7 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
       const openPopup = (f: MapGeoJSONFeature, at: MLLngLat): Popup => {
         const g = f.geometry;
         const anchor: [number, number] = g.type === "Point" ? [g.coordinates[0], g.coordinates[1]] : [at.lng, at.lat];
-        const pop = new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8, className: "z-20" }); // above the z-10 layers card
+        const pop = new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8, className: "z-20" }); // above the z-10 map overlays
         return pop.setLngLat(anchor).setDOMContent(contentFor(f, pop)).addTo(m);
       };
 
@@ -501,6 +477,7 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
         selectTimer = setTimeout(() => {
           clickedKey.current = locKey(p);
           trackSiteSelection(p, selectRef.current(p));
+          showLeftTabFromMap("site"); // the sidebar shows the clicked site's summary (if that doesn't move the map)
           if (area) popup = openPopup(area, e.lngLat);
         }, SELECT_DELAY_MS);
       });
@@ -590,11 +567,11 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
         const px = drawerWidth(true, w);
         if (m && px < w) {
           userMoved.current = true;
-          // Into the clear part of the map: beside the drawer and the layers card, above D's Site cards.
-          m.fitBounds(CA_BOUNDS, { padding: framePadding(m, px), pitch: 0, duration: 900 });
+          // Into the clear part of the map beside the drawer.
+          m.fitBounds(CA_BOUNDS, { padding: framePadding(m, px), pitch: 0, duration: 900, ...motion() });
         }
       }),
-    [],
+    [setVisible],
   );
   useEffect(() => {
     if (!drawerOpen) return;
@@ -616,13 +593,13 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
     const target: [number, number] = [center.lon, center.lat];
     if (!didInitialEase.current) {
       didInitialEase.current = true;
-      if (!userMoved.current) m.easeTo({ center: target, zoom: 8, duration: 1500 });
+      if (!userMoved.current) m.easeTo({ center: target, zoom: 8, duration: 1500, ...motion() });
     } else if (key !== clickedKey.current && !m.getBounds().contains(target)) {
-      m.easeTo({ center: target, duration: 800 });
+      m.easeTo({ center: target, duration: 800, ...motion() });
     }
   }, [center, ready]);
 
-  // Layer toggles (local state, not the shared store).
+  // Layer toggles (shared with the Layers tab through layerState, not the app store).
   useEffect(() => {
     visibleRef.current = visible;
     const m = map.current;
@@ -687,7 +664,7 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
     const m = map.current;
     if (!m) return;
     const s = shiftRef.current; // drawer open: into the clear part of the map beside it
-    m.fitBounds(CA_BOUNDS, { padding: s ? framePadding(m, s) : 24, pitch: 0, duration: 900 });
+    m.fitBounds(CA_BOUNDS, { padding: s ? framePadding(m, s) : 24, pitch: 0, duration: 900, ...motion() });
   }, []);
   // Footprints on: tilt to 2.5D and frame them with the site; off: back to a flat map.
   const tiltForFootprints = useCallback(
@@ -696,12 +673,12 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
       if (!m) return;
       userMoved.current = true;
       if (!on) {
-        m.easeTo({ pitch: 0, duration: 900 });
+        m.easeTo({ pitch: 0, duration: 900, ...motion() });
         return;
       }
       const bounds = footprintBounds(localData.current.footprints, center);
-      if (bounds) m.fitBounds(bounds, { padding: framePadding(m, shiftRef.current), pitch: FOOTPRINT_PITCH, maxZoom: 14, duration: 1400 });
-      else m.easeTo({ pitch: FOOTPRINT_PITCH, duration: 900 });
+      if (bounds) m.fitBounds(bounds, { padding: framePadding(m, shiftRef.current), pitch: FOOTPRINT_PITCH, maxZoom: 14, duration: 1400, ...motion() });
+      else m.easeTo({ pitch: FOOTPRINT_PITCH, duration: 900, ...motion() });
     },
     [center],
   );
@@ -711,6 +688,13 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
     () => JSON.stringify([(assets ?? []).map((a) => [a.id, a.kind, a.location ? locKey(a.location) : null]), center ? locKey(center) : null]),
     [assets, center],
   );
+  // The footprints toggle lives in the Layers tab now: tilt and frame when it flips (not on mount).
+  const footprintsOn = useRef(visible.footprints);
+  useEffect(() => {
+    if (footprintsOn.current === visible.footprints) return;
+    footprintsOn.current = visible.footprints;
+    tiltForFootprints(visible.footprints);
+  }, [visible.footprints, tiltForFootprints]);
   const framedKey = useRef<string | null>(null);
   useEffect(() => {
     if (!visible.footprints) {
@@ -718,7 +702,7 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
       return;
     }
     if (framedKey.current === null) {
-      framedKey.current = footprintKey; // just toggled on: toggleGroup framed this set
+      framedKey.current = footprintKey; // just toggled on: the effect above framed this set
       return;
     }
     if (footprintKey === framedKey.current) return;
@@ -731,27 +715,8 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
   const flyToSite = useCallback(() => {
     if (!center) return;
     userMoved.current = true;
-    map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, offset: [-shiftRef.current / 2, 0], duration: 1200 });
+    map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, offset: [-shiftRef.current / 2, 0], duration: 1200, ...motion() });
   }, [center]);
-  const toggleGroup = useCallback(
-    (g: LayerGroup) => {
-      const on = !visibleRef.current[g];
-      const other = EXCLUSIVE_GROUPS[g]; // two county choropleths would hide each other
-      setVisible((v) => ({ ...v, [g]: on, ...(on && other ? { [other]: false } : {}) }));
-      if (g === "footprints") tiltForFootprints(on);
-    },
-    [tiltForFootprints],
-  );
-  const toggleOverlay = useCallback(
-    (id: string) =>
-      setHiddenOverlays((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      }),
-    [],
-  );
 
   const pending = DATA_KEYS.filter((k) => status[k] === undefined).length;
   const groupStatus: LayerStatus = {
@@ -760,17 +725,27 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
     demand: forecast?.available ? (forecast.counties?.length ?? 0) : forecast || forecastStatus === "error" ? "unavailable" : undefined,
     sites: recommendation?.available ? recSites.features.length : undefined, // listed only when available
   };
-  const demandCaption = forecast?.available
-    ? `MW of new P90 peak by ${forecast.year} · ${scenarioLabel(forecast.scenario).toLowerCase()} scenario${forecastAdjusted(forecast) ? ", adjusted" : ""}`
-    : undefined;
+  // Publish the counts to the Layers tab (only when they change, so no render loop).
+  const statusKey = JSON.stringify(groupStatus);
+  useEffect(() => {
+    publishStatus(JSON.parse(statusKey) as LayerStatus);
+  }, [statusKey, publishStatus]);
+  // Settings > Map contrast / brightness: a CSS filter on the canvas only (globals.css), none at 100 %.
+  const { mapContrast, mapBrightness } = settings;
+  const mapFilter = mapContrast === 100 && mapBrightness === 100 ? undefined : `contrast(${mapContrast}%) brightness(${mapBrightness}%)`;
   const button =
     "px-2.5 py-1 font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div className="relative h-full w-full overflow-hidden" style={mapFilter ? ({ "--map-filter": mapFilter } as CSSProperties) : undefined}>
       <div ref={el} className="h-full w-full" />
-      {/* Top-left: search, view controls, highlighted-area zoning and basemap notices. */}
-      <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+      {/* Top-left: search, view controls, highlighted-area zoning and basemap notices. Kept clear of the
+          zoom/compass (top-right) and, while it is open, of the forecast drawer, so on a narrow strip of
+          map the search box narrows instead of sliding under them. */}
+      <div
+        className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5"
+        style={{ maxWidth: `calc(100% - ${shift}px - 3.5rem)` }}
+      >
         <MapSearch mapRef={map} ready={ready} onNavigate={() => { userMoved.current = true; }} />
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
@@ -799,26 +774,9 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
           </span>
         )}
       </div>
-      {/* Top-right, below MapLibre's zoom/compass control (10 px margin + 3 x 29 px buttons): layers + legend,
-          capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right),
-          and of the floating Site cards on narrow maps (layersMaxHeight). */}
-      {advanced && <div
-        className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end transition-[right] duration-150 ease-out"
-        style={{ ...(layersMaxH !== null ? { maxHeight: layersMaxH } : {}), ...(shift ? { right: shift + LAYERS_CARD.right } : {}) }}
-      >
-        <LayerControl
-          container={el}
-          visible={visible}
-          onToggle={toggleGroup}
-          status={groupStatus}
-          overlays={overlays.map((o) => ({ id: o.id, label: o.label }))}
-          hiddenOverlays={hiddenOverlays}
-          onToggleOverlay={toggleOverlay}
-          demandCaption={demandCaption}
-        />
-      </div>}
       {drawerOpen && (
         <aside
+          data-chrome // a panel: black in the Mixed theme, like the sidebars
           className="absolute inset-y-0 right-0 z-30 flex max-w-full flex-col border-l border-zinc-200 bg-white text-zinc-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
           style={{ width: drawerPx }}
           aria-label="Forecast and sites"

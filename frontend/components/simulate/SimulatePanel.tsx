@@ -3,8 +3,9 @@
 // Day / week dispatch window over the 8,760/8,784-hour year (only the visible points are
 // charted), jump-to-worst-day, summary stats, data-quality notes, and the provenance of
 // every number shown.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import { Panel, Stat } from "@/components/shell/Panel";
 import type { AssetKind, ScenarioResult } from "@/lib/contract";
 import { mw, mwh, pct } from "@/lib/format";
@@ -23,6 +24,16 @@ const DEFAULT_BATTERY_H = 4;
 let remembered: { day: number; view: View } | null = null;
 
 const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
+
+/** The shared Stat, with room for a glossary term in its label (Stat's label is a plain string). */
+function TermStat({ label, value }: { label: ReactNode; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] text-zinc-500">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+}
 
 export function SimulatePanel() {
   const { result } = useGridForge();
@@ -93,26 +104,30 @@ function SimulateBody({ result }: { result: ScenarioResult }) {
     <Panel title="Simulate" owner="B · Simulate">
       <div className="mb-3 grid grid-cols-3 gap-3">
         <Stat label="Demand / yr" value={mwh(s.demand_mwh)} />
-        <Stat label={s.unmet_mwh > 0 ? `Unmet · ${mwh(s.unmet_mwh)}` : "Unmet hours"} value={`${s.hours_unmet} h`} />
-        <Stat label="On-site clean share" value={pct(s.onsite_clean_share)} />
+        <TermStat
+          label={s.unmet_mwh > 0 ? <><Term k="unmet">Unmet</Term> · {mwh(s.unmet_mwh)}</> : <Term k="unmet">Unmet hours</Term>}
+          value={`${s.hours_unmet} h`}
+        />
+        <TermStat label={<Term k="onsite_clean_share">On-site clean share</Term>} value={pct(s.onsite_clean_share)} />
         {connected ? (
           // The limit in full with its unit, on its own line: rounding it ("1.1k") made a
           // run sitting exactly at the limit look like it exceeded it.
           <div>
-            <Stat label="Peak import" value={mw(s.peak_import_mw)} />
+            <TermStat label={<>Peak <Term k="imports">import</Term></>} value={mw(s.peak_import_mw)} />
             <div className="text-[10px] leading-3 tabular-nums text-zinc-400">of {mw(grid.import_limit_mw)} limit</div>
           </div>
         ) : (
           <Stat label="Grid" value="Off-grid" />
         )}
-        {solarCf !== null && <Stat label="Solar CF" value={pct1(solarCf)} />}
-        {windCf !== null && <Stat label="Wind CF" value={pct1(windCf)} />}
-        {curtailShare !== null && <Stat label="Curtailment" value={pct1(curtailShare)} />}
+        {/* One CF explanation per panel: on the first capacity-factor stat shown. */}
+        {solarCf !== null && <TermStat label={<>Solar <Term k="capacity_factor">CF</Term></>} value={pct1(solarCf)} />}
+        {windCf !== null && <TermStat label={solarCf === null ? <>Wind <Term k="capacity_factor">CF</Term></> : "Wind CF"} value={pct1(windCf)} />}
+        {curtailShare !== null && <TermStat label={<Term k="curtailment">Curtailment</Term>} value={pct1(curtailShare)} />}
         {socCapacityMwh > 0 && (
           // Price-aware charging can fill the battery from cheap grid imports, so the cycles
           // are not all solar time-shifting: say how much of the charge came from the grid.
           <div>
-            <Stat label="Battery cycles / yr" value={s.battery_cycles.toFixed(0)} />
+            <TermStat label={<><Term k="battery_cycles">Battery cycles</Term> / yr</>} value={s.battery_cycles.toFixed(0)} />
             {gridShare !== null && gridShare > 0 && (
               <div
                 className="text-[10px] leading-3 tabular-nums text-zinc-400"

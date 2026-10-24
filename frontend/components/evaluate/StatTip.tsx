@@ -1,9 +1,12 @@
 "use client";
-// Headline stat tile with a provenance marker beside its label.
+// Headline stat tile with a provenance marker beside its label (and, with `term`, a glossary
+// tooltip on the label itself: the "i" says where the number comes from, the term what it means).
 // OWNER: workstream C (Evaluate).
 import type { ReactNode } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import type { Provenance } from "@/lib/contract";
+import type { GlossaryKey } from "@/lib/glossary";
 
 import { ProvenanceTip } from "./ProvenanceTip";
 
@@ -14,6 +17,7 @@ export function StatTip({
   sub,
   provenance,
   tipExtra,
+  term,
 }: {
   label: string;
   value: string;
@@ -24,11 +28,13 @@ export function StatTip({
   provenance: Provenance | Provenance[] | null | undefined;
   /** Extra lines inside the provenance card (formula, cross-check). */
   tipExtra?: ReactNode;
+  /** Glossary entry that explains the label (dotted underline + plain-language card). */
+  term?: GlossaryKey;
 }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-1 text-[11px] text-zinc-500">
-        <span className="truncate">{label}</span>
+        <span className="truncate">{term ? <Term k={term}>{label}</Term> : label}</span>
         <ProvenanceTip label={label} provenance={provenance}>
           {tipExtra}
         </ProvenanceTip>
