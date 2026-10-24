@@ -20,7 +20,7 @@ export function ReportPanel() {
           Download CSV
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-zinc-500">Every number with its source, ready to print or save as PDF.</p>
+      <p className="mt-2 text-[11px] text-zinc-500">Every number with its source, including jobs, land use and contract estimates, ready to print or save as PDF.</p>
     </Panel>
   );
 }

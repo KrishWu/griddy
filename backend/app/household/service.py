@@ -483,4 +483,3 @@ def solar_block(eng: Engine, total: np.ndarray, base: Outcome, ctx: Ctx, cal, ex
         "avg_day_production_kwh": _rl(load_mod.avg_day(pv), 4), "annual_kg_saved": _r(before.kg - after.kg, 1),
         "applicable": bool(owns), "note": " ".join(notes) or None, "provenance": provs,
     }
-

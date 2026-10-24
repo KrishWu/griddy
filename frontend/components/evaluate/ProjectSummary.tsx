@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { shortDescription } from "@/lib/description";
 import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
@@ -11,12 +12,32 @@ import type { GlossaryKey } from "@/lib/glossary";
 import { projectOf, resilienceOf } from "./project";
 import { CarbonLedger } from "./CarbonLedger";
 
+/** CO2e if this campus bought every MWh from the grid instead: each hour's demand x that hour's average
+ *  CAISO intensity, the same factor the evaluation applies to grid imports. Null without the hourly series. */
+function allGridTonnes(r: ScenarioResult): number | null {
+  const { demand_mw: d, grid_co2_kg_per_mwh: g, step_minutes } = r.simulation.hourly;
+  if (!g?.length || g.length !== d.length) return null;
+  let kg = 0;
+  for (let i = 0; i < d.length; i++) kg += d[i] * g[i];
+  return (kg * (step_minutes || 60)) / 60 / 1000;
+}
+
 export function ProjectSummary() {
   const { result } = useGridForge();
   if (!result) return null;
   const { economics: e, emissions: em } = result.evaluation;
   const p = projectOf(result), r = resilienceOf(result), s = result.simulation.summary;
   const served = s.demand_mwh - s.unmet_mwh;
+  // Context for the emissions figure: a big number can still be far below buying everything from the grid.
+  const grid = allGridTonnes(result);
+  const vsGrid = grid ? em.annual_t_co2e / grid - 1 : null; // -0.72: 72% less than all-grid
+  const gridIntensity = grid && s.demand_mwh ? (grid * 1000) / s.demand_mwh : null;
+  const gridNote = vsGrid === null || grid === null ? undefined : (
+    <p className={`mt-0.5 text-[11px] ${vsGrid <= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}`}
+      title={`All-grid: ${tons(grid)} CO₂e a year if every MWh came from the grid, at each hour's average CAISO intensity`}>
+      {Math.abs(vsGrid) < 0.005 ? "About the same as all-grid" : `${pct(Math.abs(vsGrid))} ${vsGrid < 0 ? "less" : "more"} than all-grid`}
+    </p>
+  );
   const issues = result.findings.filter(f => f.severity === "fail" || f.severity === "warn");
   // Failures first, then anything needing a utility study: the flags a viewer must not miss.
   const rank = (f: (typeof issues)[number]) => (f.severity === "fail" ? 0 : f.needs_utility_study ? 1 : 2);
@@ -32,12 +53,12 @@ export function ProjectSummary() {
         ["Power delivered, average", `${(p?.production.average_power_served_mw ?? served / result.simulation.hourly.demand_mw.length).toFixed(1)} MW`],
         ["Demand supplied", s.demand_mwh ? pct(served / s.demand_mwh) : "—"],
         ["Upfront capital", usd(e.capex_total_usd), "capex"], ["Operating cost / year", usd(e.annual_opex_usd), "opex"],
-        ["Lifetime energy cost", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`, "lcoe"], ["Operational emissions / year", `${tons(em.annual_t_co2e)} CO₂e`, "co2e"],
-      ] as [string, string, GlossaryKey?][]).map(([label, value, term]) => <div key={label} className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-        <p className="text-[11px] text-zinc-500">{term ? <Term k={term}>{label}</Term> : label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
+        ["Lifetime energy cost", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`, "lcoe"], ["Operational emissions / year", `${tons(em.annual_t_co2e)} CO₂e`, "co2e", gridNote],
+      ] as [string, string, GlossaryKey?, ReactNode?][]).map(([label, value, term, note]) => <div key={label} className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
+        <p className="text-[11px] text-zinc-500">{term ? <Term k={term}>{label}</Term> : label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>{note}
       </div>)}
     </div>
-    <p className="mt-3 text-xs text-zinc-500">{em.intensity_kg_per_mwh.toFixed(0)} <Term k="co2_intensity">kg CO₂e/MWh</Term> · {pct(s.onsite_clean_share)} <Term k="onsite_clean_share">on-site clean energy</Term></p>
+    <p className="mt-3 text-xs text-zinc-500">{em.intensity_kg_per_mwh.toFixed(0)} <Term k="co2_intensity">kg CO₂e/MWh</Term>{gridIntensity !== null && <> vs {gridIntensity.toFixed(0)} all-grid</>} · {pct(s.onsite_clean_share)} <Term k="onsite_clean_share">on-site clean energy</Term></p>
     <div className="mt-3"><CarbonLedger result={result} compact /></div>
     <div className={`mt-3 rounded border p-2 text-xs ${tone}`}>
       <p className="font-semibold">{s.hours_unmet ? <>{s.hours_unmet.toLocaleString()} hours with <Term k="unmet">unmet demand</Term></> : "Demand met every hour in the simulated year"}</p>

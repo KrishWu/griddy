@@ -20,7 +20,7 @@ import { CompareView } from "@/components/builder/CompareView";
 import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
 import { ReportPanel } from "@/components/builder/ReportPanel";
 import { EvaluatePanel } from "@/components/evaluate/EvaluatePanel";
-import { ProjectDetails, ProjectSummary } from "@/components/evaluate/ProjectSummary";
+import { ProjectSummary } from "@/components/evaluate/ProjectSummary";
 import { AreaPanel } from "@/components/explore/AreaPanel";
 import { LayerControl } from "@/components/explore/LayerControl";
 import { LayerStateProvider } from "@/components/explore/layerState";
@@ -212,13 +212,8 @@ export function AppShell() {
           id: "report",
           label: "Report",
           icon: <ReportIcon className={ICON} />,
-          hint: "Project impacts and the printable report",
-          content: withResult(
-            <>
-              <PanelGuard name="Project impacts">{result && <ProjectDetails result={result} />}</PanelGuard>
-              <PanelGuard key={`report-${v}`} name="Report"><ReportPanel /></PanelGuard>
-            </>,
-          ),
+          hint: "The printable report and CSV export",
+          content: withResult(<PanelGuard key={`report-${v}`} name="Report"><ReportPanel /></PanelGuard>),
         },
       ]
     : [
@@ -226,11 +221,10 @@ export function AppShell() {
           id: "summary",
           label: "Summary",
           icon: <SummaryIcon className={ICON} />,
-          hint: "Project at a glance, impacts and the report",
+          hint: "Project at a glance and the report",
           content: withResult(
             <>
               <PanelGuard name="Project summary"><ProjectSummary /></PanelGuard>
-              <PanelGuard name="Project impacts">{result && <ProjectDetails result={result} />}</PanelGuard>
               <PanelGuard key={`report-${v}`} name="Report"><ReportPanel /></PanelGuard>
             </>,
           ),

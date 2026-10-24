@@ -123,10 +123,10 @@ const STEPS: { title: string; body: ReactNode }[] = [
     title: "Read the results",
     body: (
       <>
-        In Basic, the right sidebar&apos;s <Tab>Summary</Tab> has the headline numbers and project impacts. In Advanced:{" "}
+        In Basic, the right sidebar&apos;s <Tab>Summary</Tab> has the headline numbers and the report link. In Advanced:{" "}
         <Tab>Simulate</Tab> is the hour-by-hour dispatch chart (pick any day), <Tab>Costs</Tab> has NPC, LCOE, the cost waterfall,
         emissions, the 24/7 CFE score, the bill of materials and the method notes, <Tab>Stress</Tab> lists every finding by severity
-        (look for &ldquo;needs a utility study&rdquo;), and <Tab>Report</Tab> has project impacts and the report link. Hover any number
+        (look for &ldquo;needs a utility study&rdquo;), and <Tab>Report</Tab> has the report link and CSV export. Hover any number
         with a source icon to see where it came from; dotted-underlined jargon explains itself.
       </>
     ),
