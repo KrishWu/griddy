@@ -29,7 +29,12 @@
     "frontend/lib/format.ts",
     "frontend/eslint.config.mjs",
     "backend/.env.example",
-    "frontend/components/shell/PanelGuard.tsx"
+    "frontend/components/shell/PanelGuard.tsx",
+    "ml/__init__.py",
+    "ml/README.md",
+    "ml/TRAINING.md",
+    "ml/contract/**",
+    "backend/app/ml_bridge.py"
   ],
   "A": {
     "name": "Explore (GIS map + grid data layers)",
@@ -39,7 +44,12 @@
       "backend/tests/test_explore*.py",
       "frontend/components/explore/**",
       "data/explore/**",
-      "docs/workstreams/A-explore.md"
+      "docs/workstreams/A-explore.md",
+      "ml/demand_forecast/**",
+      "ml/artifacts/demand_forecast/**",
+      "backend/app/forecast/**",
+      "backend/tests/test_forecast*.py",
+      "frontend/components/forecast/**"
     ]
   },
   "B": {
@@ -50,7 +60,12 @@
       "backend/tests/test_simulate*.py",
       "frontend/components/simulate/**",
       "data/simulate/**",
-      "docs/workstreams/B-simulate.md"
+      "docs/workstreams/B-simulate.md",
+      "ml/site_location/**",
+      "ml/artifacts/site_location/**",
+      "backend/app/sites/**",
+      "backend/tests/test_sites*.py",
+      "frontend/components/sites/**"
     ]
   },
   "C": {
