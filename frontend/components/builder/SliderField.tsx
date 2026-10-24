@@ -20,9 +20,11 @@ interface Props {
   slider?: boolean;
 }
 
+/** Show the committed value as it was run: the step's decimals, plus up to two more if
+ *  the value has them (e.g. 4.25 with a 0.1 step), without trailing zeros. */
 function fmt(v: number, step: number): string {
   const decimals = step >= 1 ? 0 : Math.min(3, Math.ceil(-Math.log10(step)));
-  return v.toFixed(decimals);
+  return String(Number(v.toFixed(decimals + 2)));
 }
 
 export function SliderField({ label, value, onChange, min, max, inputMax, step = 1, unit, displayScale = 1, hint, slider = true }: Props) {
@@ -62,7 +64,8 @@ export function SliderField({ label, value, onChange, min, max, inputMax, step =
           type="range"
           aria-label={label}
           className="w-full accent-emerald-600"
-          min={min}
+          // Start the range on the step grid so a drag lands on round values (10, 20, ... not 1, 11, ...).
+          min={Math.ceil(min / step) * step}
           max={Math.max(max, value)}
           step={step}
           value={value}

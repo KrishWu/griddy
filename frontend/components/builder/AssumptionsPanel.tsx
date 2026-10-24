@@ -1,7 +1,9 @@
 "use client";
-// Economic and data assumptions, basic and advanced.  OWNER: workstream D.
+// Economic and data assumptions, collapsed to a one-line summary by default so the
+// site cards and results stay on screen at 1280x720.  OWNER: workstream D.
 // The gas price is the authoritative annual average (C may apply a monthly shape
-// scaled to it); the carbon price applies to on-site combustion only.
+// scaled to it); the carbon price applies to on-site combustion only. Only inputs a
+// module actually uses are shown: a control that moves nothing looks broken on stage.
 import { useState } from "react";
 
 import { Panel } from "@/components/shell/Panel";
@@ -12,15 +14,30 @@ import { SliderField } from "./SliderField";
 
 export function AssumptionsPanel() {
   const { scenario, updateScenario } = useGridForge();
+  const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   if (!scenario) return null;
 
   const a = scenario.assumptions ?? {};
   const set = (patch: Partial<Assumptions>) => updateScenario((s) => ({ ...s, assumptions: { ...s.assumptions, ...patch } }));
 
+  if (!open) {
+    return (
+      <Panel title="Assumptions" owner="D · Build">
+        <button className="w-full text-left text-xs text-zinc-600 dark:text-zinc-400" onClick={() => setOpen(true)}>
+          Discount {((a.discount_rate ?? 0.07) * 100).toFixed(1)}% · Gas ${(a.gas_price_usd_per_mmbtu ?? 4).toFixed(2)}/MMBtu · Carbon $
+          {(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t <span className="text-emerald-700 dark:text-emerald-400">Edit</span>
+        </button>
+      </Panel>
+    );
+  }
+
   return (
     <Panel title="Assumptions" owner="D · Build">
       <div className="space-y-3">
+        <button className="text-xs text-emerald-700 hover:underline dark:text-emerald-400" onClick={() => setOpen(false)}>
+          Collapse
+        </button>
         <SliderField
           label="Discount rate"
           unit="%"
@@ -90,29 +107,7 @@ export function AssumptionsPanel() {
                 <option value={2024}>2024</option>
               </select>
             </label>
-            <label className="block text-xs text-zinc-600 dark:text-zinc-400">
-              Grid price
-              <select
-                className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1 text-sm dark:border-zinc-700"
-                value={a.price_source ?? "caiso_historical"}
-                onChange={(e) => set({ price_source: e.target.value as Assumptions["price_source"] })}
-              >
-                <option value="caiso_historical">CAISO historical hourly prices</option>
-                <option value="flat">Flat price</option>
-              </select>
-            </label>
-            {a.price_source === "flat" && (
-              <SliderField
-                label="Flat grid price"
-                unit="$/MWh"
-                value={a.flat_price_usd_per_mwh ?? 60}
-                onChange={(v) => set({ flat_price_usd_per_mwh: v })}
-                min={0}
-                max={200}
-                inputMax={1000}
-                step={1}
-              />
-            )}
+            <p className="text-[11px] text-zinc-500">Grid prices: hourly, from the simulation&apos;s price data.</p>
           </div>
         )}
       </div>

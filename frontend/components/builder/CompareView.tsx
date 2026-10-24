@@ -1,8 +1,8 @@
 "use client";
 // Side-by-side comparison of the presets (plus "Your scenario" when it differs),
 // all on the same site and demand.  OWNER: workstream D (Build + Report + UI).
-import { useEffect } from "react";
-import { Area, ComposedChart, Line, ResponsiveContainer } from "recharts";
+import { useEffect, useRef } from "react";
+import { Area, ComposedChart, Line, ResponsiveContainer, YAxis } from "recharts";
 
 import { ComparisonTable } from "@/components/evaluate/ComparisonTable";
 import { Panel } from "@/components/shell/Panel";
@@ -14,13 +14,25 @@ import { ASSET_META } from "./assetMeta";
 
 const JULY_DAY = 196;
 const STACK = [
-  { key: "solar_pv", color: ASSET_META.solar_pv.color },
-  { key: "onshore_wind", color: ASSET_META.onshore_wind.color },
-  { key: "battery", color: ASSET_META.battery.color },
-  { key: "gas_cc", color: ASSET_META.gas_cc.color },
-  { key: "gas_ct", color: ASSET_META.gas_ct.color },
-  { key: "imports", color: "#ef4444" },
+  { key: "solar_pv", label: "Solar", color: ASSET_META.solar_pv.color },
+  { key: "onshore_wind", label: "Wind", color: ASSET_META.onshore_wind.color },
+  { key: "battery", label: "Battery", color: ASSET_META.battery.color },
+  { key: "gas_cc", label: "Gas CC", color: ASSET_META.gas_cc.color },
+  { key: "gas_ct", label: "Gas CT", color: ASSET_META.gas_ct.color },
+  { key: "imports", label: "Grid imports", color: "#ef4444" },
 ] as const;
+
+/** Tallest stacked supply or demand on the July day across all results, so every thumbnail shares one scale. */
+function sharedMax(results: ScenarioResult[]): number {
+  let max = 1;
+  for (const r of results) {
+    for (const d of dayData(r)) {
+      const supply = STACK.reduce((sum, x) => sum + (d[x.key] ?? 0), 0);
+      max = Math.max(max, supply, d.demand ?? 0);
+    }
+  }
+  return max;
+}
 
 function dayData(r: ScenarioResult) {
   const h = r.simulation.hourly;
@@ -38,7 +50,7 @@ function dayData(r: ScenarioResult) {
   });
 }
 
-function ScenarioCard({ r, onLoad }: { r: ScenarioResult; onLoad?: () => void }) {
+function ScenarioCard({ r, onLoad, yMax }: { r: ScenarioResult; onLoad?: () => void; yMax: number }) {
   const s = r.simulation.summary;
   const e = r.evaluation.economics;
   return (
@@ -58,6 +70,7 @@ function ScenarioCard({ r, onLoad }: { r: ScenarioResult; onLoad?: () => void })
       <div className="h-24">
         <ResponsiveContainer>
           <ComposedChart data={dayData(r)} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+            <YAxis hide domain={[0, yMax]} />
             {STACK.map((x) => (
               <Area key={x.key} dataKey={x.key} stackId="1" stroke="none" fill={x.color} fillOpacity={0.8} isAnimationActive={false} />
             ))}
@@ -83,11 +96,16 @@ function ScenarioCard({ r, onLoad }: { r: ScenarioResult; onLoad?: () => void })
 }
 
 export function CompareView() {
-  const { compareResults, comparing, compareStale, runCompare, setScenario, setView, scenario } = useGridForge();
+  const { compareResults, comparing, compareStale, runCompare, loadCompared, scenario } = useGridForge();
+  const started = useRef(false);
+  const yMax = compareResults ? sharedMax(compareResults) : null;
 
-  // First visit: compute the comparison once; after that the user re-runs explicitly.
+  // Compute the comparison once per visit; after that the user re-runs explicitly, so
+  // edits never fire a burst of /api/compare requests.
   useEffect(() => {
-    if (!compareResults && scenario) void runCompare();
+    if (started.current || compareResults || !scenario) return;
+    started.current = true;
+    void runCompare();
   }, [compareResults, scenario, runCompare]);
 
   return (
@@ -105,7 +123,7 @@ export function CompareView() {
         </button>
       </div>
 
-      {!compareResults ? (
+      {!compareResults || yMax === null ? (
         <p className="text-sm text-zinc-500">{comparing ? "Simulating every scenario..." : "Run the comparison to see the presets side by side."}</p>
       ) : (
         <>
@@ -114,16 +132,22 @@ export function CompareView() {
               <ScenarioCard
                 key={r.scenario.id}
                 r={r}
-                onLoad={
-                  r.scenario.id === "custom"
-                    ? undefined
-                    : () => {
-                        setScenario(r.scenario);
-                        setView("single");
-                      }
-                }
+                yMax={yMax}
+                onLoad={r.scenario.id === "custom" ? undefined : () => loadCompared(r.scenario.preset ?? r.scenario.id)}
               />
             ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">
+            {STACK.map((x) => (
+              <span key={x.key} className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm" style={{ background: x.color }} />
+                {x.label}
+              </span>
+            ))}
+            <span className="flex items-center gap-1">
+              <span className="h-0.5 w-3 bg-current" />
+              Demand
+            </span>
           </div>
           <Panel title="Side by side" owner="C · Evaluate">
             <ComparisonTable results={compareResults} />

@@ -4,7 +4,8 @@ The three presets compare on the same 1 GW data-center demand (~900 MW average)
 and site. They are illustrative configurations, not engineered designs, sized
 relative to average load so each one tells its story:
   Hybrid: PV ~1.4x load (a midday surplus charges the battery), gas + imports
-  >= load (firm at night), 4 h battery ~0.33x. Meets demand every hour.
+  >= PEAK demand (firm through the night after the battery empties, with margin for
+  real, non-flat load), 4 h battery ~0.33x. Meets demand every hour.
   Renewable-heavy: deliberately thin on firm capacity, so the stress test has an
   honest "needs firming" finding to show.
 Re-tune with B and C once real profiles land.
@@ -49,7 +50,8 @@ def _base(
         site=site,
         demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.2, profile="flat"),
         assets=assets,
-        grid=grid or GridConnection(import_limit_mw=import_limit_mw, export_limit_mw=0, interconnection_km=15),
+        # Starts at the demo site's Midway 500 kV hub; A's nearest-line data replaces these after a map click.
+        grid=grid or GridConnection(import_limit_mw=import_limit_mw, export_limit_mw=0, interconnection_km=2, poi_voltage_kv=500),
     )
 
 
@@ -62,7 +64,7 @@ def list_presets(site: Site | None = None) -> list[Scenario]:
             "Hybrid power campus",
             [
                 Asset(id="solar-1", kind="solar_pv", capacity_mw=1300),
-                Asset(id="gas-1", kind="gas_cc", capacity_mw=600),
+                Asset(id="gas-1", kind="gas_cc", capacity_mw=700),
                 Asset(id="batt-1", kind="battery", capacity_mw=300, duration_h=4),
             ],
             300,

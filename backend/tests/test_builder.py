@@ -59,3 +59,10 @@ def test_report_csv_has_headline_rows(preset_id):
     for key in [("summary", "capex_total"), ("summary", "lcoe"), ("summary", "emissions"), ("summary", "unmet_hours")]:
         assert key in items, key
     assert any(r[0] == "capex" for r in rows) or preset_id == "grid_connected"
+
+
+def test_hybrid_firm_capacity_covers_peak():
+    """Gas + import limit must cover PEAK demand, so real (non-flat) load can't break the story."""
+    h = PRESETS["hybrid"]
+    firm = sum(a.capacity_mw for a in h.assets if a.kind in ("gas_cc", "gas_ct")) + h.grid.import_limit_mw
+    assert firm >= h.demand.peak_mw

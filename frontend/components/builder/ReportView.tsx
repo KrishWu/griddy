@@ -5,7 +5,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import type { Provenance, ScenarioResult } from "@/lib/contract";
+import type { Finding, Provenance, ScenarioResult, SiteIntel, SiteSummary } from "@/lib/contract";
 import { mw, mwh, pct, tons, usd } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
@@ -54,17 +54,36 @@ function sourceLabel(p: Provenance) {
   return `${p.kind}: ${p.source}`;
 }
 
-function allProvenance(r: ScenarioResult): Provenance[] {
+function allProvenance(r: ScenarioResult, site: (SiteSummary | SiteIntel)[]): Provenance[] {
   const seen = new Map<string, Provenance>();
   const add = (p: Provenance) => seen.set(`${p.kind}|${p.source}|${p.url ?? ""}`, p);
   r.simulation.provenance.forEach(add);
   r.evaluation.economics.lines.forEach((l) => add(l.provenance));
   r.evaluation.emissions.provenance.forEach(add);
+  site.forEach((x) => x.provenance.forEach(add));
   return [...seen.values()];
 }
 
+/** Site screening only belongs in this report if it was computed for this result's site. */
+function sameSpot(a: { lon: number; lat: number }, b: { lon: number; lat: number }) {
+  return Math.abs(a.lon - b.lon) < 1e-4 && Math.abs(a.lat - b.lat) < 1e-4;
+}
+
+function FindingList({ findings }: { findings: Finding[] }) {
+  return (
+    <ul className="space-y-1 text-xs">
+      {findings.map((f) => (
+        <li key={`${f.module}-${f.id}`}>
+          <span className={`font-semibold uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span> {f.title}: {f.detail}
+          {f.needs_utility_study && <span className="text-amber-700"> (needs a utility study)</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ReportView() {
-  const { result } = useGridForge();
+  const { result, siteSummary, siteIntel } = useGridForge();
 
   if (!result) {
     return (
@@ -83,7 +102,11 @@ export function ReportView() {
   const e = evaluation.economics;
   const em = evaluation.emissions;
   const a = sc.assumptions ?? {};
-  const sources = allProvenance(result);
+  const loc = sc.site.location;
+  const summary = siteSummary && sameSpot(siteSummary.site.location, loc) ? siteSummary : null;
+  const intel = siteIntel && sameSpot(siteIntel.location, loc) ? siteIntel : null;
+  const sources = allProvenance(result, [summary, intel].filter((x): x is SiteSummary | SiteIntel => x !== null));
+  const syntheticPrices = simulation.provenance.some((p) => /^(STUB|PLACEHOLDER)/.test(p.source));
   const placeholder = sources.some((p) => /^(STUB|PLACEHOLDER)/.test(p.source));
 
   return (
@@ -176,10 +199,10 @@ export function ReportView() {
             rows={[
               ["Weather / price year", String(a.weather_year ?? 2024)],
               ["Analysis period", `${a.analysis_years ?? 20} years`],
-              ["Discount rate", pct(a.discount_rate ?? 0.07)],
+              ["Discount rate", `${((a.discount_rate ?? 0.07) * 100).toFixed(1)}%`],
               ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 4).toFixed(2)}/MMBtu`],
               ["Carbon price (on-site combustion)", `$${(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t`],
-              ["Grid price source", a.price_source === "flat" ? `Flat $${(a.flat_price_usd_per_mwh ?? 60).toFixed(0)}/MWh` : "CAISO historical hourly"],
+              ["Grid prices", syntheticPrices ? "Synthetic hourly placeholder (CAISO 2024 pending)" : "Hourly, per the simulation sources below"],
               ["Import delivery adder", `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
             ]}
           />
@@ -212,15 +235,24 @@ export function ReportView() {
           />
         </Section>
 
+        {(summary || intel) && (
+          <Section title="Site screening">
+            {summary && summary.nearest_substations.length > 0 && (
+              <Table
+                head={["Nearest substations", "Distance", "Voltage"]}
+                rows={summary.nearest_substations.map((s) => [
+                  s.name,
+                  `${s.distance_km.toFixed(1)} km`,
+                  typeof s.voltage_kv === "number" ? `${Math.round(s.voltage_kv)} kV` : "",
+                ])}
+              />
+            )}
+            <FindingList findings={[...(summary?.findings ?? []), ...(intel?.findings ?? [])]} />
+          </Section>
+        )}
+
         <Section title="Feasibility findings">
-          <ul className="space-y-1 text-xs">
-            {result.findings.map((f) => (
-              <li key={`${f.module}-${f.id}`}>
-                <span className={`font-semibold uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span> {f.title}: {f.detail}
-                {f.needs_utility_study && <span className="text-amber-700"> (needs a utility study)</span>}
-              </li>
-            ))}
-          </ul>
+          <FindingList findings={result.findings} />
         </Section>
 
         <Section title="Sources">

@@ -34,9 +34,10 @@ export function BuildPanel() {
     setScaleWithDemand,
     autoRun,
     setAutoRun,
-    run,
+    runNow,
     running,
     siteSummary,
+    scenarioLabel,
   } = useGridForge();
   if (!scenario) return <Panel title="Build">Loading presets...</Panel>;
 
@@ -64,6 +65,7 @@ export function BuildPanel() {
     });
 
   const lineKm = siteSummary?.nearest_line_km;
+  const modified = scenarioLabel.endsWith("(modified)");
   const assets = [...scenario.assets].sort((a, b) => ASSET_ORDER.indexOf(a.kind) - ASSET_ORDER.indexOf(b.kind));
 
   return (
@@ -82,6 +84,7 @@ export function BuildPanel() {
                 }`}
               >
                 {p.name}
+                {scenario.preset === p.id && modified && <span className="ml-1 text-[11px] font-normal text-amber-700 dark:text-amber-400">modified</span>}
               </button>
             ))}
           </div>
@@ -114,15 +117,10 @@ export function BuildPanel() {
           />
           {!community && (
             <>
-              <SliderField
-                label="PUE (facility / IT power)"
-                value={scenario.demand.pue ?? 1.2}
-                onChange={(v) => setDemand({ pue: v })}
-                min={1}
-                max={2}
-                inputMax={3}
-                step={0.01}
-              />
+              {/* Read-only until B's cooling model uses PUE; a slider that moves nothing looks broken on stage. */}
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                PUE {(scenario.demand.pue ?? 1.2).toFixed(2)} · IT load ≈ {Math.round(peak / (scenario.demand.pue ?? 1.2)).toLocaleString()} MW
+              </p>
               <label className="block text-xs text-zinc-600 dark:text-zinc-400">
                 Load profile
                 <select
@@ -242,7 +240,7 @@ export function BuildPanel() {
         <div className="space-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
           <button
             className="w-full rounded bg-emerald-600 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            onClick={() => void run()}
+            onClick={() => void runNow()}
             disabled={running}
           >
             {running ? "Simulating..." : "Run scenario"}

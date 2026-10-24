@@ -5,18 +5,23 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api } from "./api";
-import type { LngLat, MapOverlay, Mode, Scenario, ScenarioResult, SiteIntel, SiteSummary } from "./contract";
+import { SCHEMA_VERSION, type LngLat, type MapOverlay, type Mode, type Scenario, type ScenarioResult, type SiteIntel, type SiteSummary } from "./contract";
 
 export type View = "single" | "compare";
+type ErrorSource = "presets" | "run" | "compare";
 
 interface GridForgeState {
   presets: Scenario[];
   scenario: Scenario | null;
+  /** The scenario's display name: the preset's name, or "<preset> (modified)" once edited. */
+  scenarioLabel: string;
   setScenario: (s: Scenario) => void;
   updateScenario: (fn: (s: Scenario) => Scenario) => void;
   /** Load a preset, keeping the current site, its grid context, and assumption edits. */
   applyPreset: (id: string) => void;
-  /** Switch Industrial / Community: loads the first preset of that mode. */
+  /** Load a preset exactly as Compare ran it (current demand, portfolio scaled to it). */
+  loadCompared: (id: string) => void;
+  /** Switch Industrial / Community: loads that mode's default preset. No-op if already in it. */
   setMode: (mode: Mode) => void;
   /** Change peak demand; rescales assets and grid limits when scaleWithDemand is on. */
   setPeakMw: (peakMw: number) => void;
@@ -25,11 +30,18 @@ interface GridForgeState {
   autoRun: boolean;
   setAutoRun: (on: boolean) => void;
   result: ScenarioResult | null;
-  /** Increments with every new result; AppShell keys panel error boundaries on it. */
+  /** Increments with every new result. */
   resultVersion: number;
+  /** Increments only on deliberate actions (Run, Retry, preset/mode change). AppShell keys
+   *  panel error boundaries on it, so auto-runs never remount panels and reset their state. */
+  panelEpoch: number;
   running: boolean;
   error: string | null;
   run: () => Promise<void>;
+  /** Explicit Run button: also resets any crashed panel. */
+  runNow: () => Promise<void>;
+  /** Retry whatever failed last (presets, run, or compare). */
+  retry: () => void;
   view: View;
   setView: (v: View) => void;
   compareResults: ScenarioResult[] | null;
@@ -44,6 +56,20 @@ interface GridForgeState {
 }
 
 const Ctx = createContext<GridForgeState | null>(null);
+
+const DEFAULT_PRESET: Record<Mode, string> = { industrial: "hybrid", community: "community_microgrid" };
+const STORAGE_KEY = "gridforge:scenario";
+
+/** The last edited scenario, so a reload (or opening /report directly) keeps the user's design. */
+function readSavedScenario(): Scenario | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const s = raw ? (JSON.parse(raw) as Scenario) : null;
+    return s && s.schema_version === SCHEMA_VERSION ? s : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Multiply every asset and the grid limits by `factor` (no rounding, so repeated slider moves don't drift). */
 function scaleScenario(s: Scenario, factor: number): Scenario {
@@ -76,6 +102,24 @@ function adaptPreset(p: Scenario, cur: Scenario | null, scale: boolean): Scenari
   return next;
 }
 
+/** How Compare runs a preset: on exactly the current demand, portfolio scaled to its peak. */
+function compareCandidate(p: Scenario, cur: Scenario): Scenario {
+  return { ...adaptPreset(p, cur, true), demand: { ...cur.demand } };
+}
+
+/** Put A's nearest-line context on an industrial scenario (community microgrids tie into distribution). */
+function withLineContext(s: Scenario, summary: SiteSummary | null): Scenario {
+  if (!summary || (s.mode ?? "industrial") !== "industrial") return s;
+  return {
+    ...s,
+    grid: {
+      ...s.grid,
+      poi_voltage_kv: summary.nearest_line_kv ?? s.grid.poi_voltage_kv,
+      interconnection_km: summary.nearest_line_km ?? s.grid.interconnection_km,
+    },
+  };
+}
+
 /** Identity of a design for "did anything change?" checks (ignores ids and names). */
 function designKey(s: Scenario): string {
   const r = (x: number | null | undefined) => Math.round((x ?? 0) * 10) / 10;
@@ -94,8 +138,10 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [resultVersion, setResultVersion] = useState(0);
+  const [panelEpoch, setPanelEpoch] = useState(0);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorSource, setErrorSource] = useState<ErrorSource | null>(null);
   const [siteSummary, setSiteSummary] = useState<SiteSummary | null>(null);
   const [siteIntel, setSiteIntel] = useState<SiteIntel | null>(null);
   const [scaleWithDemand, setScaleWithDemand] = useState(true);
@@ -108,15 +154,44 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const runSeq = useRef(0);
   const compareSeq = useRef(0);
 
-  useEffect(() => {
+  const fail = useCallback((source: ErrorSource, message: string) => {
+    setError(message);
+    setErrorSource(source);
+  }, []);
+
+  const loadPresets = useCallback(() => {
     api
       .presets()
       .then((ps) => {
+        const saved = readSavedScenario();
         setPresets(ps);
-        setScenario((cur) => cur ?? ps.find((p) => p.id === "hybrid") ?? ps[0] ?? null);
+        setError(null);
+        setErrorSource(null);
+        setScenario((cur) => cur ?? saved ?? ps.find((p) => p.id === DEFAULT_PRESET.industrial) ?? ps[0] ?? null);
       })
-      .catch((e: Error) => setError(`Could not load presets (is the backend running?): ${e.message}`));
-  }, []);
+      .catch((e: Error) => fail("presets", `Could not load presets (is the backend running?): ${e.message}`));
+  }, [fail]);
+
+  useEffect(() => loadPresets(), [loadPresets]);
+
+  // Remember the design across reloads (per browser; a convenience, never required).
+  useEffect(() => {
+    if (!scenario) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(scenario));
+    } catch {
+      // Storage unavailable (private mode, quota): fine, nothing to persist.
+    }
+  }, [scenario]);
+
+  const labelFor = useCallback(
+    (s: Scenario) => {
+      const p = presets.find((x) => x.id === s.preset);
+      if (!p) return s.name;
+      return designKey(s) === designKey(adaptPreset(p, s, scaleWithDemand)) ? p.name : `${p.name} (modified)`;
+    },
+    [presets, scaleWithDemand],
+  );
 
   const run = useCallback(async () => {
     if (!scenario) return;
@@ -125,18 +200,24 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     const my = ++runSeq.current;
     setRunning(true);
     setError(null);
+    setErrorSource(null);
     try {
-      const r = await api.run(scenario);
+      const r = await api.run({ ...scenario, name: labelFor(scenario) });
       if (my === runSeq.current) {
         setResult(r);
         setResultVersion((v) => v + 1);
       }
     } catch (e) {
-      if (my === runSeq.current) setError((e as Error).message);
+      if (my === runSeq.current) fail("run", (e as Error).message);
     } finally {
       if (my === runSeq.current) setRunning(false);
     }
-  }, [scenario]);
+  }, [scenario, labelFor, fail]);
+
+  const runNow = useCallback(() => {
+    setPanelEpoch((e) => e + 1);
+    return run();
+  }, [run]);
 
   // Debounced auto-run: any scenario edit re-runs half a second after the last change.
   useEffect(() => {
@@ -150,17 +231,34 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const applyPreset = useCallback(
     (id: string) => {
       const p = presets.find((x) => x.id === id);
-      if (p) setScenario((cur) => adaptPreset(p, cur, scaleWithDemand));
+      if (!p) return;
+      setScenario((cur) => adaptPreset(p, cur, scaleWithDemand));
+      setPanelEpoch((e) => e + 1);
     },
     [presets, scaleWithDemand],
   );
 
-  const setMode = useCallback(
-    (mode: Mode) => {
-      const p = presets.find((x) => (x.mode ?? "industrial") === mode);
-      if (p) setScenario((cur) => adaptPreset(p, cur, false));
+  const loadCompared = useCallback(
+    (id: string) => {
+      const p = presets.find((x) => x.id === id);
+      if (!p) return;
+      setScenario((cur) => (cur ? compareCandidate(p, cur) : p));
+      setPanelEpoch((e) => e + 1);
+      setView("single");
     },
     [presets],
+  );
+
+  const setMode = useCallback(
+    (mode: Mode) => {
+      if (!scenario || (scenario.mode ?? "industrial") === mode) return;
+      const p = presets.find((x) => x.id === DEFAULT_PRESET[mode]) ?? presets.find((x) => (x.mode ?? "industrial") === mode);
+      if (!p) return;
+      setScenario((cur) => (cur && (cur.mode ?? "industrial") === mode ? cur : withLineContext(adaptPreset(p, cur, false), siteSummary)));
+      setCompareResults(null);
+      setPanelEpoch((e) => e + 1);
+    },
+    [scenario, presets, siteSummary],
   );
 
   const setPeakMw = useCallback(
@@ -176,10 +274,11 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const runCompare = useCallback(async () => {
     if (!scenario) return;
     const mode = scenario.mode ?? "industrial";
-    const candidates = presets.filter((p) => (p.mode ?? "industrial") === mode).map((p) => adaptPreset(p, scenario, scaleWithDemand));
+    // Every column runs on exactly the user's demand, so differences are design differences.
+    const candidates = presets.filter((p) => (p.mode ?? "industrial") === mode).map((p) => compareCandidate(p, scenario));
     const key = designKey(scenario);
     const isPreset = candidates.some((c) => designKey(c) === key);
-    const list = isPreset ? candidates : [...candidates, { ...scenario, id: "custom", name: "Your scenario", preset: null }];
+    const list = isPreset ? candidates : [...candidates, { ...scenario, id: "custom", name: labelFor(scenario), preset: null }];
     const my = ++compareSeq.current;
     setComparing(true);
     try {
@@ -187,13 +286,24 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       if (my === compareSeq.current) {
         setCompareResults(rs);
         setCompareKey(key);
+        if (errorSource === "compare") {
+          setError(null);
+          setErrorSource(null);
+        }
       }
     } catch (e) {
-      if (my === compareSeq.current) setError((e as Error).message);
+      if (my === compareSeq.current) fail("compare", (e as Error).message);
     } finally {
       if (my === compareSeq.current) setComparing(false);
     }
-  }, [scenario, presets, scaleWithDemand]);
+  }, [scenario, presets, labelFor, errorSource, fail]);
+
+  const retry = useCallback(() => {
+    setPanelEpoch((e) => e + 1);
+    if (!presets.length || errorSource === "presets") loadPresets();
+    else if (errorSource === "compare") void runCompare();
+    else void run();
+  }, [presets.length, errorSource, loadPresets, runCompare, run]);
 
   const selectSite = useCallback(async (p: LngLat) => {
     // A clicked point is a new site: fresh id/name, never the preset's Kern labels.
@@ -210,21 +320,13 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     const [summary, intel] = await Promise.allSettled([api.siteSummary(p), api.siteIntel(p)]);
     if (latestSiteId.current !== id) return; // a newer click won; drop stale responses
     if (summary.status === "fulfilled") {
-      const { site, nearest_line_kv, nearest_line_km } = summary.value;
+      const { site } = summary.value;
       setSiteSummary(summary.value);
       // Hand A's grid context to the scenario: B's stress test reads poi_voltage_kv,
-      // C costs the tie line from interconnection_km.
+      // C costs the tie line from interconnection_km. Industrial scenarios only.
       setScenario((s) =>
         s && s.site.id === id
-          ? {
-              ...s,
-              site: { ...s.site, county: site.county, utility_territory: site.utility_territory },
-              grid: {
-                ...s.grid,
-                poi_voltage_kv: nearest_line_kv ?? s.grid.poi_voltage_kv,
-                interconnection_km: nearest_line_km ?? s.grid.interconnection_km,
-              },
-            }
+          ? withLineContext({ ...s, site: { ...s.site, county: site.county, utility_territory: site.utility_territory } }, summary.value)
           : s,
       );
     }
@@ -235,14 +337,17 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     () => compareResults !== null && scenario !== null && compareKey !== designKey(scenario),
     [compareResults, compareKey, scenario],
   );
+  const scenarioLabel = useMemo(() => (scenario ? labelFor(scenario) : ""), [scenario, labelFor]);
 
   const value = useMemo<GridForgeState>(
     () => ({
       presets,
       scenario,
+      scenarioLabel,
       setScenario,
       updateScenario,
       applyPreset,
+      loadCompared,
       setMode,
       setPeakMw,
       scaleWithDemand,
@@ -251,9 +356,12 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       setAutoRun,
       result,
       resultVersion,
+      panelEpoch,
       running,
       error,
       run,
+      runNow,
+      retry,
       view,
       setView,
       compareResults,
@@ -268,17 +376,22 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     [
       presets,
       scenario,
+      scenarioLabel,
       updateScenario,
       applyPreset,
+      loadCompared,
       setMode,
       setPeakMw,
       scaleWithDemand,
       autoRun,
       result,
       resultVersion,
+      panelEpoch,
       running,
       error,
       run,
+      runNow,
+      retry,
       view,
       compareResults,
       compareStale,
