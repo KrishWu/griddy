@@ -2,7 +2,7 @@
 // The GriddyGrade for the selected site, for GriddyGradeCard and its details.
 // OWNER: workstream E (Site Intelligence).
 // Inputs are data Griddy already loads (A's site summary, E's site intel), so this adds no
-// requests; the math is in feasibility.ts.
+// requests; the math is in feasibility.ts, the percentile in percentile.ts.
 import { useMemo, useSyncExternalStore } from "react";
 
 import { sameLoc } from "@/components/explore/geo";
@@ -12,6 +12,10 @@ import { useGridForge } from "@/lib/store";
 
 import { calculateFeasibilityScore, DEFAULT_LOAD_MW, type FeasibilityResult } from "./feasibility";
 import { feasibilityInput } from "./feasibilityInput";
+import table from "./gradePercentiles.json";
+import { displayPercentile, percentileAt, type PercentileTable } from "./percentile";
+
+const PERCENTILES = table as PercentileTable;
 
 export type LoadBasis = "scenario" | "default";
 
@@ -44,8 +48,18 @@ function scenarioLoad(s: Scenario | null): ScenarioLoad | null {
   return Number.isFinite(avgMw) && avgMw > 0 ? { avgMw, peakMw: s.demand.peak_mw, loadFactor } : null;
 }
 
+export interface GradePercentile {
+  /** 0-100, unrounded. */
+  value: number;
+  /** Whole number, 1-99. */
+  display: number;
+  table: PercentileTable;
+}
+
 export interface GriddyGrade {
   result: FeasibilityResult | null;
+  /** The grade's rank among plausible California sites at the same load; null without a result. */
+  percentile: GradePercentile | null;
   loading: boolean;
   error: string | null;
   /** Site intel hasn't arrived: air quality counts as missing until it does. */
@@ -77,9 +91,13 @@ export function useGriddyGrade(): GriddyGrade {
 
   const input = useMemo(() => (view ? feasibilityInput({ summary, view, intel, intelPending }) : null), [summary, view, intel, intelPending]);
   const result = useMemo(() => (input ? calculateFeasibilityScore(input, loadMw) : null), [input, loadMw]);
+  const percentile = useMemo(() => {
+    const p = result ? percentileAt(result.overallScoreRaw, loadMw, PERCENTILES) : Number.NaN;
+    return Number.isFinite(p) ? { value: p, display: displayPercentile(p), table: PERCENTILES } : null;
+  }, [result, loadMw]);
   const provenance = useMemo(() => [...(summary?.provenance ?? []), ...(intel?.provenance ?? [])], [summary, intel]);
 
   // A clicked site is named "Site at lat, lon" by the store: prefer the backend's "Site in X County, CA".
   const siteName = scenario ? (summary?.site?.name && scenario.site.name.startsWith("Site at") ? summary.site.name : scenario.site.name) : null;
-  return { result, loading, error, intelPending, scenarioLoad: load, usingScenarioLoad, loadMw, provenance, siteName, location };
+  return { result, percentile, loading, error, intelPending, scenarioLoad: load, usingScenarioLoad, loadMw, provenance, siteName, location };
 }

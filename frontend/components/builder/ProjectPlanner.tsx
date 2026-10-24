@@ -66,7 +66,7 @@ export function ProjectPlanner() {
           <NumberField label="Illustrative offtake share" unit="%" value={field("contracted_share", 0) * 100} max={100} onChange={v => set("contracted_share", v / 100)} />
           <NumberField label="Illustrative offtake price" unit="USD / MWh" value={field("contract_price_usd_per_mwh", 80)} max={1000} onChange={v => set("contract_price_usd_per_mwh", v)} />
           <NumberField label="Illustrative contract term" unit="years" value={field("contract_years", 10)} min={1} max={40} onChange={v => set("contract_years", Math.round(v))} />
-          <p className="text-zinc-500">Jobs use illustrative labor-spending assumptions. Contract value is indicative and does not reduce owner costs.</p>
+          <p className="text-zinc-500">Jobs and contracts are illustrative estimates.</p>
         </div>
       </details>
       {busy && <p role="status" aria-live="polite" className="text-xs text-zinc-500">Recalculating project…</p>}
@@ -77,7 +77,7 @@ export function ProjectPlanner() {
         <p>{projected.unmet_hours.toLocaleString()} hours unmet at projected demand</p>
         {proposal.scenario.assets.map(a => <p key={a.id}>{a.kind.replaceAll("_", " ")}: {a.capacity_mw.toFixed(1)} MW{a.kind === "battery" ? ` × ${a.duration_h} h` : ""}</p>)}
         {proposal.screening.issues.map(issue => <p key={issue} className="text-amber-800 dark:text-amber-300">{issue}</p>)}
-        <p className="text-zinc-500">{proposal.screening.basis} Utility review required.</p>
+        <p className="text-zinc-500">This preliminary design needs utility review.</p>
       </div>}
       {!autoRun && <button disabled={running || busy} className="w-full rounded border px-3 py-1.5 text-sm" onClick={() => void runNow()}>Run current design</button>}
     </div>

@@ -23,7 +23,10 @@ def no_key(monkeypatch):
 
 @pytest.fixture(scope="module")
 def hybrid():
+    # Pinned to Buttonwillow (San Joaquin Valley, Extreme ozone): the thresholds below are SJV's,
+    # whatever site the website starts at.
     preset = next(p for p in list_presets() if p.id == "hybrid")
+    preset = preset.model_copy(update={"site": preset.site.model_copy(update={"location": BUTTONWILLOW})}, deep=True)
     return preset, run_scenario(preset)
 
 

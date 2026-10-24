@@ -10,7 +10,9 @@ into `out/` here (Pages' GitHub builds only accept an output folder inside the r
 off for now, so each merge to `main` shows up as an Idle production deployment. To put `main` live:
 
 - Cloudflare dashboard: Workers & Pages -> griddy -> Deployments -> the Idle entry -> ... ->
-  Retry deployment, which builds it from GitHub; or
+  Retry deployment, which builds it from GitHub;
+- the Pages API from a terminal (below), the same GitHub build without the dashboard; this is
+  the one coding agents can run; or
 - `scripts/deploy-frontend.sh`, which builds locally with `build.sh` and uploads with Wrangler
   (first time: `npx wrangler login`).
 
@@ -24,6 +26,26 @@ Builds -> Branch control) makes every merge to `main` go live by itself.
 The backend runs on Render at https://griddy-api.onrender.com (`render.yaml`,
 `deploy/render/README.md`). Its free plan sleeps after 15 minutes idle, so the first `/api`
 call after a quiet spell waits about a minute.
+
+## Starting a GitHub build from a terminal
+
+How an agent put `c781cae` live on 2026-10-24 (production deployment `41c75afc`): ask the Pages
+API for a new production build of the latest `main`. Cloudflare builds it from GitHub, like
+Retry deployment; nothing is built or uploaded locally. It signs in with the OAuth token that
+`npx wrangler login` saved on the laptop (the macOS path is below). The token expires about an
+hour after login (`expiration_time` in the same file); run `npx wrangler login` again if it has.
+Claude Code's auto mode blocks reading the token until the human approves that command.
+
+```bash
+TOKEN=$(sed -n 's/^oauth_token = "\(.*\)"/\1/p' ~/Library/Preferences/.wrangler/config/default.toml)
+API=https://api.cloudflare.com/client/v4/accounts/4957316fc598777d9ec92c3b910ba798/pages/projects/griddy
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -F branch=main "$API/deployments"  # note result.id
+curl -s -H "Authorization: Bearer $TOKEN" "$API/deployments/<id>"  # repeat until latest_stage is deploy / success (~2 min)
+curl -s -o /dev/null -w '%{http_code}\n' https://getgriddy.app/api/health  # expect 200
+```
+
+`curl -s -H "Authorization: Bearer $TOKEN" "$API"` shows the project's settings and, under
+`canonical_deployment`, the commit that is live now.
 
 ## Fallback: the backend on a laptop
 

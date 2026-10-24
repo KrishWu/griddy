@@ -4,6 +4,7 @@
 // A card's metric/threshold line shows only numbers its own text doesn't already state.
 import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
+import { shortDescription } from "@/lib/description";
 import type { Finding, Severity } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
@@ -50,7 +51,7 @@ function statesValue(text: string, v: number): boolean {
 function metricText(f: Finding): string | null {
   const m = finiteOrNull(f.metric);
   const t = finiteOrNull(f.threshold);
-  const text = `${f.title} ${f.detail}`;
+  const text = `${f.title} ${shortDescription(f.detail)}`;
   if (m !== null && statesValue(text, m)) return null;
   if (m === null && t !== null && statesValue(text, t)) return null;
   if (m === 0 && f.severity === "pass") return null; // the title's "none", restated as 0
@@ -120,7 +121,7 @@ function FindingItem({ f }: { f: Finding }) {
             </span>
           )}
         </div>
-        <div className="text-zinc-500">{f.detail}</div>
+        <div className="text-zinc-500">{shortDescription(f.detail)}</div>
         {metric && <div className="mt-0.5 text-[11px] tabular-nums text-zinc-400">{metric}</div>}
       </div>
     </li>
