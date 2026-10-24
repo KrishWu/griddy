@@ -4,6 +4,6 @@ pages_build_output_dir = "../../frontend/out"
 compatibility_date = "2026-10-01"
 
 [vars]
-# Where functions/api/[[path]].js forwards /api/*. For now this is the demo laptop,
-# reached through a Cloudflare Tunnel (see README.md).
-BACKEND_ORIGIN = "https://api.getgriddy.app"
+# Where functions/api/[[path]].js forwards /api/*: the backend on Render (render.yaml).
+# To run it from a laptop instead, use https://api.getgriddy.app (see README.md).
+BACKEND_ORIGIN = "https://griddy-api.onrender.com"
