@@ -12,8 +12,8 @@ service instead of billing; 750 free hours a month covers one service running al
 ## One-time setup
 
 1. Sign up at https://render.com (no card needed).
-2. Give Render's GitHub app access to `heruirayli/cleantech-hacks`. The repo is private and
-   owned by heruirayli, so they approve the install request.
+2. Give Render's GitHub app access to `KrishWu/griddy` (the repo is private; its admin
+   approves the install).
 3. Dashboard -> New -> Blueprint -> pick the repo, branch `main` -> Apply. Leave
    `EE_PROJECT` and `EE_SERVICE_ACCOUNT_KEY` blank unless you do step 4.
 4. Optional, Earth Engine: create a service account in the Earth Engine Cloud project, give
