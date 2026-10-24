@@ -97,6 +97,13 @@ button, input, select { accent-color: #047857; }
 [data-theme="dark"] .maplibregl-ctrl-group { background: #142238; }
 [data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
 [data-theme="dark"] .maplibregl-popup-content { background: #e3edf9; color: #142238; }
+/* Bottom of the map: MapLibre's attribution box and scale bar default to white, a bright strip on the
+   Dark map. Match the zoom buttons above (tone-900 panel, tone-200 text); the (i) toggle inverts too. */
+[data-theme="dark"] .maplibregl-ctrl.maplibregl-ctrl-attrib,
+[data-theme="dark"] .maplibregl-ctrl-attrib.maplibregl-compact { background-color: #142238; color: #c9d9eb; }
+[data-theme="dark"] .maplibregl-ctrl-attrib a { color: #c9d9eb; }
+[data-theme="dark"] .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button { background-color: transparent; filter: invert(1); }
+[data-theme="dark"] .maplibregl-ctrl-scale { background-color: rgb(20 34 56 / 0.85); color: #c9d9eb; border-color: #c9d9eb; }
 
 /* Settings > Map contrast / brightness: MapView sets --map-filter on its wrapper. Only the canvas is
    filtered, so popups, controls and attribution keep their real colors. */
