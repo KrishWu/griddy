@@ -1,7 +1,8 @@
 "use client";
+import type { ReactNode } from "react";
 
 export function NumberField({ label, value, onChange, min = 0, max = 1000000, step = 1, unit = "" }: {
-  label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; unit?: string;
+  label: ReactNode; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; unit?: string;
 }) {
   return <label className="block text-xs text-zinc-600 dark:text-zinc-400">
     {label}{unit && ` (${unit})`}

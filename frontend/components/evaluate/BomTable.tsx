@@ -3,6 +3,7 @@
 // "Land: ", "Interconnection: ", "Electrical: "); every row shows its basis (the
 // formula and numbers behind the count). Unprefixed items (older backends) go under
 // "Other". OWNER: workstream C (Evaluate).
+import { Term } from "@/components/glossary/Term";
 import type { BomItem } from "@/lib/contract";
 
 import { finite, qty } from "./fmt";
@@ -27,7 +28,8 @@ export function BomTable({ bom }: { bom: BomItem[] }) {
       {groups.map(({ group, items }) => (
         <table key={group} className="w-full text-[11px]">
           <caption className="pb-0.5 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-            {group} <span className="font-normal normal-case tracking-normal">· {items.length}</span>
+            {group === "Interconnection" ? <Term k="interconnection">{group}</Term> : group}{" "}
+            <span className="font-normal normal-case tracking-normal">· {items.length}</span>
           </caption>
           <tbody>
             {items.map((b, i) => {

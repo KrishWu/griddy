@@ -21,6 +21,8 @@ import {
   YAxis,
 } from "recharts";
 
+import { Term } from "@/components/glossary/Term";
+import { usePanelActive } from "@/components/shell/panelActive";
 import type { HourlySeries } from "@/lib/contract";
 
 import { SERIES, compact, gridChargeAt, int, niceTicks, usdPerMwh, valueAt, windowRows, type Row, type YearScan } from "./dispatch";
@@ -70,6 +72,7 @@ export interface DispatchChartProps {
 
 export const DispatchChart = memo(function DispatchChart(props: DispatchChartProps) {
   const { hourly, clock, start, length, view, selectedDay, scan, socCapacityMwh, extras } = props;
+  const shown = usePanelActive(); // hidden sidebar tab: no chart (it would measure 0 x 0)
   const rows = useMemo(() => windowRows(hourly, start, length), [hourly, start, length]);
   const defs = useMemo(() => SERIES.filter((d) => scan.present[d.key]), [scan]);
   const showSoc = scan.present.soc || socCapacityMwh > 0;
@@ -114,125 +117,127 @@ export const DispatchChart = memo(function DispatchChart(props: DispatchChartPro
         {showSoc && <span>{socAxis.unit}</span>}
       </div>
       <div className="h-60">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={rows} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-            <CartesianGrid yAxisId="mw" vertical={false} stroke="var(--gf-gridline)" />
-            <XAxis
-              dataKey="x"
-              type="number"
-              domain={[0, Math.max(1, length - 1)]}
-              ticks={xTicks}
-              interval={0}
-              tickFormatter={tickLabel}
-              tick={TICK}
-              tickLine={false}
-              axisLine={{ stroke: "var(--gf-axis)" }}
-              allowDecimals={false}
-            />
-            <YAxis
-              yAxisId="mw"
-              width={34}
-              domain={[mwTicks[0], mwTicks[mwTicks.length - 1]]}
-              ticks={mwTicks}
-              interval={0}
-              tickFormatter={compact}
-              tick={TICK}
-              tickLine={false}
-              axisLine={false}
-            />
-            {showSoc && (
-              <YAxis
-                yAxisId="soc"
-                orientation="right"
-                width={32} // fits "100%"
-                domain={[0, socTicks[socTicks.length - 1]]}
-                ticks={socTicks}
+        {shown && (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={rows} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <CartesianGrid yAxisId="mw" vertical={false} stroke="var(--gf-gridline)" />
+              <XAxis
+                dataKey="x"
+                type="number"
+                domain={[0, Math.max(1, length - 1)]}
+                ticks={xTicks}
                 interval={0}
-                tickFormatter={socAxis.fmt}
+                tickFormatter={tickLabel}
+                tick={TICK}
+                tickLine={false}
+                axisLine={{ stroke: "var(--gf-axis)" }}
+                allowDecimals={false}
+              />
+              <YAxis
+                yAxisId="mw"
+                width={34}
+                domain={[mwTicks[0], mwTicks[mwTicks.length - 1]]}
+                ticks={mwTicks}
+                interval={0}
+                tickFormatter={compact}
                 tick={TICK}
                 tickLine={false}
                 axisLine={false}
               />
-            )}
-            {shade >= 0 && shade < length && (
-              <ReferenceArea
-                yAxisId="mw"
-                x1={shade}
-                x2={Math.min(shade + per, length - 1)}
-                fill="var(--gf-muted)"
-                fillOpacity={0.12}
-                ifOverflow="hidden"
-                zIndex={-50} // behind the data, above the grid
-              />
-            )}
-            {midnights.map((x) => (
-              <ReferenceLine key={x} yAxisId="mw" x={x} stroke="var(--gf-gridline)" zIndex={-50} />
-            ))}
-            {defs.map((d) => {
-              const wash = d.key === "curtailed";
-              return (
-                <Area
-                  key={d.key}
+              {showSoc && (
+                <YAxis
+                  yAxisId="soc"
+                  orientation="right"
+                  width={32} // fits "100%"
+                  domain={[0, socTicks[socTicks.length - 1]]}
+                  ticks={socTicks}
+                  interval={0}
+                  tickFormatter={socAxis.fmt}
+                  tick={TICK}
+                  tickLine={false}
+                  axisLine={false}
+                />
+              )}
+              {shade >= 0 && shade < length && (
+                <ReferenceArea
                   yAxisId="mw"
-                  dataKey={d.key}
-                  name={d.label}
-                  stackId={d.stack}
+                  x1={shade}
+                  x2={Math.min(shade + per, length - 1)}
+                  fill="var(--gf-muted)"
+                  fillOpacity={0.12}
+                  ifOverflow="hidden"
+                  zIndex={-50} // behind the data, above the grid
+                />
+              )}
+              {midnights.map((x) => (
+                <ReferenceLine key={x} yAxisId="mw" x={x} stroke="var(--gf-gridline)" zIndex={-50} />
+              ))}
+              {defs.map((d) => {
+                const wash = d.key === "curtailed";
+                return (
+                  <Area
+                    key={d.key}
+                    yAxisId="mw"
+                    dataKey={d.key}
+                    name={d.label}
+                    stackId={d.stack}
+                    type="linear"
+                    fill={d.color}
+                    fillOpacity={wash ? 0.25 : d.stack === "neg" ? 0.55 : 0.85}
+                    stroke={wash ? d.color : "var(--gf-surface)"}
+                    strokeWidth={wash ? 1 : 0.75}
+                    strokeDasharray={wash ? "3 2" : undefined}
+                    activeDot={false}
+                    isAnimationActive={false}
+                  />
+                );
+              })}
+              <ReferenceLine yAxisId="mw" y={0} stroke="var(--gf-axis)" />
+              <Line
+                yAxisId="mw"
+                dataKey="demand"
+                name="Demand"
+                type="linear"
+                stroke="var(--gf-ink)"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, fill: "var(--gf-ink)", stroke: "var(--gf-surface)", strokeWidth: 2 }}
+                isAnimationActive={false}
+              />
+              {showSoc && (
+                <Line
+                  yAxisId="soc"
+                  dataKey="soc"
+                  name="Battery SOC"
                   type="linear"
-                  fill={d.color}
-                  fillOpacity={wash ? 0.25 : d.stack === "neg" ? 0.55 : 0.85}
-                  stroke={wash ? d.color : "var(--gf-surface)"}
-                  strokeWidth={wash ? 1 : 0.75}
-                  strokeDasharray={wash ? "3 2" : undefined}
+                  stroke="var(--gf-battery)"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  dot={false}
                   activeDot={false}
                   isAnimationActive={false}
                 />
-              );
-            })}
-            <ReferenceLine yAxisId="mw" y={0} stroke="var(--gf-axis)" />
-            <Line
-              yAxisId="mw"
-              dataKey="demand"
-              name="Demand"
-              type="linear"
-              stroke="var(--gf-ink)"
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4, fill: "var(--gf-ink)", stroke: "var(--gf-surface)", strokeWidth: 2 }}
-              isAnimationActive={false}
-            />
-            {showSoc && (
-              <Line
-                yAxisId="soc"
-                dataKey="soc"
-                name="Battery SOC"
-                type="linear"
-                stroke="var(--gf-battery)"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                dot={false}
-                activeDot={false}
-                isAnimationActive={false}
-              />
-            )}
-            <Tooltip
-              cursor={{ stroke: "var(--gf-axis)", strokeWidth: 1 }}
-              isAnimationActive={false}
-              content={(p) => (
-                <DispatchTooltip
-                  active={p.active}
-                  label={p.label}
-                  rows={rows}
-                  defs={defs}
-                  clock={clock}
-                  hourly={hourly}
-                  extras={extras}
-                  showSoc={showSoc}
-                  socCapacityMwh={socCapacityMwh}
-                />
               )}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
+              <Tooltip
+                cursor={{ stroke: "var(--gf-axis)", strokeWidth: 1 }}
+                isAnimationActive={false}
+                content={(p) => (
+                  <DispatchTooltip
+                    active={p.active}
+                    label={p.label}
+                    rows={rows}
+                    defs={defs}
+                    clock={clock}
+                    hourly={hourly}
+                    extras={extras}
+                    showSoc={showSoc}
+                    socCapacityMwh={socCapacityMwh}
+                  />
+                )}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
       </div>
       <Legend defs={defs} showSoc={showSoc} />
       <WindowTable rows={rows} defs={defs} clock={clock} hourly={hourly} view={view} showSoc={showSoc} extras={extras} />
@@ -346,7 +351,7 @@ function Legend({ defs, showSoc }: { defs: Defs; showSoc: boolean }) {
       {showSoc && (
         <li className="flex items-center gap-1">
           <Key color="var(--gf-battery)" dashed />
-          SOC (right axis)
+          <Term k="soc">SOC</Term> (right axis)
         </li>
       )}
     </ul>
@@ -378,7 +383,9 @@ function WindowTable(props: { rows: Row[]; defs: Defs; clock: Clock; hourly: Hou
                   </Fragment>
                 ))}
                 {showSoc && <th className="px-1 font-normal">SOC MWh</th>}
-                <th className="pl-1 font-normal">$/MWh</th>
+                <th className="pl-1 font-normal">
+                  <Term k="lmp">$/MWh</Term>
+                </th>
               </tr>
             </thead>
             <tbody>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import { post } from "@/lib/api";
 import type { Scenario } from "@/lib/contract";
@@ -45,9 +46,9 @@ export function ProjectPlanner() {
           {presets.filter(p => p.mode === scenario.mode).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
-      <NumberField label="Facility peak demand" unit="MW" value={scenario.demand.peak_mw} min={0.01} max={20000} step={1}
+      <NumberField label={<>Facility <Term k="peak_demand">peak demand</Term></>} unit="MW" value={scenario.demand.peak_mw} min={0.01} max={20000} step={1}
         onChange={v => updateScenario(s => ({ ...s, demand: { ...s.demand, peak_mw: v } }))} />
-      <NumberField label="Load factor" value={scenario.demand.load_factor ?? 0.9} min={0.01} max={1} step={0.01}
+      <NumberField label={<Term k="load_factor">Load factor</Term>} value={scenario.demand.load_factor ?? 0.9} min={0.01} max={1} step={0.01}
         onChange={v => updateScenario(s => ({ ...s, demand: { ...s.demand, load_factor: v } }))} />
       <label className="block text-xs">Plant type
         <select className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1.5 dark:border-zinc-700" value={plant} onChange={e => setPlant(e.target.value)}>
@@ -71,10 +72,10 @@ export function ProjectPlanner() {
           <NumberField label="Capital budget (0 = no limit)" unit="million USD" value={field("budget_usd", 0) / 1e6} max={100000} onChange={v => set("budget_usd", v ? v * 1e6 : null)} />
           <NumberField label="Critical load" unit="%" value={field("critical_load_share", 1) * 100} min={1} max={100} onChange={v => set("critical_load_share", v / 100)} />
           <NumberField label="Grid outage" unit="hours" value={field("outage_hours", 24)} min={1} max={168} onChange={v => set("outage_hours", Math.round(v))} />
-          <NumberField label="Carbon price sensitivity" unit="USD / t CO₂e" value={scenario.assumptions?.carbon_price_usd_per_t ?? 0} max={1000} onChange={v => updateScenario(s => ({ ...s, assumptions: { ...s.assumptions, carbon_price_usd_per_t: v } }))} />
+          <NumberField label={<><Term k="carbon_price">Carbon price</Term> sensitivity</>} unit="USD / t CO₂e" value={scenario.assumptions?.carbon_price_usd_per_t ?? 0} max={1000} onChange={v => updateScenario(s => ({ ...s, assumptions: { ...s.assumptions, carbon_price_usd_per_t: v } }))} />
           <NumberField label="Construction duration" unit="years" value={field("construction_years", 2)} min={0.25} max={10} step={0.25} onChange={v => set("construction_years", v)} />
-          <NumberField label="CAPEX paid as labor" unit="%" value={field("construction_labor_share", 0.2) * 100} max={100} onChange={v => set("construction_labor_share", v / 100)} />
-          <NumberField label="O&M paid as labor" unit="%" value={field("operations_labor_share", 0.35) * 100} max={100} onChange={v => set("operations_labor_share", v / 100)} />
+          <NumberField label={<><Term k="capex">CAPEX</Term> paid as labor</>} unit="%" value={field("construction_labor_share", 0.2) * 100} max={100} onChange={v => set("construction_labor_share", v / 100)} />
+          <NumberField label={<><Term k="om">O&amp;M</Term> paid as labor</>} unit="%" value={field("operations_labor_share", 0.35) * 100} max={100} onChange={v => set("operations_labor_share", v / 100)} />
           <NumberField label="Annual compensation" unit="USD / FTE" value={field("annual_compensation_usd", 120000)} min={10000} max={1000000} step={1000} onChange={v => set("annual_compensation_usd", v)} />
           <NumberField label="Local labor share" unit="%" value={field("local_labor_share", 0.6) * 100} max={100} onChange={v => set("local_labor_share", v / 100)} />
           <NumberField label="Illustrative offtake share" unit="%" value={field("contracted_share", 0) * 100} max={100} onChange={v => set("contracted_share", v / 100)} />
