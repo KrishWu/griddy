@@ -1,0 +1,59 @@
+{
+  "artifact_id": "sites-heuristic-20261024-094415",
+  "mode": "heuristic",
+  "created_utc": "2026-10-24T09:44:15+00:00",
+  "demand_artifact_id": "baseline-2024-20261024-093322",
+  "scenario": "base",
+  "year": 2024,
+  "kinds": [
+    "solar_pv",
+    "onshore_wind",
+    "battery",
+    "gas_cc"
+  ],
+  "grid_spacing_km": 5.0,
+  "producer": {
+    "package": "ml.site_location",
+    "model_version": "heuristic-v1"
+  },
+  "model_metrics": {},
+  "provenance": [
+    {
+      "kind": "observed",
+      "source": "EIA-860 2024 operating plants (where each technology was built)",
+      "url": "https://www.eia.gov/electricity/data/eia860/",
+      "note": null
+    },
+    {
+      "kind": "observed",
+      "source": "CEC transmission lines (CC BY 4.0) and OpenStreetMap substations (ODbL)",
+      "url": null,
+      "note": "Distances to 220 kV+ lines and substations"
+    },
+    {
+      "kind": "observed",
+      "source": "ERA5 reanalysis via Open-Meteo: 2024 mean solar irradiance and 100 m wind",
+      "url": "https://open-meteo.com/en/docs/historical-weather-api",
+      "note": "0.5 degree grid, interpolated to 5 km cells"
+    },
+    {
+      "kind": "observed",
+      "source": "US EPA nonattainment areas (ozone, PM)",
+      "url": "https://www.epa.gov/green-book",
+      "note": "Air-permit risk for combustion plants"
+    },
+    {
+      "kind": "observed",
+      "source": "LBNL Queued Up 2026: active interconnection requests by county (CC BY 4.0)",
+      "url": "https://emp.lbl.gov/queues",
+      "note": "Congestion signal"
+    },
+    {
+      "kind": "observed",
+      "source": "US Census 2020 block-group population",
+      "url": null,
+      "note": null
+    }
+  ],
+  "schema_version": "1.0"
+}

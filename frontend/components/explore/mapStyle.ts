@@ -8,10 +8,13 @@ import {
   ASSET_STROKE,
   ATTRIBUTION,
   CONTEXT_COLOR,
+  DEMAND_FILL_OPACITY,
+  DEMAND_RAMP,
   FUEL_COLOR,
   FUELS,
   QUEUE_FILL_OPACITY,
   QUEUE_RAMP,
+  REC_SITE_RING,
   SITE_COLOR,
   UNKNOWN_VOLTAGE,
   UTILITY_TYPE_COLOR,
@@ -42,11 +45,11 @@ export const DATA_KEYS = ["plants", "transmission", "substations", "boundaries",
 export type DataKey = (typeof DATA_KEYS)[number];
 
 /** Sources we compute client-side. */
-export const LOCAL_SOURCES = ["site-context", "assets", "site", "footprints"] as const;
+export const LOCAL_SOURCES = ["site-context", "assets", "site", "footprints", "rec-sites"] as const;
 export type LocalSource = (typeof LOCAL_SOURCES)[number];
 
 /** Toggleable groups (checkboxes) -> their layer ids. */
-export type LayerGroup = "plants" | "transmission" | "substations" | "boundaries" | "utilities" | "queue" | "footprints";
+export type LayerGroup = "plants" | "transmission" | "substations" | "boundaries" | "utilities" | "queue" | "demand" | "sites" | "footprints";
 export const GROUP_LABEL: Record<LayerGroup, string> = {
   plants: "Power plants",
   transmission: "Transmission lines",
@@ -54,6 +57,8 @@ export const GROUP_LABEL: Record<LayerGroup, string> = {
   boundaries: "Counties",
   utilities: "Utility territories",
   queue: "Interconnection queue",
+  demand: "Demand growth (forecast)",
+  sites: "Recommended sites",
   footprints: "Asset footprints (2.5D)",
 };
 export const DEFAULT_VISIBLE: Record<LayerGroup, boolean> = {
@@ -63,8 +68,12 @@ export const DEFAULT_VISIBLE: Record<LayerGroup, boolean> = {
   boundaries: true,
   utilities: false,
   queue: false,
+  demand: false,
+  sites: false,
   footprints: false,
 };
+/** County choropleths that would hide each other: turning one on turns the other off. */
+export const EXCLUSIVE_GROUPS: Partial<Record<LayerGroup, LayerGroup>> = { queue: "demand", demand: "queue" };
 
 const KV: Expr = ["to-number", ["get", "voltage_kv"], 0];
 const CAP: Expr = ["max", ["to-number", ["get", "capacity_mw"], 0], 0];
@@ -127,6 +136,13 @@ const FOOTPRINT_HEIGHT = [
   ...[4, 6, 8, 10, 12, 14, 16].flatMap((z) => [z, ["*", FOOTPRINT_H, Math.max(1, FOOTPRINT_EXAGGERATION_Z10 * 2 ** (10 - z))]]),
 ] as unknown as Expr;
 export const FOOTPRINT_OPACITY = 0.75;
+
+/** Recommended-site markers: area ~ MW, growing with zoom. */
+const REC_MW: Expr = ["max", ["to-number", ["get", "mw"], 0], 0];
+/** ["zoom"] must stay the input of the top-level interpolate, so the ring's extra radius goes inside each stop. */
+function recRadius(extra = 0): Expr {
+  return ["interpolate", ["linear"], ["zoom"], 4, ["+", 3 + extra, ["*", 0.12, ["sqrt", REC_MW]]], 10, ["+", 5 + extra, ["*", 0.25, ["sqrt", REC_MW]]]] as unknown as Expr;
+}
 export const FOOTPRINT_WIND_OPACITY = 0.35; // wind "land" is turbine spacing; most of it stays usable
 
 /** Our layers, bottom -> top. Overlays from other modules are inserted below the first of these. */
@@ -162,6 +178,17 @@ export const LAYERS: MapLayer[] = [
         "fill-color": QUEUE_COLOR,
         "fill-opacity": ["case", [">", QUEUE_MW, 0], QUEUE_FILL_OPACITY, 0],
       },
+    },
+  },
+  {
+    // Forecast demand growth per county; MapView sets the color per geoid (demandPaint) as the forecast changes.
+    group: "demand",
+    clickable: true,
+    spec: {
+      id: "demand-fill",
+      type: "fill",
+      source: "boundaries",
+      paint: { "fill-color": DEMAND_RAMP[0][1], "fill-opacity": 0 },
     },
   },
   {
@@ -325,6 +352,39 @@ export const LAYERS: MapLayer[] = [
     },
   },
   {
+    group: "sites",
+    spec: {
+      // Dark outer ring: recommended sites read apart from EIA-860 plants (white ring) and placed assets.
+      id: "rec-sites-ring",
+      type: "circle",
+      source: "rec-sites",
+      paint: {
+        "circle-radius": recRadius(2.5),
+        "circle-color": "rgba(0,0,0,0)",
+        "circle-stroke-color": REC_SITE_RING,
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.85,
+      },
+    },
+  },
+  {
+    group: "sites",
+    clickable: true,
+    spec: {
+      id: "rec-sites",
+      type: "circle",
+      source: "rec-sites",
+      layout: { "circle-sort-key": ["-", 0, REC_MW] }, // small on top of large
+      paint: {
+        "circle-radius": recRadius(),
+        "circle-color": ASSET_COLOR,
+        "circle-opacity": 0.95,
+        "circle-stroke-color": "#FFFFFF",
+        "circle-stroke-width": 1.5,
+      },
+    },
+  },
+  {
     clickable: true,
     spec: {
       id: "assets",
@@ -388,7 +448,22 @@ function plantPaint(): CircleLayer["paint"] {
 export const LAYER_IDS = LAYERS.map((l) => l.spec.id);
 export const CLICKABLE_LAYER_IDS = LAYERS.filter((l) => l.clickable).map((l) => l.spec.id);
 /** Clickable area fills: a click on them still selects a site, then shows the area's popup. */
-export const AREA_LAYER_IDS: readonly string[] = ["queue-fill", "utilities-fill"];
+export const AREA_LAYER_IDS: readonly string[] = ["demand-fill", "queue-fill", "utilities-fill"];
+
+/** Demand-growth choropleth paint for the current forecast: each county's new P90 peak MW, by geoid, on
+ *  DEMAND_RAMP; counties without an estimate stay unfilled. A match on geoid keeps the geometry untouched,
+ *  so a what-if slider only swaps two paint properties. */
+export function demandPaint(counties: readonly { geoid: string; growth_peak_mw_p90: number }[]): { color: Expr | string; opacity: Expr | number } {
+  const pairs = counties.filter((c) => typeof c.geoid === "string" && Number.isFinite(c.growth_peak_mw_p90));
+  const unique = [...new Map(pairs.map((c) => [c.geoid, c.growth_peak_mw_p90])).entries()];
+  if (!unique.length) return { color: DEMAND_RAMP[0][1], opacity: 0 };
+  const NONE = -1e9;
+  const growth = ["match", ["get", "geoid"], ...unique.flat(), NONE] as unknown as Expr;
+  return {
+    color: ["interpolate", ["linear"], growth, ...DEMAND_RAMP.flat()] as unknown as Expr,
+    opacity: ["case", [">", growth, NONE / 2], DEMAND_FILL_OPACITY, 0] as unknown as Expr,
+  };
+}
 
 export function groupLayerIds(group: LayerGroup): string[] {
   return LAYERS.filter((l) => l.group === group).map((l) => l.spec.id);

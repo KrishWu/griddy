@@ -74,6 +74,11 @@ def test_api_endpoints_respond():
     assert res.status_code == 200
     assert client.post("/api/report.csv", json=res.json()).status_code == 200
     assert len(client.post("/api/compare", json=presets).json()) == len(presets)
+    # Phase 2: serve model artifacts when present, an honest "unavailable" otherwise; never an error.
+    assert client.get("/api/forecast", params={"scenario": "mid", "year": 2035}).status_code == 200
+    assert client.post("/api/forecast/whatif", json={"scenario": "mid", "year": 2035}).status_code == 200
+    assert client.get("/api/sites", params={"scenario": "mid", "year": 2035}).status_code == 200
+    assert client.post("/api/sites/whatif", json={"forecast": {"scenario": "mid", "year": 2035}}).status_code == 200
 
 
 def _ts_interfaces() -> dict[str, dict[str, tuple[bool, bool]]]:

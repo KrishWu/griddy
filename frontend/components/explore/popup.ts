@@ -1,12 +1,14 @@
 // Feature popups for the Explore map, built as DOM with textContent (never raw HTML),
 // so property strings from external datasets can't inject markup.  OWNER: workstream A.
-import type { AssetKind } from "@/lib/contract";
+import type { AssetKind, CountyForecast } from "@/lib/contract";
+import { usd } from "@/lib/format";
 
 import { BATTERY_REF_HOURS } from "./footprints";
 import { countyLabel, fmtAcres, fmtCap, fmtKm2, fmtKv, fmtMw, fmtPerMw, num, parseMaybeJson, rec, safeUrl, str } from "./geo";
 import {
   ASSET_FUEL,
   ASSET_LABEL,
+  DEMAND_CREDIT,
   FUEL_COLOR,
   FUEL_LABEL,
   QUEUE_CREDIT,
@@ -213,6 +215,62 @@ function footprintCard(p: Props): HTMLElement {
 
 function siteCard(p: Props): HTMLElement {
   return card({ title: str(p.name) ?? "Selected site", subtitle: str(p.coords), rows: [], source: null });
+}
+
+/** What the demand-growth popup needs from the current forecast. */
+export interface DemandInfo {
+  county: CountyForecast | null;
+  year: number;
+  baseYear: number;
+  scenario: string;
+  regionName: string | null;
+}
+
+const signed = (v: number) => (Math.round(v) === 0 ? "0 MW" : `${v > 0 ? "+" : "−"}${fmtMw(Math.abs(v))}`);
+
+/** County under the demand-growth choropleth: its new P90 peak by the target year. */
+export function demandCard(p: Props, info: DemandInfo | null): HTMLElement {
+  const title = str(p.full_name) ?? countyLabel(str(p.name));
+  const c = info?.county;
+  if (!info || !c) return card({ title, subtitle: "No demand estimate for this county", rows: [], source: null });
+  const added = num(c.added_load_mw) ?? 0;
+  return card({
+    title,
+    subtitle: `${signed(c.growth_peak_mw_p90)} P90 peak by ${info.year}${added > 0 ? ` (incl. ${fmtMw(added)} new data centers)` : ""}`,
+    rows: [
+      ["Peak (P90)", `${fmtMw(c.base_peak_mw)} in ${info.baseYear} → ${fmtMw(c.peak_mw_p90)}`],
+      ["Region", info.regionName ?? str(c.region)],
+      ["Scenario", info.scenario],
+      ["Note", "Estimate: regional load split by population"],
+    ],
+    source: DEMAND_CREDIT,
+  });
+}
+
+/** A recommended site (B's ranking) with a button that makes it the scenario site. */
+export function recSiteCard(p: Props, onUse: () => void): HTMLElement {
+  const kind = str(p.kind);
+  const label = isAssetKind(kind) ? ASSET_LABEL[kind] : (kind ?? "Site");
+  const capex = num(p.capex_usd);
+  const tie = num(p.gen_tie_usd);
+  const lineKm = num(p.d_line_hv_km);
+  const root = card({
+    title: label,
+    swatch: isAssetKind(kind) ? FUEL_COLOR[ASSET_FUEL[kind]] : undefined,
+    subtitle: ["Recommended site", fmtMw(num(p.mw)), str(p.county) ? countyLabel(str(p.county)) : null].filter(Boolean).join(" · "),
+    rows: [
+      ["Why here", str(p.reason)],
+      ["CAPEX", capex !== null ? `${usd(capex)} (estimate)` : null],
+      ["Gen-tie", tie !== null ? `${usd(tie)}${lineKm !== null ? ` · ${lineKm.toFixed(1)} km to a 220 kV+ line` : ""}` : null],
+    ],
+    source: "Screening candidate, not a buildable site: needs a utility interconnection study",
+  });
+  const button = el("button", "mt-2 w-full rounded bg-zinc-900 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700", "Use this site");
+  button.type = "button";
+  button.addEventListener("click", onUse);
+  // Before the source line, right under the facts.
+  root.insertBefore(button, root.lastElementChild);
+  return root;
 }
 
 /** Popup content for a feature of one of our clickable layers. */
