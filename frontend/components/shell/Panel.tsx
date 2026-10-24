@@ -2,11 +2,12 @@
 import type { ReactNode } from "react";
 
 export function Panel({ title, owner, children }: { title: string; owner?: string; children: ReactNode }) {
+  // The owning workstream (e.g. "C · Evaluate") stays findable for the team as data-owner, but isn't shown:
+  // it describes how the team split the work, which means nothing to a viewer.
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+    <section data-owner={owner} className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <header className="mb-3 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">{title}</h2>
-        {owner && <span className="text-[10px] text-zinc-400">{owner}</span>}
       </header>
       {children}
     </section>

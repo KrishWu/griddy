@@ -147,7 +147,7 @@ def _cached(loc: LngLat) -> Overlays | None:
                 severity="info",
                 title="Satellite overlay covers a nearby area",
                 detail=f"The cached satellite tiles cover the demo area, {off_km:.1f} km from this site; "
-                "set EE_PROJECT for live Earth Engine imagery here.",
+                "live imagery of other sites isn't enabled on this deployment.",
                 metric=round(off_km, 2),
                 threshold=NEAR_KM,
             )
@@ -212,12 +212,12 @@ def _live(loc: LngLat) -> Overlays | None:
 def _unavailable(loc: LngLat) -> Finding:
     try:
         st = earthengine.status()
-        ee_why = "Earth Engine is configured but unavailable right now" if st.get("configured") else "Earth Engine isn't configured (EE_PROJECT)"
+        ee_why = "live imagery is unavailable right now" if st.get("configured") else "live imagery of other sites isn't enabled on this deployment"
     except Exception:  # noqa: BLE001
-        ee_why = "Earth Engine isn't available"
+        ee_why = "live imagery isn't available"
     try:
         meta = tiles_meta()
-        where = f" ({meta['site']} demo area)" if meta and meta.get("site") else ""
+        where = f" {str(meta['site']).capitalize()}" if meta and meta.get("site") else ""
     except Exception:  # noqa: BLE001
         where = ""
     return Finding(
@@ -225,8 +225,8 @@ def _unavailable(loc: LngLat) -> Finding:
         module="site",
         severity="info",
         title="No satellite overlay here",
-        detail=f"The satellite overlay is cached only for the demo area{where} and {ee_why}, "
-        f"so no imagery is drawn at {loc.lat:.3f}, {loc.lon:.3f}.",
+        detail=f"Satellite imagery is cached only for the{where} demo area, and {ee_why}, "
+        f"so none is drawn at {loc.lat:.3f}, {loc.lon:.3f}.",
     )
 
 

@@ -17,6 +17,13 @@ export function ProjectSummary() {
   const p = projectOf(result), r = resilienceOf(result), s = result.simulation.summary;
   const served = s.demand_mwh - s.unmet_mwh;
   const issues = result.findings.filter(f => f.severity === "fail" || f.severity === "warn");
+  // Failures first, then anything needing a utility study: the flags a viewer must not miss.
+  const rank = (f: (typeof issues)[number]) => (f.severity === "fail" ? 0 : f.needs_utility_study ? 1 : 2);
+  const top = [...issues].sort((a, b) => rank(a) - rank(b)).slice(0, 3);
+  const studies = issues.filter(f => f.needs_utility_study).length;
+  const tone = s.hours_unmet ? "border-red-200 text-red-700 dark:text-red-300"
+    : issues.length ? "border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300"
+    : "border-emerald-200 text-emerald-800 dark:text-emerald-300";
   return <Panel title="Project at a glance">
     <p className="mb-3 text-xs text-zinc-500">{result.scenario.name} · simulated design year</p>
     <div className="grid grid-cols-2 gap-3">
@@ -30,15 +37,16 @@ export function ProjectSummary() {
       </div>)}
     </div>
     <p className="mt-3 text-xs text-zinc-500">{em.intensity_kg_per_mwh.toFixed(0)} <Term k="co2_intensity">kg CO₂e/MWh</Term> · {pct(s.onsite_clean_share)} <Term k="onsite_clean_share">on-site clean energy</Term></p>
-    <div className={`mt-3 rounded border p-2 text-xs ${s.hours_unmet ? "border-red-200 text-red-700 dark:text-red-300" : "border-emerald-200 text-emerald-800 dark:text-emerald-300"}`}>
+    <div className={`mt-3 rounded border p-2 text-xs ${tone}`}>
       <p className="font-semibold">{s.hours_unmet ? <>{s.hours_unmet.toLocaleString()} hours with <Term k="unmet">unmet demand</Term></> : "Demand met every hour in the simulated year"}</p>
-      <p className="mt-1">{issues.length} feasibility check{issues.length === 1 ? " is" : "s are"} flagged for review.</p>
+      <p className="mt-1">{issues.length} feasibility check{issues.length === 1 ? " is" : "s are"} flagged for review{studies ? <>, {studies} need{studies === 1 ? "s" : ""} a utility study</> : null}.</p>
+      {top.length > 0 && <ul className="mt-1 list-disc space-y-0.5 pl-4">{top.map(f => <li key={`${f.module}-${f.id}`}>{f.title}</li>)}</ul>}
     </div>
     {r && <div className="mt-3 text-xs">
       <p className="font-semibold">Resilience screening</p>
       <p className="mt-1">{pct(r.critical_energy_served_share)} of critical energy supplied during a {r.outage_hours} h grid outage.</p>
     </div>}
-    <details className="mt-3 text-xs"><summary className="cursor-pointer">Key feasibility findings</summary>
+    <details className="mt-3 text-xs"><summary className="cursor-pointer">All flagged checks{issues.length ? ` (${issues.length})` : ""}</summary>
       <ul className="mt-2 space-y-2">{issues.map(f => <li key={`${f.module}-${f.id}`}><span className="font-medium">{f.title}</span><p className="text-zinc-500">{shortDescription(f.detail)}</p></li>)}</ul>
     </details>
     <p className="mt-3 text-[10px] text-zinc-500">See the report for assumptions and sources.</p>
