@@ -1,4 +1,4 @@
-# GridForge: Devpost draft
+# Griddy: Devpost draft
 
 > **Team note (delete before pasting):** app numbers are the Sat 1 AM snapshot in
 > `sources.md`. Refresh them after the 7 AM re-tune and again before the 2 PM freeze.
@@ -17,7 +17,7 @@ We wanted that first look to take minutes, and to show its work.
 
 ## What it does
 
-GridForge plans power for a 1 GW AI data-center campus in California, from site to report:
+Griddy plans power for a 1 GW AI data-center campus in California, from site to report:
 
 1. **Explore:** a real California grid map (EIA-860 plants, CEC transmission lines,
    substations). Click a parcel to see the nearest substation and line voltage.

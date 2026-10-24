@@ -67,7 +67,7 @@ mismatched artifact fails loudly instead of producing quietly wrong rankings.
 ## Setup on a training machine
 
 ```bash
-git clone https://github.com/heruirayli/cleantech-hacks.git && cd cleantech-hacks
+git clone https://github.com/KrishWu/griddy.git && cd griddy
 python -m venv .venv-ml && . .venv-ml/bin/activate       # Windows: .venv-ml\Scripts\activate
 pip install -r ml/demand_forecast/requirements.txt       # A
 pip install -r ml/site_location/requirements.txt         # B

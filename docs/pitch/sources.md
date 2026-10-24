@@ -2,7 +2,7 @@
 
 Every statistic used in the Devpost, slides or demo script, with its source.
 Accessed 2026-10-24. Status: **verified** (exact wording read at the source),
-**app** (computed by GridForge; refresh before submitting), or **assumption**.
+**app** (computed by Griddy; refresh before submitting), or **assumption**.
 
 ## External statistics
 

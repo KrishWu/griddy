@@ -18,10 +18,10 @@ snapshot in `sources.md`: refresh them before the freeze.
 
 - **On screen:** four icons: land (steep, protected, prime farmland), wires (no
   substation), hours (can't serve every hour), air (no permit).
-- **Say:** "Each of these usually shows up after months of studies. GridForge checks them
+- **Say:** "Each of these usually shows up after months of studies. Griddy checks them
   in the first five minutes, and shows its sources."
 
-## 3. GridForge: map → site → build → simulate → evaluate → stress test → report
+## 3. Griddy: map → site → build → simulate → evaluate → stress test → report
 
 - **On screen:** an app screenshot with the panels labelled.
 - **Say:** "One flow, every number sourced, built by five people in 24 hours on one shared

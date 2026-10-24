@@ -24,7 +24,7 @@ Write your name next to a letter in the team chat. GitHub handles: `10zingC`,
 ## Getting started (10 minutes)
 
 ```bash
-git clone https://github.com/heruirayli/cleantech-hacks.git && cd cleantech-hacks
+git clone https://github.com/KrishWu/griddy.git && cd griddy
 scripts/setup.sh                      # backend venv + npm ci
 scripts/dev.sh                        # http://localhost:3000 (API on :8000)
 git switch -c ws/<letter>-<name>      # e.g. ws/b-simulate
@@ -59,6 +59,9 @@ what they have, **as long as tests pass**, even if it's partial (stubs are fine)
    consumer order **C → B → A → E → D**, reruns the tests after each, posts "main is green".
 4. Merge with **"Create a merge commit"** (not squash, so your branch can keep going),
    then keep working on the same branch and open a new draft PR.
+5. **Deploy.** Render redeploys the backend by itself once CI passes on `main`. The frontend
+   at https://getgriddy.app is deployed separately (see `deploy/cloudflare-pages/README.md`),
+   so after merging frontend changes, deploy it and check that `/api/health` returns 200.
 
 ## One visible moment per sponsor and resource
 
@@ -94,7 +97,7 @@ simulate → evaluate flow.
 - **Secrets** (EIA, AirNow, WattTime, Earth Engine keys) go in `backend/.env` (git-ignored).
 - **Every number has a source.** Use `Provenance` and label estimates.
 
-## Open decisions (settle in the first 15 minutes)
+## Decisions (settled Friday night)
 
 1. **Demo region/site.** Three good options:
    - **Kern County** (current placeholder, `-119.47, 35.40`): cheap flat land, strong
@@ -103,8 +106,8 @@ simulate → evaluate flow.
      closest to Silicon Valley (SVCE's backyard), and WattTime's free tier covers CAISO_NORTH.
    - **Westside San Joaquin Valley near Los Banos** (500 kV): lots of fallowed farmland
      (a strong "build on degraded land" story for E's screening), still PG&E/NP15.
-   A recommends, the team picks, D updates `DEFAULT_SITE` in `app/builder/service.py`,
-   and A centers `MapView` on `scenario.site.location` instead of the hard-coded Kern view.
+   **Chosen: Kern County**, Buttonwillow by the Midway 500 kV substation (`DEFAULT_SITE` in
+   `app/builder/service.py`).
 2. **Weather year.** 2024 (full CAISO + Open-Meteo history available).
 3. **Who demos.** E owns the pitch; D drives the clicks.
 
