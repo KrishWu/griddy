@@ -37,43 +37,55 @@ nonattainment area) and `carbon_aware_shift` (when `demand.flexible_share > 0`).
 `POST /api/site/carbon-aware` (`carbon.py`) shifts the flexible share of each day's load
 to its cleanest hours and reports avoided t CO2e/yr and an SCI score per GPU-hour.
 
-## GriddyGrade: data center feasibility score (frontend)
+## GriddyGrade: power plant site feasibility score (frontend)
 
-The GriddyGrade scores the selected site 0-100 in the browser from data already loaded: A's site
-summary and this module's site intel. No extra endpoint, so it follows the scenario's load
-instantly. GriddyGrade = 0.36 grid + 0.25 generation + 0.17 community exposure + 0.17 air quality /
-permitting + 0.05 utility / balancing authority (land is not scored), capped at 35 when both the
-nearest 220 kV+ substation and line are 20 km or more away. `feasibility.ts` holds the pure
-scoring math (weights, thresholds, missing-data rules); `feasibilityInput.ts` maps the summary and
-intel onto it. The weights are initial product heuristics, not validated predictions. The score
-relies on `extras["nonattainment_available"]` here so that a Green Book layer that failed to load
-isn't read as attainment.
+The GriddyGrade screens the selected site for a proposed generation project (technology and
+nameplate MW, set on the card; default solar PV at 100 MW) in the browser, from data already
+loaded: A's site summary and this module's site intel. No extra endpoint, so a technology or
+capacity change only recomputes. S = 0.30 G (grid interconnection proximity) + 0.30 R
+(technology-specific resource and operating prerequisites) + 0.20 E (environmental and permitting
+screening) + 0.15 C (community exposure proxy) + 0.05 I (administrative context). Land suitability
+is excluded from the score and from data completeness. Critical constraints are assessed apart
+from the score, so a high score can't average them away. Layers: `feasibilityPolicy.ts` (versioned
+weights, voltage-search tiers, ATB reference ranges, mappings, constraint checks),
+`feasibilityInput.ts` (summary + intel → SiteData, every input with a SourceState), `feasibility.ts`
+(pure math, `calculatePowerPlantFeasibility(siteData, project, policy)`), `ProjectControls.tsx`,
+`GriddyGradeCard.tsx` and `GriddyGradeDetails.tsx` (rendering). The numbers are initial product
+heuristics, not validated predictions. The score relies on `extras["nonattainment_available"]`
+here so that a Green Book layer that failed to load isn't read as attainment.
 
-**Model signals** (`ml.py` → `extras["ml"]`, a few ms, offline): the nearest 5 km cell of B's site
-artifact (`ml/artifacts/site_location/LATEST`, at most 5 km away, so none outside California)
-gives the county's interconnection queue (LBNL Queued Up; a congestion penalty on G, up to 25%
-off, and a `needs_utility_study` finding at 10 GW or more) and the best solar / wind / battery
-suitability within 25 km (30% of P, labeled a similarity score; gas is left out). A's demand
-forecast (`mid`, 2035, P50 first: its P10-P90 band is too narrow) gives the region's demand
-pressure, shown as context and never scored. The cell's nonattainment flag and grid distances are
-not used (E and A already score those). Without the signals the grade falls back to the rules alone
-and data completeness is unchanged.
+**Grid tiers** (`grid_tiers.py` → `extras["grid_tiers"]`, offline): the nearest qualifying
+substation and operational AC line at 69, 115 and 220 kV, from A's layers (read-only). The card
+picks the tier for the project size (≤ 20 MW 69 kV, ≤ 100 MW 115 kV, larger 220 kV); untagged or
+lower-voltage assets never qualify.
 
-**Percentile.** `GriddyGradeCard.tsx` leads with the grade's percentile among plausible California
-sites (5 km cells within 50 km of a 220 kV+ line, inside a utility territory), with the raw grade
-and its components in `GriddyGradeDetails.tsx`. `percentile.ts` interpolates in
-`gradePercentiles.json`: 101 cut-offs per tabulated load (25-2,000 MW), using the middle of a tied
-range. Rebuild it after changing the formula or the artifacts (about 90 s; Node >= 22.18 runs the
-same TypeScript on every cell, so it can't drift from the live grade):
-`python -m app.site_intel.prep.grade_percentiles --node <node>` (`--reuse` skips rescoring the cells).
+**Model signals** (`ml.py` → `extras["ml"]`, a few ms, offline): the site's own 5 km cell of B's
+site artifact (`ml/artifacts/site_location/LATEST`, at most 5 km away, so none outside California)
+gives the trained models' siting similarity per technology (solar, wind, gas; an inferred
+submetric of R), the cell's ERA5 2024 annual GHI and 100 m wind with their basis (GHI is scored on
+ATB's PV resource classes; the ~50 km, 100 m wind is shown but not scored, since ATB's wind classes
+are at 110 m from a terrain-resolving dataset) and the county's interconnection queue (LBNL; context,
+plus a `needs_utility_study` finding at 10 GW or more). The cell's nonattainment flag and grid
+distances are not used (E and A already provide those).
 
-**California only.** `regionGuard.ts` keeps data centers inside California plus a 2 km Pacific
+**Percentile.** `GriddyGradeCard.tsx` leads with the score's percentile among plausible California
+sites for the same technology and voltage tier (5 km cells inside a utility territory within 50 km
+of a qualifying line), with the 0-100 score and its components in `GriddyGradeDetails.tsx`.
+`percentile.ts` reads `gradePercentiles.json`: 101 cut-offs per technology and tier, using the
+middle of a tied range. Rebuild it after changing the policy, the formula or the artifacts (about
+3 min; Node >= 22.18 runs the same TypeScript on every cell, so it can't drift from the live grade):
+`python -m app.site_intel.prep.grade_percentiles --node <node>` (`--reuse` skips rebuilding the cells).
+`python -m app.site_intel.prep.check_recommended --node <node>` grades B's recommended sites for the
+technology and MW B recommends there (batteries are storage, so they are not scored).
+
+**California only.** `regionGuard.ts` keeps the selected site inside California plus a 2 km Pacific
 margin (`caOutline.json`, from `python -m app.site_intel.prep.region`); D's `selectSite` calls it,
 and the card says why a click was refused.
 
 Tests: `node --test components/site_intel/feasibility.test.mjs` and `percentile.test.mjs` from
 `frontend/` (Node >= 22.18); `tests/test_site_intel_feasibility.py` runs them inside pytest when such
-a Node is on PATH, and `tests/test_site_intel_ml.py` covers the model signals.
+a Node is on PATH; `tests/test_site_intel_ml.py` covers the model signals, `test_site_intel_grid_tiers.py`
+the tier search and `test_site_intel_recommended.py` the recommended-site check.
 
 ## Offline data (`data/site_intel/`)
 

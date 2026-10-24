@@ -6,12 +6,14 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import outline from "./caOutline.json" with { type: "json" };
+import { POLICY_TECHNOLOGIES, POWER_PLANT_POLICY } from "./feasibilityPolicy.ts";
 import table from "./gradePercentiles.json" with { type: "json" };
-import { displayPercentile, percentileAt, percentileFor } from "./percentile.ts";
+import { cutoffsFor, displayPercentile, percentileAt, percentileFor } from "./percentile.ts";
 import { inRegion } from "./region.ts";
 
 const LINEAR = Array.from({ length: 101 }, (_, k) => k / 2); // 0, 0.5, ... 50
 const close = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} != ${b}`);
+const TIERS = POWER_PLANT_POLICY.grid.tiers.map((t) => t.minKv);
 
 describe("percentileFor", () => {
   test("interpolates between cut-offs and clamps outside them", () => {
@@ -22,21 +24,23 @@ describe("percentileFor", () => {
   });
 
   test("a tied score gets the middle of its range, not the top or bottom", () => {
-    // 30 reference sites capped at 35: cut-offs 20..49 all equal 35.
-    const tied = LINEAR.map((v, k) => (k >= 20 && k <= 49 ? 35 : k < 20 ? v : 35 + (k - 49)));
-    close(percentileFor(35, tied), (20 + 49) / 2);
-    assert.ok(percentileFor(34.9, tied) < 20);
-    assert.ok(percentileFor(35.1, tied) > 49);
+    // 30 reference sites tied at a neutral 50: cut-offs 20..49 all equal 50.
+    const tied = LINEAR.map((v, k) => (k >= 20 && k <= 49 ? 50 : k < 20 ? v : 50 + (k - 49)));
+    close(percentileFor(50, tied), (20 + 49) / 2);
+    assert.ok(percentileFor(49.9, tied) < 20);
+    assert.ok(percentileFor(50.1, tied) > 49);
   });
 
-  test("never falls as the raw grade rises", () => {
-    for (const cut of table.cutoffs) {
-      let prev = -Infinity;
-      for (let raw = 0; raw <= 100; raw += 0.25) {
-        const p = percentileFor(raw, cut);
-        assert.ok(p >= 0 && p <= 100, `p ${p}`);
-        assert.ok(p >= prev - 1e-9, `raw ${raw}: ${p} < ${prev}`);
-        prev = p;
+  test("never falls as the raw score rises", () => {
+    for (const byTier of Object.values(table.technologies)) {
+      for (const { cutoffs: cut } of Object.values(byTier)) {
+        let prev = -Infinity;
+        for (let raw = 0; raw <= 100; raw += 0.25) {
+          const p = percentileFor(raw, cut);
+          assert.ok(p >= 0 && p <= 100, `p ${p}`);
+          assert.ok(p >= prev - 1e-9, `raw ${raw}: ${p} < ${prev}`);
+          prev = p;
+        }
       }
     }
   });
@@ -48,17 +52,16 @@ describe("percentileFor", () => {
 });
 
 describe("percentileAt and display", () => {
-  const t = { loads_mw: [50, 200], cutoffs: [LINEAR, LINEAR.map((v) => v / 2)] };
+  const t = { technologies: { solar_pv: { 115: { count: 10, cutoffs: LINEAR } } } };
 
-  test("uses the tabulated load exactly and clamps outside the range", () => {
-    close(percentileAt(25, 50, t), 50);
-    close(percentileAt(25, 200, t), 100);
-    close(percentileAt(25, 10, t), 50);
-    close(percentileAt(25, 5000, t), 100);
+  test("ranks within the technology and voltage tier", () => {
+    close(percentileAt(25, "solar_pv", 115, t), 50);
   });
 
-  test("interpolates between loads on a log scale", () => {
-    close(percentileAt(20, 100, t), 40 + 0.5 * (80 - 40)); // 100 MW is halfway from 50 to 200 in log terms
+  test("an untabulated technology or tier has no percentile", () => {
+    assert.ok(Number.isNaN(percentileAt(25, "solar_pv", 220, t)));
+    assert.ok(Number.isNaN(percentileAt(25, "fusion", 115, t)));
+    assert.equal(cutoffsFor("solar_pv", 69, t), null);
   });
 
   test("shows the percentile to the nearest tenth, from 0.1 to 99.9", () => {
@@ -71,33 +74,30 @@ describe("percentileAt and display", () => {
 });
 
 describe("the shipped cut-off table", () => {
-  test("101 ascending cut-offs per ascending load, from enough plausible sites", () => {
-    assert.ok(table.count >= 1000, `count ${table.count}`);
-    assert.ok(table.count <= table.cells_scored);
-    assert.ok(table.loads_mw.includes(100));
-    assert.equal(table.cutoffs.length, table.loads_mw.length);
-    table.loads_mw.forEach((l, i) => i && assert.ok(l > table.loads_mw[i - 1]));
-    for (const cut of table.cutoffs) {
-      assert.equal(cut.length, 101);
-      cut.forEach((v, k) => {
-        assert.ok(v >= 0 && v <= 100);
-        if (k) assert.ok(v >= cut[k - 1]);
-      });
-    }
-    assert.match(table.reference, /220 kV\+ line/);
-    assert.match(table.reference, /utility service territory/);
+  test("matches the scoring policy version", () => {
+    assert.equal(table.policy_version, POWER_PLANT_POLICY.version);
   });
 
-  test("a larger load never makes the same raw grade rank lower", () => {
-    // The capacity term needs 5 x the load, so at a bigger load the reference grades fall.
-    for (const raw of [30, 45, 60, 75]) {
-      let prev = -Infinity;
-      for (const load of table.loads_mw) {
-        const p = percentileAt(raw, load, table);
-        assert.ok(p >= prev - 1e-9, `raw ${raw} at ${load} MW`);
-        prev = p;
+  test("101 ascending cut-offs for every technology and tier, from enough plausible sites", () => {
+    for (const tech of POLICY_TECHNOLOGIES) {
+      for (const kv of TIERS) {
+        const c = cutoffsFor(tech, kv, table);
+        assert.ok(c, `${tech} ${kv} kV`);
+        assert.ok(c.count >= 1000 && c.count <= table.cells_scored, `count ${c.count}`);
+        assert.equal(c.cutoffs.length, 101);
+        c.cutoffs.forEach((v, k) => {
+          assert.ok(v >= 0 && v <= 100);
+          if (k) assert.ok(v >= c.cutoffs[k - 1]);
+        });
       }
     }
+    assert.match(table.reference, /utility service territory/);
+    assert.match(table.reference, /voltage-search threshold/);
+  });
+
+  test("a technology without a supported resource method doesn't spread on R", () => {
+    // Geothermal, hydro and nuclear have R = E = 50 everywhere, so they rank on G, C and I alone.
+    for (const kv of TIERS) assert.deepEqual(cutoffsFor("geothermal", kv, table).cutoffs, cutoffsFor("nuclear", kv, table).cutoffs);
   });
 });
 

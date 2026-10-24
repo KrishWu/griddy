@@ -21,7 +21,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, TypeVar
 
 from app.contract import EvaluationResult, Finding, LngLat, MapOverlay, Provenance, Scenario, SimulationResult, SiteIntel
-from app.site_intel import air, carbon, imagery, land, ml
+from app.site_intel import air, carbon, grid_tiers, imagery, land, ml
 from app.site_intel.config import BUFFER_KM, key_center, site_key
 from app.site_intel.earthengine import status as ee_status
 from app.site_intel.geo import circle_feature
@@ -117,7 +117,7 @@ def _site_intel(loc: LngLat) -> SiteIntel:
     else:
         findings.append(_finding("air_quality_unavailable", "info", "Air quality unavailable", "AirNow data could not be loaded for this site."))
 
-    # Model signals for the GriddyGrade (queue congestion, clean-build similarity, demand pressure).
+    # Model signals for the GriddyGrade (siting similarity per technology, cell resource, county queue).
     try:
         extras["ml"] = ml.ml_context(loc)
     except Exception:  # noqa: BLE001 - the grade treats missing model signals as missing
@@ -125,6 +125,12 @@ def _site_intel(loc: LngLat) -> SiteIntel:
         extras["ml"] = {"available": False, "reason": "model signals failed to load"}
     findings += ml.ml_findings(extras["ml"])
     provenance += ml.ml_provenance(extras["ml"])
+    # Nearest qualifying substation and line per voltage threshold (the grade's size-based search).
+    try:
+        extras["grid_tiers"] = grid_tiers.grid_tiers(loc)
+    except Exception:  # noqa: BLE001 - the grade treats missing tiers as missing, never as 0 km
+        log.exception("site_intel: grid tiers failed")
+        extras["grid_tiers"] = {"available": False, "reason": "grid search failed"}
 
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 9))
     return SiteIntel(

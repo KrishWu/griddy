@@ -1,107 +1,177 @@
-// Data center site feasibility: a preliminary 0-100 screening score for the selected site.
-// OWNER: workstream E (Site Intelligence).
+// Power plant site feasibility: a preliminary 0-100 screening score for a proposed generation
+// project (technology + nameplate MW) at the selected site.  OWNER: workstream E (Site Intelligence).
 //
 // Pure and deterministic: no React, no fetching and only `import type`, so Node runs this file
-// as-is in the tests (feasibility.test.mjs). feasibilityInput.ts builds the input from A's site
-// summary and E's site intel; the app shows the result as the GriddyGrade (GriddyGradeCard.tsx,
-// with GriddyGradeDetails.tsx when expanded), led by its percentile among plausible California
-// sites (percentile.ts, cut-offs in gradePercentiles.json).
+// as-is in the tests (feasibility.test.mjs). Layers: feasibilityInput.ts adapts A's site summary
+// and E's site intel into SiteData; feasibilityPolicy.ts holds the versioned numbers; this file
+// is the math; GriddyGradeCard.tsx / GriddyGradeDetails.tsx render it as the GriddyGrade, led by
+// its percentile among plausible California sites (percentile.ts, gradePercentiles.json).
 //
-//   GriddyGrade = 0.36 G + 0.25 P + 0.17 C + 0.17 A + 0.05 I      (each component 0-100)
+//   S = 0.30 G + 0.30 R + 0.20 E + 0.15 C + 0.05 I          (each component 0-100)
 //
-// capped at 35 when both the nearest 220 kV+ substation and line are more than 20 km away (a
-// must-have that high community and air scores must not offset). Land is not scored. G and P
-// also use model signals from E's site intel (extras.ml): the county's interconnection queue
-// (a congestion penalty on G, up to 25% off) and how much nearby land looks like where clean
-// plants were built (30% of P). Those are supplementary: without them the penalty doesn't apply,
-// the other metrics keep their original proportions, and data completeness is unchanged. The weights and thresholds are initial product heuristics, not
-// validated predictions of interconnection approval, cost or permitting. Missing data is never
-// read as 0 km, 0 people or 0 MW: a metric without data drops out of its component (the others
-// are reweighted), and a component with no data at all scores a neutral 50 and lowers data
-// completeness.
+// G grid interconnection proximity, R technology-specific resource and operating prerequisites,
+// E environmental and permitting screening, C community exposure proxy, I administrative context.
+// The overall weights never move: a component with no data scores a neutral 50 and lowers data
+// completeness; inside a component, missing metrics drop out and the rest are reweighted. Missing
+// data never becomes 0 km, 0 people, attainment or favorable resource evidence. Land suitability is
+// excluded from both the score and data completeness. Critical constraints are assessed apart from
+// the score, so a high weighted score can't average them away.
+import type {
+  ComponentKey,
+  CoolingConfig,
+  GenerationTechnology,
+  InputMethod,
+  ResourceInputKey,
+  ScoringPolicy,
+  SourceState,
+  SubmetricSpec,
+  TechnologySpec,
+  VoltageTier,
+} from "./feasibilityPolicy";
 
-export type ComponentKey = "grid" | "generation" | "community" | "air" | "infrastructure";
 export type ComponentStatus = "observed" | "partial" | "unavailable";
 export type CompletenessLabel = "High" | "Moderate" | "Low";
+export type ConstraintAssessment = "identified" | "none_identified_in_available_data" | "not_assessed";
 
-export const COMPONENT_KEYS: ComponentKey[] = ["grid", "generation", "community", "air", "infrastructure"];
-
-// I barely varies among sites in a utility territory, so its share went to G and P.
-export const WEIGHTS: Record<ComponentKey, number> = {
-  grid: 0.36,
-  generation: 0.25,
-  community: 0.17,
-  air: 0.17,
-  infrastructure: 0.05,
-};
+export const COMPONENT_KEYS: ComponentKey[] = ["grid", "resource", "environment", "community", "administrative"];
 
 export const COMPONENT_LABEL: Record<ComponentKey, string> = {
-  grid: "Grid connection and queue",
-  generation: "Nearby and buildable generation",
-  community: "Community impact",
-  air: "Air quality and permitting",
-  infrastructure: "Local infrastructure support",
+  grid: "Grid interconnection proximity",
+  resource: "Resource and operating prerequisites",
+  environment: "Environmental and permitting screening",
+  community: "Community exposure proxy",
+  administrative: "Administrative and infrastructure context",
 };
 
-const SYMBOL: Record<ComponentKey, string> = { grid: "G", generation: "P", community: "C", air: "A", infrastructure: "I" };
-/** "0.36 G + 0.25 P + ...", built from WEIGHTS so the displayed formula always matches the math. */
-export const FORMULA = COMPONENT_KEYS.map((k) => `${WEIGHTS[k].toFixed(2)} ${SYMBOL[k]}`).join(" + ");
+const SYMBOL: Record<ComponentKey, string> = { grid: "G", resource: "R", environment: "E", community: "C", administrative: "I" };
 
-export const DEFAULT_LOAD_MW = 100; // product assumption for an average data center, not a typical value
-export const NEUTRAL_SCORE = 50;
-export const HV_KV = 220; // Griddy's 220 kV+ class (230 kV incl. SCE's 220 kV system), as in explore/service.py
-export const GRID_ZERO_KM = 20; // D(d) reaches 0 here
-export const GRID_REACH_KM = GRID_ZERO_KM; // both 220 kV+ assets beyond this: the grade is capped
-export const MUST_HAVE_CAP = 35;
-export const QUEUE_REF_MW = 100; // Q(q) is logarithmic in q / 100 MW
-export const QUEUE_ZERO_MW = 30_000; // Q reaches 0 here (Kern, the largest county queue, has ~29 GW)
-export const QUEUE_HIGH_MW = 10_000; // flagged as congested (the backend adds a needs_utility_study finding)
-export const QUEUE_MAX_PENALTY = 0.25; // the most a full queue takes off G
-export const GENERATION_RADIUS_KM = 25;
-export const GENERATION_LOAD_MULTIPLE = 5; // full capacity marks at 5 x the load in nearby nameplate
-export const CLEAN_BUILD_RADIUS_KM = 25;
-export const ML_MAX_CELL_KM = 5; // model signals from a 5 km cell farther than this don't describe the site
-export const POPULATION_RADIUS_KM = 10;
-export const POPULATION_SCALE = 500_000; // C reaches 0 at 500,000 people
-export const LOWER_CARBON_FUELS = ["solar", "wind", "hydro", "geothermal"];
-const STORAGE_FUELS = ["battery"]; // storage, not primary generation
-export const ATTAINMENT_SCORE = 100;
-/** Score per EPA classification (first word, so "Severe 15" and "Marginal (Rural Transport)" match). */
-export const NONATTAINMENT_SCORE = new Map<string, number>([
-  ["marginal", 70],
-  ["moderate", 50],
-  ["serious", 30],
-  ["severe", 10],
-  ["extreme", 10],
-]);
-export const IDENTIFIED_SCORE = 100;
-export const NOT_IDENTIFIED_SCORE = 20; // both 100 -> 100, one -> 60, neither -> 20
-export const CATEGORIES: { min: number; label: string }[] = [
-  { min: 80, label: "Favorable preliminary screening" },
-  { min: 60, label: "Moderately favorable" },
-  { min: 40, label: "Mixed constraints" },
-  { min: 20, label: "Challenging" },
-  { min: 0, label: "Highly constrained" },
+/** "0.30 G + 0.30 R + ...", built from the policy so the displayed formula always matches the math. */
+export function formulaFor(policy: ScoringPolicy): string {
+  return COMPONENT_KEYS.map((k) => `${policy.weights[k].toFixed(2)} ${SYMBOL[k]}`).join(" + ");
+}
+
+export const LAND_DISCLOSURE =
+  "Land suitability is not assessed and is excluded from this score. Parcel availability, ownership, zoning, usable area, terrain, and site-specific constructability require separate investigation.";
+export const LAND_NOT_CLEARED = "Removing land from the score does not establish that land conditions are acceptable.";
+export const COMPLETENESS_SCOPE =
+  "Data completeness measures coverage of the five scored components only. It does not include land suitability or indicate that development due diligence is complete.";
+export const CRITICAL_HEADLINE = "Critical constraint identified — the weighted score does not override this finding.";
+export const NOT_FULLY_ASSESSED = "Critical constraints not fully assessed.";
+export const LIMITED_EVIDENCE = "Limited evidence — score relies on missing-data assumptions.";
+export const GRID_NOT_VERIFIED = "Actual grid export capacity has not been verified.";
+export const PRELIMINARY =
+  "Preliminary screening heuristic. Results reflect available data and stated assumptions—not verified construction feasibility, interconnection capability, permitting eligibility, or economic viability. Land suitability is not assessed.";
+export const NOT_A_SUBSTITUTE = [
+  "interconnection and transmission studies",
+  "resource measurement campaigns",
+  "reservoir and hydrologic investigations",
+  "fuel and water agreements",
+  "parcel, title, zoning, terrain and geotechnical review",
+  "environmental and cultural-resource surveys",
+  "engineering design",
+  "permitting advice",
+  "community and Tribal engagement",
+  "financial feasibility and revenue modeling",
 ];
 
 // ---------------------------------------------------------------------------
-// Input: null always means "not available", never zero
+// Project scenario
 // ---------------------------------------------------------------------------
 
-export interface AssetRef {
+export interface ProjectScenario {
+  technology: GenerationTechnology;
+  /** Proposed nameplate capacity of the generation, MW (finite, > 0). */
+  capacityMw: number;
+  /** Thermal technologies only. "dry" removes the cooling-water prerequisite, not all water demand. */
+  cooling?: CoolingConfig;
+  /** Co-located storage, MW: shown separately, never counted as generation and never scored. */
+  storageMw?: number | null;
+}
+
+/** Unvalidated project settings, e.g. straight from form fields. */
+export interface ProjectInput {
+  technology?: unknown;
+  capacityMw?: unknown;
+  cooling?: unknown;
+  storageMw?: unknown;
+}
+
+export type ProjectValidation = { ok: true; project: ProjectScenario } | { ok: false; errors: string[] };
+
+const COOLING: CoolingConfig[] = ["not_specified", "wet", "dry"];
+const STORAGE_ONLY = ["battery", "storage", "battery_storage"];
+
+/** Checks a project configuration. Invalid settings are reported, never replaced by a default. */
+export function validateProject(input: ProjectInput, policy: ScoringPolicy): ProjectValidation {
+  const errors: string[] = [];
+  const tech = typeof input.technology === "string" ? input.technology : "";
+  const spec = Object.hasOwn(policy.technologies, tech) ? policy.technologies[tech as GenerationTechnology] : null;
+  if (!spec) {
+    errors.push(
+      STORAGE_ONLY.includes(tech)
+        ? "Battery storage is not primary generation, so a storage-only project is not scored by this model."
+        : `Choose a generation technology (${Object.values(policy.technologies)
+            .map((t) => t.label)
+            .join(", ")}).`,
+    );
+  }
+  const mw = input.capacityMw;
+  if (typeof mw !== "number" || !Number.isFinite(mw) || mw <= 0) errors.push("Proposed nameplate capacity must be a finite number of MW greater than 0.");
+  const cooling = input.cooling ?? "not_specified";
+  if (!COOLING.includes(cooling as CoolingConfig)) errors.push("Cooling must be not specified, wet or dry.");
+  const storage = input.storageMw ?? null;
+  if (storage !== null && (typeof storage !== "number" || !Number.isFinite(storage) || storage < 0)) errors.push("Co-located storage must be 0 MW or more, or left empty.");
+  if (errors.length || !spec) return { ok: false, errors };
+  return {
+    ok: true,
+    project: { technology: tech as GenerationTechnology, capacityMw: mw as number, cooling: spec.thermal ? (cooling as CoolingConfig) : "not_specified", storageMw: storage as number | null },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Site data: every input carries how its dataset answered (null never means zero)
+// ---------------------------------------------------------------------------
+
+export interface Observation<T> {
+  state: SourceState;
+  value: T | null;
+  /** Why it is missing, or a short coverage note. */
+  reason?: string;
+}
+
+export interface GridAsset {
   name: string | null;
   voltageKv: number | null;
   distanceKm: number | null;
+  /** Operating status established (a CEC "Operational" line; a substation OSM maps as existing). */
+  operatingEstablished: boolean;
+  /** A substation with no voltage tag lies closer, km: it can't qualify, but say so. */
+  closerUntaggedKm?: number | null;
 }
 
-export interface GenerationInput {
-  plantCount: number | null;
-  /** Operating nameplate MW within 25 km by fuel, split per generator (hybrids counted once). null: no breakdown. */
-  byFuelMw: Record<string, number> | null;
-  /** Total nameplate MW within 25 km, all fuels incl. storage. Used only when byFuelMw is null. */
-  totalMw: number | null;
-  /** True when the totals come from a capped plant list, not the full 25 km aggregate. */
-  incomplete?: boolean;
+export interface GridAssetObservation extends Observation<GridAsset> {
+  /** For confirmed_absent: the radius the search covered, km. */
+  searchedKm?: number;
+}
+
+export interface GridTierInput {
+  substation: GridAssetObservation;
+  line: GridAssetObservation;
+}
+
+export interface ResourceObservation {
+  state: SourceState;
+  /** A number for continuous metrics, the source's label for a classification. */
+  value: number | string | null;
+  unit: string;
+  heightM?: number;
+  /** Spatial resolution of the source grid, km. */
+  gridKm?: number;
+  period?: string;
+  kind: "observed" | "inferred" | "simulated";
+  source: string;
+  detail?: string;
+  reason?: string;
 }
 
 export interface Designation {
@@ -117,76 +187,56 @@ export interface AqiContext {
   pollutant: string | null;
 }
 
-/** A territory lookup: found by name, looked and found none, or could not look (data missing). */
-export type Lookup = { status: "identified"; name: string } | { status: "none" } | { status: "unknown" };
-
-export type CleanKind = "solar_pv" | "onshore_wind" | "battery";
-export const CLEAN_KIND_LABEL: Record<CleanKind, string> = { solar_pv: "solar", onshore_wind: "wind", battery: "battery" };
-
-/** A's demand forecast for the site's region (P50: the P10-P90 band is too narrow to lean on). */
-export interface DemandSignal {
-  forecastId: string;
-  scenario: string;
-  year: number;
-  baseYear: number;
-  regionName: string;
-  basePeakP50Mw: number;
-  peakP50Mw: number;
-  mapeP50Pct: number | null;
-  /** Share of test hours inside the P10-P90 band (the runbook asks for 0.6-0.95). */
-  coverage: number | null;
+/** An existing, documented environmental screening method for E_other (Griddy has none yet). */
+export interface EnvironmentalScreen {
+  score: number;
+  method: string;
+  source: string;
+  technologies: GenerationTechnology[] | "all";
 }
 
-/** Model signals for the site's nearest 5 km cell (E's site intel extras.ml). */
-export interface MlSignals {
-  /** B's site-location artifact and its spatial-CV ROC-AUC per technology. */
-  artifactId: string;
-  rocAuc: Partial<Record<CleanKind, number>>;
-  /** Site to the center of the cell the signals describe. */
-  cellKm: number;
+export interface QueueContext {
   county: string | null;
-  /** Active interconnection requests in the county, MW (LBNL Queued Up). null: not available. */
-  queueMw: number | null;
-  /** Best suitability (0-1) among cells within 25 km per technology; null: not available. */
-  cleanBuild: Record<CleanKind, number | null> | null;
-  demand: DemandSignal | null;
+  activeMw: number | null;
+  activeProjects: number | null;
+  asOf: string | null;
 }
 
-export interface FeasibilityInput {
-  /** Nearest 220 kV+ substation; null when unknown. */
-  substation: AssetRef | null;
-  /** Nearest operational AC 220 kV+ transmission line; null when unknown. */
-  line: AssetRef | null;
-  /** null: plant data unavailable (not "no plants"). */
-  generation: GenerationInput | null;
-  /** Estimated population within 10 km; null when unknown. */
-  population: number | null;
-  /** EPA nonattainment designations at the site: [] = none listed, null = designation data unavailable. */
-  designations: Designation[] | null;
+export interface SiteData {
+  location: { lon: number; lat: number } | null;
+  /** Inside California data coverage: true, false (confirmed outside) or null (unknown). */
+  inCoverage: boolean | null;
+  /** Nearest qualifying assets per voltage threshold (kV). */
+  grid: Partial<Record<number, GridTierInput>>;
+  /** Technology-independent resource and prerequisite inputs. Absent: Griddy does not expose it. */
+  resource: Partial<Record<ResourceInputKey, ResourceObservation>>;
+  /** Siting similarity by model kind (solar_pv, onshore_wind, gas_cc, battery). */
+  sitingSimilarity: Partial<Record<string, ResourceObservation>>;
+  /** Estimated population within the policy radius (10 km). */
+  population: Observation<number>;
+  /** EPA nonattainment designations at the site; [] within coverage = none listed. */
+  designations: Observation<Designation[]>;
+  environmentalScreen: Observation<EnvironmentalScreen>;
   /** Current AQI: context only, never scored. */
   aqi: AqiContext | null;
-  utility: Lookup;
-  balancingAuthority: Lookup;
-  /** True only when the site is confirmed outside the supported (California) coverage. */
-  outsideCoverage: boolean;
-  /** Why a component's inputs are missing, e.g. "outside California data coverage". */
-  reasons?: Partial<Record<ComponentKey, string>>;
-  /** Model signals; null or absent: not available (the grade then uses the rules alone). */
-  ml?: MlSignals | null;
-  /** Why the model signals are missing. */
-  mlReason?: string;
+  utility: Observation<string>;
+  balancingAuthority: Observation<string>;
+  /** Share (0-1) of the 2 km screening buffer overlapping a protected area. */
+  protectedShare: Observation<number>;
+  /** County interconnection queue (context only). */
+  queue: Observation<QueueContext>;
+  /** Operating nameplate MW within 25 km by fuel (context only, never resource evidence). */
+  nearbyFuelMw: Observation<Record<string, number>>;
 }
 
 // ---------------------------------------------------------------------------
 // Result
 // ---------------------------------------------------------------------------
 
-/** Where a metric's number comes from, when it isn't one of A's or E's rule inputs. */
 export interface MetricSource {
-  kind: "observed" | "inferred";
+  kind: "observed" | "inferred" | "simulated" | "assumption";
   /** Short label shown beside the metric, e.g. "inferred (ML)". */
   tag: string;
-  /** Artifact id, accuracy and caveats. */
   detail: string;
 }
 
@@ -200,10 +250,8 @@ export interface MetricResult {
   state: "observed" | "missing" | "not_applicable";
   score: number | null;
   value: string;
-  /** Supplementary (model signals): when missing it drops out without making the component partial. */
-  optional?: boolean;
-  /** Multiplies instead of averaging: weight is the most it can take off (at score 0); effectiveWeight what it took. */
-  penalty?: boolean;
+  /** The method that produced the score (or that would have). */
+  method?: string;
   source?: MetricSource;
 }
 
@@ -216,21 +264,56 @@ export interface ComponentResult {
   key: ComponentKey;
   label: string;
   weight: number;
-  /** 0-100; NEUTRAL_SCORE when unavailable. */
+  /** 0-100; the policy's neutral score when unavailable. */
   score: number;
   status: ComponentStatus;
   /** score x weight, in overall score points. */
   weightedContribution: number;
+  /** The selected scoring method, in words. */
+  method: string;
   metrics: MetricResult[];
-  /** Observed inputs shown for context that do not change the score. */
+  /** Inputs shown for context that do not change the score. */
   context: Fact[];
   missingFields: string[];
+  assumptions: string[];
   explanation: string;
-  method: string;
   notes: string[];
+  /** Names of the datasets and models behind it. */
+  sources: string[];
 }
 
-export type ConsiderationGroup = "infrastructure" | "community" | "data";
+export type FindingBasis = "documented_prohibition" | "screening_concern";
+
+export interface ConstraintFinding {
+  checkId: string;
+  type: string;
+  title: string;
+  evidence: string;
+  source: string;
+  url?: string;
+  date?: string;
+  technologies: GenerationTechnology[] | "all";
+  basis: FindingBasis;
+}
+
+export interface ConstraintCheckResult {
+  id: string;
+  label: string;
+  tier: "critical" | "screening";
+  status: ConstraintAssessment;
+  detail: string;
+}
+
+export interface ConstraintsResult {
+  assessment: ConstraintAssessment;
+  /** What to say about the assessment; never "no constraints". */
+  summary: string;
+  checks: ConstraintCheckResult[];
+  critical: ConstraintFinding[];
+  screening: ConstraintFinding[];
+}
+
+export type ConsiderationGroup = "grid" | "resource" | "environment" | "community" | "constraints" | "data";
 export type ConsiderationTone = "advantage" | "neutral" | "tradeoff" | "constraint" | "missing" | "caveat";
 
 export interface Consideration {
@@ -239,38 +322,58 @@ export interface Consideration {
   text: string;
 }
 
-export interface GradeCap {
-  limit: number;
-  reason: string;
+export interface Notice {
+  tone: "constraint" | "warning" | "info";
+  text: string;
+}
+
+export interface Exclusion {
+  id: string;
+  label: string;
+  text: string;
 }
 
 export interface FeasibilityResult {
-  /** Rounded to the nearest tenth for display. */
-  overallScore: number;
-  /** Clamped to 0-100 and capped, unrounded. */
+  valid: true;
+  policyVersion: string;
+  project: ProjectScenario;
+  technologyLabel: string;
+  /** The label as it reads mid-sentence ("solar PV", "onshore wind"). */
+  technologyNoun: string;
+  /** The voltage search tier for the project size. */
+  voltageTier: VoltageTier;
+  /** Clamped to 0-100, unrounded. */
   overallScoreRaw: number;
-  /** Sum of the weighted contributions before the cap. */
+  /** The displayed score: overallScoreRaw rounded to the nearest integer. */
+  overallScore: number;
+  /** Sum of the weighted contributions (equals overallScoreRaw: every component is 0-100). */
   pointsTotal: number;
-  /** Set when a missing must-have capped the grade below pointsTotal. */
-  cap: GradeCap | null;
+  /** From the displayed integer score. */
   category: string;
-  targetLoadMw: number;
-  /** 100 x the weight of fully observed components. Data completeness, not a probability of success. */
+  /** The category, unless a critical constraint replaces it. */
+  headline: string;
+  /** 100 x the weight of fully observed components, unrounded. Not a probability of success. */
   dataCompletenessPercent: number;
-  /** 100 x the weight of partially observed components. */
-  partialPercent: number;
   completenessLabel: CompletenessLabel;
   components: ComponentResult[];
   componentScores: Record<ComponentKey, number>;
   weightedContributions: Record<ComponentKey, number>;
   componentStatuses: Record<ComponentKey, ComponentStatus>;
   missingFields: string[];
+  constraints: ConstraintsResult;
   considerations: Consideration[];
-  /** Constraints a high overall score must not hide. */
-  seriousConstraints: string[];
-  /** Shown beside the score whenever data completeness is not High. */
-  qualification: string | null;
+  /** Headline-level flags, most serious first. */
+  notices: Notice[];
   explanatoryNotes: string[];
+  exclusions: Exclusion[];
+  /** Some input is still loading: the score may change. */
+  provisional: boolean;
+}
+
+export interface InvalidProjectResult {
+  valid: false;
+  policyVersion: string;
+  errors: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -284,604 +387,747 @@ export function validNonNegative(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-const validPositive = (v: unknown): number | null => {
-  const n = validNonNegative(v);
-  return n !== null && n > 0 ? n : null;
-};
-
 const en = (v: number) => v.toLocaleString("en-US");
 const fmtKm = (v: number) => (v < 10 ? `${v.toFixed(1)} km` : `${en(Math.round(v))} km`);
-const fmtMw = (v: number) => (v >= 100 ? `${en(Math.round(v))} MW` : v >= 10 ? `${v.toFixed(0)} MW` : `${v.toFixed(1)} MW`);
+export const fmtMw = (v: number) => (v >= 100 ? `${en(Math.round(v))} MW` : v >= 10 ? `${v.toFixed(0)} MW` : `${Number(v.toFixed(1))} MW`);
 const fmtKv = (v: number | null) => (v !== null && v > 0 ? `${Math.round(v)} kV` : "voltage not tagged");
 const fmtPeople = (n: number) => en(n >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 const fmtPct = (share: number) => `${Math.round(share * 100)}%`;
 const fmtScore = (v: number) => String(Math.round(v));
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const prettyUnit = (u: string) => u.replace("m2", "m²");
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 const withReason = (what: string, reason: string | undefined) => (reason ? `${what} (${reason})` : what);
+const listText = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
-/** D(d) = 100 x max(0, 1 - d / 20), d = straight-line km. */
-export function distanceScore(km: number): number {
-  return 100 * Math.max(0, 1 - km / GRID_ZERO_KM);
+/** Why an observation has no usable value, in words, by its state. */
+function stateReason(o: { state: SourceState; reason?: string } | undefined, fallback = "data unavailable"): string {
+  if (!o) return fallback;
+  if (o.reason) return o.reason;
+  switch (o.state) {
+    case "loading":
+      return "still loading";
+    case "error":
+      return "lookup failed";
+    case "outside_coverage":
+      return "outside California data coverage";
+    case "confirmed_absent":
+      return "none found";
+    case "unavailable":
+      return fallback;
+    default:
+      return "no value";
+  }
 }
 
-/** Q(q) = 100 x max(0, 1 - ln(1 + q / 100) / ln(1 + 30,000 / 100)), q = county queue MW. Never rises with q. */
-export function queueScore(mw: number): number {
-  return clamp(100 * Math.max(0, 1 - Math.log1p(mw / QUEUE_REF_MW) / Math.log1p(QUEUE_ZERO_MW / QUEUE_REF_MW)));
+/** D(d) = 100 x max(0, 1 - d / zeroKm), d = straight-line km. */
+export function distanceScore(km: number, zeroKm: number): number {
+  return 100 * Math.max(0, 1 - km / zeroKm);
 }
 
-/** B = 100 x (0.75 max(solar, wind) + 0.25 battery), each the best suitability within 25 km; a missing part drops out. */
-export function cleanBuildScore(best: Record<CleanKind, number | null>): number | null {
-  const gen = [best.solar_pv, best.onshore_wind].map(validNonNegative).filter((v): v is number => v !== null);
-  const parts: [number, number][] = [];
-  if (gen.length) parts.push([0.75, Math.min(1, Math.max(...gen))]);
-  const battery = validNonNegative(best.battery);
-  if (battery !== null) parts.push([0.25, Math.min(1, battery)]);
-  if (!parts.length) return null;
-  const w = parts.reduce((a, [wt]) => a + wt, 0);
-  return (100 * parts.reduce((a, [wt, v]) => a + wt * v, 0)) / w;
+/** C = 100 x max(0, 1 - ln(1 + N) / ln(scale + 1)). */
+export function communityScore(population: number, scale: number): number {
+  return clamp(100 * Math.max(0, 1 - Math.log1p(population) / Math.log1p(scale)));
 }
 
-/** (2035 P50 regional peak growth + this site's load) / base P50 peak: context only, never scored. */
-export function demandPressure(d: DemandSignal, loadMw: number): number | null {
-  const base = validPositive(d.basePeakP50Mw);
-  const peak = validNonNegative(d.peakP50Mw);
-  return base === null || peak === null ? null : (peak - base + loadMw) / base;
-}
-
-/** C = 100 x max(0, 1 - ln(1 + N) / ln(500001)). */
-export function communityScore(population: number): number {
-  return clamp(100 * Math.max(0, 1 - Math.log1p(population) / Math.log1p(POPULATION_SCALE)));
-}
-
-/** Score for one EPA classification, or null when it isn't recognized. */
-export function designationScore(classification: string | null): number | null {
+/** Score for one EPA classification (first word, so "Severe 15" matches), or null when unrecognized. */
+export function designationScore(classification: string | null, policy: ScoringPolicy): number | null {
   const word = (classification ?? "").trim().toLowerCase().match(/^[a-z]+/)?.[0];
-  return word ? (NONATTAINMENT_SCORE.get(word) ?? null) : null;
+  return word && Object.hasOwn(policy.environment.designationScores, word) ? policy.environment.designationScores[word] : null;
 }
 
-export function categoryFor(score: number): string {
-  return (CATEGORIES.find((c) => score >= c.min) ?? CATEGORIES[CATEGORIES.length - 1]).label;
+export function categoryFor(displayScore: number, policy: ScoringPolicy): string {
+  const cats = policy.categories;
+  return (cats.find((c) => displayScore >= c.min) ?? cats[cats.length - 1]).label;
 }
 
-export function completenessLabelFor(percent: number): CompletenessLabel {
-  return percent >= 80 ? "High" : percent >= 50 ? "Moderate" : "Low";
+export function completenessLabelFor(percent: number, policy: ScoringPolicy): CompletenessLabel {
+  return percent >= policy.completeness.high ? "High" : percent >= policy.completeness.moderate ? "Moderate" : "Low";
+}
+
+/** The voltage search tier for a project size: the first tier whose maxMw covers it. */
+export function voltageTierFor(capacityMw: number, policy: ScoringPolicy): VoltageTier {
+  const tiers = policy.grid.tiers;
+  return tiers.find((t) => capacityMw <= t.maxMw) ?? tiers[tiers.length - 1];
+}
+
+export function tierLabel(tier: VoltageTier, policy: ScoringPolicy): string {
+  const i = policy.grid.tiers.indexOf(tier);
+  const lo = i > 0 ? policy.grid.tiers[i - 1].maxMw : 0;
+  const size = Number.isFinite(tier.maxMw) ? (lo > 0 ? `over ${lo} through ${tier.maxMw} MW` : `up to ${tier.maxMw} MW`) : `over ${lo} MW`;
+  return `≥ ${tier.minKv} kV for projects ${size}`;
+}
+
+/** Method 1 (continuous) or Method 2 (classification) for one input, or why it can't be scored. */
+export function scoreInput(m: InputMethod, obs: ResourceObservation): { score: number } | { reason: string } {
+  if (m.kind === "classification") {
+    const label = typeof obs.value === "string" ? obs.value.trim().toLowerCase() : null;
+    const s = label !== null && m.classes && Object.hasOwn(m.classes, label) ? m.classes[label] : undefined;
+    if (s === undefined || !Number.isFinite(s)) return { reason: `the classification "${String(obs.value)}" has no documented mapping, so it is not scored (and not treated as unsuitable)` };
+    return { score: clamp(s) };
+  }
+  const ref = m.reference;
+  if (!ref) return { reason: "no reference range is validated for it in this policy version" };
+  if (!Number.isFinite(ref.low) || !Number.isFinite(ref.high) || !(ref.high > ref.low)) return { reason: "the policy's reference bounds are invalid" };
+  const incompatible = [
+    obs.unit !== ref.unit ? `its unit (${prettyUnit(obs.unit)}) does not match the reference range's (${prettyUnit(ref.unit)})` : null,
+    ref.heightM !== undefined && obs.heightM !== ref.heightM ? `it is measured at ${obs.heightM !== undefined ? `${obs.heightM} m` : "an unstated height"}, the reference range at ${ref.heightM} m` : null,
+    ref.maxGridKm !== undefined && !(typeof obs.gridKm === "number" && obs.gridKm <= ref.maxGridKm)
+      ? `its ${obs.gridKm !== undefined ? `~${obs.gridKm} km` : "unstated"} grid is coarser than the ${ref.maxGridKm} km the reference range needs`
+      : null,
+  ].filter((r): r is string => r !== null);
+  if (incompatible.length) return { reason: listText(incompatible) };
+  const x = validNonNegative(obs.value);
+  if (x === null) return { reason: "its value is invalid (negative, NaN or infinite)" };
+  return { score: 100 * clamp((x - ref.low) / (ref.high - ref.low), 0, 1) };
+}
+
+function fmtObservation(o: ResourceObservation): string {
+  const v = typeof o.value === "number" ? (Math.abs(o.value) < 10 ? o.value.toFixed(2) : en(Math.round(o.value))) : String(o.value);
+  const basis = [o.heightM !== undefined ? `at ${o.heightM} m` : null, o.period ? `${o.period} mean` : null, o.gridKm !== undefined ? `~${o.gridKm} km grid` : null].filter(Boolean);
+  return `${v} ${prettyUnit(o.unit)}${basis.length ? ` (${basis.join(", ")})` : ""}`;
 }
 
 function metric(id: string, label: string, weight: number, score: number | null, value: string, state?: MetricResult["state"]): MetricResult {
   return { id, label, weight, effectiveWeight: 0, state: state ?? (score === null ? "missing" : "observed"), score: score === null ? null : clamp(score), value };
 }
 
-const ML_TAG = "inferred (ML)";
-const fmtAuc = (ml: MlSignals, kinds: CleanKind[]) =>
-  kinds
-    .filter((k) => ml.rocAuc[k] !== undefined)
-    .map((k) => `${CLEAN_KIND_LABEL[k]} ${(ml.rocAuc[k] as number).toFixed(2)}`)
-    .join(", ");
-
-function queueMetric(ml: MlSignals | null, weight: number, missingFields: string[], mlReason?: string): MetricResult {
-  const q = validNonNegative(ml?.queueMw);
-  if (!ml || q === null) {
-    missingFields.push(withReason("County interconnection queue (model signal)", ml ? "not in the site artifact" : mlReason));
-    return { ...metric("queue", "Interconnection queue congestion", weight, null, "Not available"), optional: true, penalty: true };
-  }
-  return {
-    ...metric("queue", "Interconnection queue congestion", weight, queueScore(q), `${fmtMw(q)} of active requests in ${ml.county ? `${ml.county} County` : "the county"}`),
-    optional: true,
-    penalty: true,
-    source: {
-      kind: "observed",
-      tag: "observed (LBNL)",
-      detail: `LBNL Queued Up county total, read from B's site artifact ${ml.artifactId}. A county-wide congestion signal, not the queue at a specific substation.`,
-    },
-  };
-}
-
-function cleanBuildMetric(ml: MlSignals | null, weight: number, missingFields: string[], mlReason?: string): MetricResult {
-  const label = `Clean-build similarity within ${CLEAN_BUILD_RADIUS_KM} km`;
-  const score = ml?.cleanBuild ? cleanBuildScore(ml.cleanBuild) : null;
-  if (!ml || !ml.cleanBuild || score === null) {
-    missingFields.push(withReason("Clean-build similarity (model signal)", ml ? "not in the site artifact" : mlReason));
-    return { ...metric("clean_build", label, weight, null, "Not available"), optional: true };
-  }
-  const best = ml.cleanBuild;
-  const value = (Object.keys(CLEAN_KIND_LABEL) as CleanKind[])
-    .filter((k) => validNonNegative(best[k]) !== null)
-    .map((k) => `${capitalize(CLEAN_KIND_LABEL[k])} ${(best[k] as number).toFixed(2)}`)
-    .join(" · ");
-  return {
-    ...metric("clean_build", label, weight, score, `${value} (best cell within ${CLEAN_BUILD_RADIUS_KM} km, 0-1)`),
-    optional: true,
-    source: {
-      kind: "inferred",
-      tag: ML_TAG,
-      detail: `B's site-location model ${ml.artifactId} (spatial-CV ROC-AUC ${fmtAuc(ml, ["solar_pv", "onshore_wind", "battery"])}). A similarity score: how much nearby land looks like where these plants were built, not a feasibility or permitting finding.`,
-    },
-  };
-}
-
-function pressureFact(ml: MlSignals | null, loadMw: number): Fact | null {
-  const d = ml?.demand;
-  const share = d ? demandPressure(d, loadMw) : null;
-  if (!d || share === null) return null;
-  const growth = d.peakP50Mw - d.basePeakP50Mw;
-  const acc = [d.mapeP50Pct !== null ? `P50 MAPE ${d.mapeP50Pct.toFixed(1)}%` : null, d.coverage !== null ? `P10-P90 band held ${fmtPct(d.coverage)} of test hours` : null].filter(Boolean).join("; ");
-  return {
-    label: `Regional demand pressure, ${d.year} (${ML_TAG}, context only)`,
-    value: `${fmtPct(share)} of the ${d.regionName} ${d.baseYear} peak: ${growth >= 0 ? "+" : "−"}${fmtMw(Math.abs(growth))} P50 growth + ${fmtMw(loadMw)} this site (forecast ${d.forecastId}, scenario '${d.scenario}'${acc ? `; ${acc}` : ""})`,
-  };
+/** Weighted mean of the observed metrics, weights renormalized; null when none is observed. */
+function renormalized(metrics: MetricResult[]): { mean: number | null; metrics: MetricResult[] } {
+  const scored = metrics.filter((m) => m.state === "observed" && m.score !== null);
+  const total = scored.reduce((a, m) => a + m.weight, 0);
+  const mean = total > 0 ? scored.reduce((a, m) => a + m.weight * (m.score as number), 0) / total : null;
+  return { mean, metrics: metrics.map((m) => ({ ...m, effectiveWeight: m.state === "observed" && m.score !== null && total > 0 ? m.weight / total : 0 })) };
 }
 
 interface Parts {
-  metrics: MetricResult[];
-  missingFields: string[];
-  explain: (score: number, status: ComponentStatus) => string;
+  score: number | null;
+  status: ComponentStatus;
   method: string;
-  notes: string[];
+  metrics: MetricResult[];
   context?: Fact[];
-  /** Force "partial" even when every metric has a value (e.g. totals from a capped list). */
-  partial?: boolean;
+  missingFields: string[];
+  assumptions: string[];
+  explanation: string;
+  notes: string[];
+  sources: string[];
 }
 
-/** Share of the component a penalty metric takes off: its weight at score 0, nothing at 100. */
-const penaltyShare = (m: MetricResult) => m.weight * (1 - (m.score as number) / 100);
-
-/**
- * Weighted mean of the metrics that have data, weights renormalized; neutral 50 when none do.
- * Penalty metrics then scale that mean down. Optional metrics (model signals) only supplement:
- * they never stand in for missing required ones.
- */
-function component(key: ComponentKey, p: Parts): ComponentResult {
-  const required = p.metrics.filter((m) => !m.optional);
-  const supplementOnly = required.length > 0 && required.every((m) => m.state === "missing");
-  const counts = (m: MetricResult) => m.state === "observed" && m.score !== null && !supplementOnly;
-  const scored = p.metrics.filter((m) => counts(m) && !m.penalty);
-  const total = scored.reduce((a, m) => a + m.weight, 0);
-  const mean = total > 0 ? scored.reduce((a, m) => a + m.weight * (m.score as number), 0) / total : null;
-  const raw = mean === null ? null : p.metrics.filter((m) => m.penalty && counts(m)).reduce((a, m) => a * (1 - penaltyShare(m)), mean);
-  const effective = (m: MetricResult) => (!counts(m) || mean === null ? 0 : m.penalty ? penaltyShare(m) : total > 0 ? m.weight / total : 0);
-  const metrics = p.metrics.map((m) => ({ ...m, effectiveWeight: effective(m) }));
-  const status: ComponentStatus = raw === null ? "unavailable" : p.partial || required.some((m) => m.state === "missing") ? "partial" : "observed";
-  const score = raw === null ? NEUTRAL_SCORE : clamp(raw);
+function component(key: ComponentKey, policy: ScoringPolicy, p: Parts): ComponentResult {
+  const score = p.score === null || p.status === "unavailable" ? policy.neutralScore : clamp(p.score);
+  const weight = policy.weights[key];
   return {
     key,
     label: COMPONENT_LABEL[key],
-    weight: WEIGHTS[key],
+    weight,
     score,
-    status,
-    weightedContribution: score * WEIGHTS[key],
-    metrics,
+    status: p.score === null ? "unavailable" : p.status,
+    weightedContribution: score * weight,
+    method: p.method,
+    metrics: p.metrics,
     context: p.context ?? [],
     missingFields: p.missingFields,
-    explanation: p.explain(score, status),
-    method: p.method,
+    assumptions: p.assumptions,
+    explanation: p.explanation,
     notes: p.notes,
+    sources: p.sources,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Components
+// G: grid interconnection proximity
 // ---------------------------------------------------------------------------
 
-/**
- * G = (0.60 D(substation km) + 0.40 D(line km)) x (1 - 0.25 (1 - Q / 100)), 220 kV+ assets only:
- * the county queue is a congestion penalty, so an empty queue can't lift a site far from the grid.
- */
-export function scoreGridProximity(
-  substation: AssetRef | null,
-  line: AssetRef | null,
-  reason?: string,
-  ml: MlSignals | null = null,
-  targetLoadMw: number = DEFAULT_LOAD_MW,
-  mlReason?: string,
-): ComponentResult {
+/** G = 0.60 D(substation km) + 0.40 D(line km), nearest qualifying assets at the project's voltage threshold. */
+export function scoreGrid(site: SiteData, project: ProjectScenario, policy: ScoringPolicy): ComponentResult {
+  const g = policy.grid;
+  const tier = voltageTierFor(project.capacityMw, policy);
+  const input = site.grid[tier.minKv];
   const missingFields: string[] = [];
-  const side = (id: string, what: string, weight: number, a: AssetRef | null): MetricResult => {
-    // Never substitute a lower-voltage asset: a known voltage under 220 kV does not qualify.
-    const qualifies = a !== null && (a.voltageKv === null || a.voltageKv >= HV_KV);
-    const km = qualifies ? validNonNegative(a?.distanceKm) : null;
-    if (km === null) {
-      missingFields.push(withReason(`Distance to the nearest ${what}`, a && !qualifies ? `only a ${fmtKv(a.voltageKv)} asset was found` : reason));
-      return metric(id, `Nearest ${what}`, weight, null, "Not available");
+  const context: Fact[] = [{ label: "Active voltage-search threshold", value: tierLabel(tier, policy) }];
+
+  const side = (id: "substation" | "line", weight: number): MetricResult => {
+    const what = id === "substation" ? `${tier.minKv} kV+ substation` : `${tier.minKv} kV+ operational AC line`;
+    const label = `Nearest qualifying ${what}`;
+    const miss = (reason: string) => {
+      missingFields.push(`Distance to the nearest ${what} (${reason})`);
+      return { ...metric(id, label, weight, null, "Not available"), method: "straight-line km to the nearest qualifying asset" };
+    };
+    if (site.inCoverage === false) return miss("outside California data coverage: out-of-state assets are not mapped");
+    const obs = input?.[id];
+    if (!obs) return miss(`no ${tier.minKv} kV search result`);
+    if (obs.state === "confirmed_absent") {
+      // Only a search that covered the whole scoring range, inside coverage, supports a 0.
+      if (site.inCoverage === true && (obs.searchedKm ?? 0) >= g.minAbsentSearchKm) {
+        const radius = Number.isFinite(obs.searchedKm) ? `within ${en(obs.searchedKm as number)} km` : "in the California layer";
+        return { ...metric(id, label, weight, 0, `None mapped ${radius} (scores 0; no nearest distance is invented)`), method: "confirmed absence over the scoring range" };
+      }
+      return miss(`none found, but the search did not cover ${g.minAbsentSearchKm} km inside known coverage`);
     }
-    const named = a?.name ? `${a.name}, ` : "";
-    return metric(id, `Nearest ${what}`, weight, distanceScore(km), `${fmtKm(km)} (${named}${fmtKv(a?.voltageKv ?? null)})`);
+    if (obs.state !== "available" || !obs.value) return miss(stateReason(obs));
+    const a = obs.value;
+    if (a.voltageKv === null) return miss("its voltage can't be established, so it does not qualify");
+    if (a.voltageKv < tier.minKv) return miss(`only a ${fmtKv(a.voltageKv)} asset was found; lower-voltage assets are not substituted`);
+    if (!a.operatingEstablished) return miss("its operating status can't be established, so it does not qualify");
+    const km = validNonNegative(a.distanceKm);
+    if (km === null) return miss("invalid distance");
+    if (id === "substation" && validNonNegative(a.closerUntaggedKm) !== null && (a.closerUntaggedKm as number) < km) {
+      context.push({ label: "Closer substation without a voltage tag", value: `${fmtKm(a.closerUntaggedKm as number)}: its voltage can't be established, so it is not counted` });
+    }
+    return {
+      ...metric(id, label, weight, distanceScore(km, g.zeroKm), `${fmtKm(km)} (${a.name ? `${a.name}, ` : ""}${fmtKv(a.voltageKv)})`),
+      method: `D(d) = 100 × max(0, 1 − d / ${g.zeroKm})`,
+    };
   };
-  const metrics = [
-    side("substation", "220 kV+ substation", 0.6, substation),
-    side("line", "220 kV+ AC line", 0.4, line),
-    queueMetric(ml, QUEUE_MAX_PENALTY, missingFields, mlReason),
-  ];
-  const pressure = pressureFact(ml, validPositive(targetLoadMw) ?? DEFAULT_LOAD_MW);
-  return component("grid", {
-    metrics,
-    missingFields,
-    context: pressure ? [pressure] : [],
-    explain: (_score, status) => {
-      if (status === "unavailable") return withReason("No 220 kV+ distance data, so this component uses a neutral 50", reason) + ".";
-      const [sub, ln, queue] = metrics;
-      const known = [sub, ln].filter((m) => m.state === "observed").map((m) => `${m.label.replace("Nearest ", "")} ${m.value.split(" (")[0]} → ${fmtScore(m.score as number)}`);
-      const lead = known.length < 2 ? `${known[0]}; the other distance is unknown, so this one carries the full weight` : known.join("; ");
-      const q = queue.state === "observed" ? `; a ${queue.value.split(" of ")[0]} county queue (Q ${fmtScore(queue.score as number)}) takes ${fmtPct(penaltyShare(queue))} off` : "";
-      return `${lead}${q}. Each distance scores 100 at the asset and 0 at ${GRID_ZERO_KM} km or more; the queue takes nothing off when empty and up to ${fmtPct(QUEUE_MAX_PENALTY)} at ${en(QUEUE_ZERO_MW)} MW.`;
-    },
-    method: `G = (0.60 × D(substation km) + 0.40 × D(line km)) × (1 − ${QUEUE_MAX_PENALTY} × (1 − Q / 100)), D(d) = 100 × max(0, 1 − d / ${GRID_ZERO_KM}), Q(q) = 100 × max(0, 1 − ln(1 + q / ${QUEUE_REF_MW}) / ln(1 + ${en(QUEUE_ZERO_MW)} / ${QUEUE_REF_MW})) for the county's queued MW. Operational AC assets of ${HV_KV} kV and up only; a missing distance drops out and the other carries its weight. Without the queue signal there is no penalty. Regional demand pressure is shown for context and not scored.`,
-    notes: [
-      "Straight-line distances underestimate real connection routes, which follow terrain and rights-of-way.",
-      "Proximity does not establish spare capacity, interconnection approval or connection cost.",
-      "The queue is the county's total of active interconnection requests (mostly generation and storage): a congestion signal for the area, not the queue position or study status at any one substation.",
-    ],
-  });
-}
 
-/**
- * P = 0.56 capacity + 0.14 lower-carbon mix + 0.30 clean-build similarity (B), plants and cells within 25 km.
- * Without the similarity signal capacity and mix keep their 80/20 split.
- */
-export function scoreGeneration(
-  gen: GenerationInput | null,
-  targetLoadMw: number = DEFAULT_LOAD_MW,
-  reason?: string,
-  ml: MlSignals | null = null,
-  mlReason?: string,
-): ComponentResult {
-  const load = validPositive(targetLoadMw) ?? DEFAULT_LOAD_MW;
-  const needed = GENERATION_LOAD_MULTIPLE * load;
-  const missingFields: string[] = [];
-  const context: Fact[] = [];
-  let capacityMw: number | null = null;
-  let mixShare: number | null = null;
-  let mixState: MetricResult["state"] = "missing";
-  let partial = false;
+  const { mean, metrics } = renormalized([side("substation", g.substationWeight), side("line", g.lineWeight)]);
+  const observed = metrics.filter((m) => m.state === "observed");
+  const status: ComponentStatus = observed.length === 2 ? "observed" : observed.length === 1 ? "partial" : "unavailable";
 
-  if (gen?.byFuelMw) {
-    let eligible = 0;
-    let lower = 0;
-    let storage = 0;
-    const parts: [string, number][] = [];
-    for (const [fuel, v] of Object.entries(gen.byFuelMw)) {
-      const mw = validNonNegative(v);
-      if (mw === null) {
-        partial = true;
-        missingFields.push(`Capacity of ${fuel} plants (invalid value skipped)`);
-        continue;
-      }
-      parts.push([fuel, mw]);
-      if (STORAGE_FUELS.includes(fuel)) storage += mw;
-      else {
-        eligible += mw;
-        if (LOWER_CARBON_FUELS.includes(fuel)) lower += mw;
-      }
-    }
-    capacityMw = eligible;
-    if (eligible > 0) {
-      mixShare = lower / eligible;
-      mixState = "observed";
-    } else mixState = "not_applicable";
-    const mix = parts.filter(([, mw]) => mw > 0).sort((a, b) => b[1] - a[1]);
-    if (mix.length) context.push({ label: "Fuel mix (nameplate)", value: mix.map(([f, mw]) => `${capitalize(f)} ${fmtMw(mw)}`).join(" · ") });
-    if (storage > 0) context.push({ label: "Battery storage", value: `${fmtMw(storage)}, not counted as generation` });
-  } else if (gen) {
-    const total = validNonNegative(gen.totalMw);
-    if (total !== null) {
-      capacityMw = total;
-      mixState = total > 0 ? "missing" : "not_applicable";
-      if (total > 0) missingFields.push("Fuel mix (so storage could not be separated from generation)");
-    }
+  const q = site.queue.state === "available" ? site.queue.value : null;
+  if (q && validNonNegative(q.activeMw) !== null) {
+    context.push({
+      label: "County interconnection queue (context, not scored)",
+      value: `${fmtMw(q.activeMw as number)} of active requests in ${q.county ? `${q.county} County` : "the county"}${q.asOf ? ` (LBNL, through ${q.asOf})` : " (LBNL)"}: queued projects compete for the same transmission access`,
+    });
   }
-  if (capacityMw !== null && gen?.incomplete) {
-    partial = true;
-    missingFields.push("Full 25 km plant total (only the nearest listed plants were summed)");
-  }
-  if (capacityMw === null) missingFields.push(withReason(`Operating plant capacity within ${GENERATION_RADIUS_KM} km`, reason));
 
-  const count = validNonNegative(gen?.plantCount);
-  if (count !== null) context.unshift({ label: "Operating plants (≥ 1 MW)", value: `${en(count)} within ${GENERATION_RADIUS_KM} km` });
-
-  const cap = capacityMw;
-  const metrics = [
-    metric(
-      "capacity",
-      `Nameplate generation within ${GENERATION_RADIUS_KM} km vs ${GENERATION_LOAD_MULTIPLE} × load`,
-      0.56,
-      cap === null ? null : 100 * Math.min(1, cap / needed),
-      cap === null ? "Not available" : `${fmtMw(cap)} vs ${fmtMw(needed)} (${GENERATION_LOAD_MULTIPLE} × the ${fmtMw(load)} load)`,
-    ),
-    metric(
-      "mix",
-      "Lower-carbon share (solar, wind, hydro, geothermal)",
-      0.14,
-      mixShare === null ? null : 100 * mixShare,
-      mixState === "observed" ? fmtPct(mixShare as number) : mixState === "not_applicable" ? "Not applicable: no generation nearby" : "Not available",
-      cap === null ? "missing" : mixState,
-    ),
-    cleanBuildMetric(ml, 0.3, missingFields, mlReason),
-  ];
-  return component("generation", {
+  const explain = () => {
+    if (status === "unavailable") return "No qualifying distance could be established, so this component uses a neutral 50 (not 0 km).";
+    const parts = observed.map((m) => `${m.label.replace("Nearest qualifying ", "")} ${m.value.split(" (")[0]} → ${fmtScore(m.score as number)}`);
+    const lead = status === "partial" ? `${parts[0]}; the other distance is unknown, so this one carries the full weight` : parts.join("; ");
+    return `${lead}. Each distance scores 100 at the asset and 0 at ${g.zeroKm} km or more.`;
+  };
+  return component("grid", policy, {
+    score: mean,
+    status,
+    method: `G = ${g.substationWeight.toFixed(2)} × D(substation km) + ${g.lineWeight.toFixed(2)} × D(line km), D(d) = 100 × max(0, 1 − d / ${g.zeroKm}); nearest qualifying assets ${tierLabel(tier, policy)}. One distance missing: it carries the full weight (partial); both missing: neutral ${policy.neutralScore}.`,
     metrics,
-    missingFields,
     context,
-    partial,
-    explain: (_score, status) => {
-      if (status === "unavailable" || cap === null) return withReason("No operating-plant data, so this component uses a neutral 50", reason) + ".";
-      const clean = metrics[2].state === "observed" ? `; clean-build similarity nearby → ${fmtScore(metrics[2].score as number)}` : "";
-      if (cap === 0) return `No operating generation within ${GENERATION_RADIUS_KM} km, so the capacity proxy scores 0${clean}.`;
-      const share = cap >= needed ? "at least" : `${fmtPct(cap / needed)} of`;
-      const ratio = `${fmtMw(cap)} of nameplate generation is ${share} ${GENERATION_LOAD_MULTIPLE} × the ${fmtMw(load)} load (→ ${fmtScore(metrics[0].score as number)})`;
-      const mix = metrics[1].state === "observed" ? `; ${metrics[1].value} of it is lower-carbon (→ ${fmtScore(metrics[1].score as number)})` : "";
-      return `${ratio}${mix}${clean}.`;
-    },
-    method: `P = 0.56 × 100 × min(1, nearby MW / (${GENERATION_LOAD_MULTIPLE} × load MW)) + 0.14 × 100 × lower-carbon MW / eligible MW + 0.30 × B. Operating EIA-860 plants ≥ 1 MW within ${GENERATION_RADIUS_KM} km, hybrids split by generator. Batteries are storage and excluded; nuclear, gas and other fuels count as not lower-carbon. Without generation or a fuel mix, the mix term drops out. B = 100 × (0.75 × max(solar, wind) + 0.25 × battery), each the best suitability among 5 km cells within ${CLEAN_BUILD_RADIUS_KM} km (gas left out: its scores are optimistic and repeat the grid distance). Without B, capacity and mix keep their 80/20 split.`,
-    notes: [
-      "Nameplate capacity is not available or uncommitted electricity: nearby generation does not establish deliverable capacity.",
-      `Full capacity marks need ${GENERATION_LOAD_MULTIPLE} × the load in nameplate, since solar and wind deliver a fraction of nameplate and nearby plants already serve other loads.`,
-      "Clean-build similarity says how much nearby land resembles where solar, wind and batteries were built. It is not a feasibility, land or permitting finding.",
-    ],
-  });
-}
-
-/** C from the estimated population within 10 km (community exposure proxy). */
-export function scoreCommunity(population: number | null, reason?: string): ComponentResult {
-  const n = validNonNegative(population);
-  const invalid = population !== null && n === null;
-  const missingFields = n === null ? [withReason(`Estimated population within ${POPULATION_RADIUS_KM} km`, invalid ? "invalid value" : reason)] : [];
-  const metrics = [
-    metric("population", `Community exposure proxy (people within ${POPULATION_RADIUS_KM} km)`, 1, n === null ? null : communityScore(n), n === null ? "Not available" : `≈ ${fmtPeople(n)} people`),
-  ];
-  return component("community", {
-    metrics,
     missingFields,
-    explain: (score, status) =>
-      status === "unavailable"
-        ? withReason("No population estimate, so this component uses a neutral 50 (not zero people)", invalid ? "invalid value" : reason) + "."
-        : `About ${fmtPeople(n as number)} people live within ${POPULATION_RADIUS_KM} km (→ ${fmtScore(score)}). More nearby residents lower this proxy on a log scale, so very large differences don't dominate the total.`,
-    method: `C = 100 × max(0, 1 − ln(1 + N) / ln(${en(POPULATION_SCALE + 1)})), N = estimated population within ${POPULATION_RADIUS_KM} km (2020 Census block groups).`,
-    notes: [
-      "An exposure proxy only: it does not measure community consent, environmental justice, demographic vulnerability, water stress, noise, or how benefits and burdens are shared.",
-      "Fewer residents does not mean a better community or no community impact, and the score is no substitute for engagement.",
+    assumptions: [
+      `Voltage-search tiers (${g.tiers.map((t) => `${Number.isFinite(t.maxMw) ? `≤ ${t.maxMw} MW` : "larger"}: ${t.minKv} kV`).join(", ")}) are asset-search heuristics, not electrical design requirements or proof of an acceptable point of interconnection.`,
+      `Distances score 0 at ${g.zeroKm} km (policy heuristic).`,
+      "Qualifying: a voltage tag at or above the threshold and an established operating status; untagged or lower-voltage assets never stand in.",
     ],
+    explanation: explain(),
+    notes: [
+      "Straight-line distances underestimate actual route lengths, which follow terrain and rights-of-way.",
+      "Proximity does not establish export or hosting capacity, spare capacity, system stability, interconnection approval, upgrade requirements or connection cost.",
+      "Nearby existing generation is not counted as grid capacity: existing and queued generators may compete for the same transmission access.",
+    ],
+    sources: ["OpenStreetMap substations", "CEC California Electric Transmission Lines", "Straight-line distance in EPSG:3310"],
   });
 }
 
-/** A = the lowest score across the site's EPA nonattainment designations (100 when none are listed). */
-export function scoreAirPermitting(designations: Designation[] | null, aqi: AqiContext | null, reason?: string): ComponentResult {
-  const missingFields: string[] = [];
-  const context: Fact[] = [];
-  let score: number | null = null;
-  let value = "Not available";
-  let partial = false;
-  let worst: string | null = null;
+// ---------------------------------------------------------------------------
+// R: technology-specific resource and operating prerequisites
+// ---------------------------------------------------------------------------
 
-  if (designations) {
-    if (!designations.length) {
-      score = ATTAINMENT_SCORE;
-      value = "No listed nonattainment";
-    } else {
-      const scored = designations.map((d) => {
-        const s = designationScore(d.classification);
-        const label = d.naaqs ?? d.pollutant ?? "Unnamed standard";
-        if (s === null) {
-          partial = true;
-          missingFields.push(`Classification of the ${label} nonattainment area (scored as a neutral ${NEUTRAL_SCORE})`);
-        }
-        return { label: `${label} (${d.classification ?? "classification unknown"})`, score: s ?? NEUTRAL_SCORE };
-      });
-      const lowest = scored.reduce((a, b) => (b.score < a.score ? b : a));
-      score = lowest.score;
-      worst = lowest.label;
-      value = scored.map((d) => d.label).join("; ");
-      const area = designations.find((d) => d.area)?.area;
-      if (area) context.push({ label: "Nonattainment area", value: area });
+interface SubmetricOutcome {
+  metric: MetricResult;
+  missing: string | null;
+  rejected: Fact[];
+  method: string | null;
+}
+
+function scoreSubmetric(sub: SubmetricSpec, spec: TechnologySpec, site: SiteData, project: ProjectScenario): SubmetricOutcome {
+  if (sub.notApplicableWithCooling && project.cooling === sub.notApplicableWithCooling) {
+    return { metric: metric(sub.id, sub.label, sub.weight, null, `Not applicable: ${sub.notApplicableWithCooling} (air) cooling configured`, "not_applicable"), missing: null, rejected: [], method: null };
+  }
+  if (!sub.methods.length) {
+    return { metric: metric(sub.id, sub.label, sub.weight, null, "Not exposed by Griddy"), missing: `${sub.label}: Griddy does not expose ${sub.needs}`, rejected: [], method: null };
+  }
+  const rejected: Fact[] = [];
+  const why: string[] = [];
+  for (const m of sub.methods) {
+    const obs = m.input === "siting_similarity" ? (spec.mlKind ? site.sitingSimilarity[spec.mlKind] : undefined) : site.resource[m.input];
+    if (!obs) {
+      why.push(`${lowerFirst(m.label)} not exposed`);
+      continue;
     }
-  } else missingFields.push(withReason("EPA nonattainment designations", reason));
+    if (obs.state !== "available") {
+      why.push(`${lowerFirst(m.label)} ${stateReason(obs)}`);
+      continue;
+    }
+    const r = scoreInput(m, obs);
+    if ("reason" in r) {
+      rejected.push({ label: `${m.label} (shown, not scored)`, value: `${fmtObservation(obs)}: not scored because ${r.reason}. Source: ${obs.source}.` });
+      why.push(`${lowerFirst(m.label)} not compatible`);
+      continue;
+    }
+    const tag = obs.kind === "inferred" ? "inferred (ML)" : obs.kind;
+    const ref = m.kind === "continuous" ? m.reference : null;
+    const fallback = m !== sub.methods[0] ? `; fallback: ${listText(why)}` : "";
+    return {
+      metric: {
+        ...metric(sub.id, sub.label, sub.weight, r.score, fmtObservation(obs)),
+        method: `${ref ? `${m.label}: 100 × clamp((x − ${ref.low}) / (${ref.high} − ${ref.low}), 0, 1) [${prettyUnit(ref.unit)}${ref.heightM ? ` at ${ref.heightM} m` : ""}; ${ref.source}]` : m.label}${fallback}`,
+        source: { kind: obs.kind, tag, detail: `${obs.source}${obs.detail ? `. ${obs.detail}` : ""}` },
+      },
+      missing: null,
+      rejected,
+      method: m.label,
+    };
+  }
+  return {
+    metric: metric(sub.id, sub.label, sub.weight, null, "Not available"),
+    missing: `${sub.label}: needs ${sub.needs}${why.length ? ` (${why.join("; ")})` : ""}`,
+    rejected,
+    method: null,
+  };
+}
 
-  const aqiValue = validNonNegative(aqi?.aqi);
-  if (aqiValue !== null) {
-    context.push({ label: "Current AQI (context, not scored)", value: `${Math.round(aqiValue)}${aqi?.category ? ` ${aqi.category}` : ""}${aqi?.pollutant ? ` · ${aqi.pollutant}` : ""}` });
+/** R: the technology's own prerequisites (Method 1/2 per input, Method 3 across submetrics), never nearby plants or weather. */
+export function scoreResource(site: SiteData, project: ProjectScenario, policy: ScoringPolicy): ComponentResult {
+  const spec = policy.technologies[project.technology];
+  const outcomes = spec.submetrics.map((s) => scoreSubmetric(s, spec, site, project));
+  const { mean, metrics } = renormalized(outcomes.map((o) => o.metric));
+  const applicable = metrics.filter((m) => m.state !== "not_applicable");
+  const observed = applicable.filter((m) => m.state === "observed");
+  const status: ComponentStatus = !observed.length ? "unavailable" : observed.length < applicable.length ? "partial" : "observed";
+  const missingFields = outcomes.map((o) => o.missing).filter((m): m is string => m !== null);
+  const context = outcomes.flatMap((o) => o.rejected);
+
+  // Nearby plants of the same fuel are context only: they never prove a resource here.
+  const fuel = { solar_pv: "solar", onshore_wind: "wind", natural_gas: "gas", geothermal: "geothermal", hydroelectric: "hydro", biomass: null, nuclear: "nuclear" }[project.technology];
+  const nearby = fuel && site.nearbyFuelMw.state === "available" ? validNonNegative(site.nearbyFuelMw.value?.[fuel]) : null;
+  if (nearby !== null && nearby > 0) {
+    context.push({ label: `Operating ${fuel} generation within 25 km (context, not scored)`, value: `${fmtMw(nearby)} (EIA-860): existing plants do not establish a developable resource or available supply at this site` });
   }
 
-  const metrics = [metric("designation", "Lowest-scoring EPA designation", 1, score, value)];
-  return component("air", {
+  const usesMl = metrics.some((m) => m.id === "siting_similarity" && m.state === "observed");
+  const explain = () => {
+    if (status === "unavailable") {
+      return `Griddy exposes no supported screening for ${lowerFirst(spec.label)} prerequisites (${listText(applicable.map((m) => lowerFirst(m.label)))}), so this component uses a neutral ${policy.neutralScore}.`;
+    }
+    const parts = observed.map((m) => `${lowerFirst(m.label)} ${m.value.split(" (")[0]} → ${fmtScore(m.score as number)}`);
+    const gap = applicable.filter((m) => m.state !== "observed").map((m) => lowerFirst(m.label));
+    return `${parts.join("; ")}${gap.length ? `. Missing: ${listText(gap)}, so the available ${observed.length === 1 ? "screen carries" : "screens carry"} the full weight (partial)` : ""}.`;
+  };
+  const weights = spec.submetrics.map((s) => `${s.weight.toFixed(2)} ${lowerFirst(s.label)}`).join(" + ");
+  return component("resource", policy, {
+    score: mean,
+    status,
+    method: `R (${spec.label}) = ${weights}, renormalized over the submetrics with usable evidence. Each input uses the first compatible method in the policy's order of preference; nothing is scored without a documented reference range or mapping.`,
     metrics,
-    missingFields,
     context,
-    partial,
-    explain: (s, status) => {
-      if (status === "unavailable") return withReason("No EPA designation data, so this component uses a neutral 50 (not attainment)", reason) + ".";
-      if (!worst) return "No ozone or PM2.5 nonattainment area is listed at this site (→ 100).";
-      const n = designations?.length ?? 0;
-      return `${n > 1 ? `${n} designations; the lowest-scoring is` : "Designated"} ${worst} (→ ${fmtScore(s)}). Multiple designations count once, at the lowest score.`;
-    },
-    method:
-      "A = lowest score across designations: attainment / none listed 100, Marginal 70, Moderate 50, Serious 30, Severe or Extreme 10 (EPA Green Book, ozone and PM2.5). Current AQI is shown for context only.",
+    missingFields,
+    assumptions: [
+      `Submetric weights for ${spec.label} are versioned product heuristics.`,
+      ...spec.submetrics.flatMap((s) =>
+        s.methods.filter((m) => m.kind === "continuous" && m.reference).map((m) => `${m.label}: ${m.reference?.low}–${m.reference?.high} ${prettyUnit(m.reference?.unit ?? "")} maps to 0–100 (${m.reference?.rationale})`),
+      ),
+    ],
+    explanation: explain(),
     notes: [
-      "Nonattainment can add permitting steps, especially for new combustion sources such as gas turbines or diesel backup generators, but does not by itself prohibit a data center.",
-      "A current AQI snapshot says nothing about regulatory attainment, so it never changes this score.",
+      ...spec.limits,
+      ...(usesMl
+        ? ["Siting similarity is inferred: how much the site's 5 km cell resembles where operating plants of this technology were built. It is not a resource measurement, a permit or an interconnection finding, and its inputs partly repeat the grid and community components."]
+        : []),
+      "Nearby plant capacity, current weather and generic infrastructure density are never used as resource evidence.",
+    ],
+    sources: usesMl ? ["Griddy site-location model (B)", "ERA5 reanalysis via Open-Meteo", "NLR ATB 2025 resource classes"] : ["NLR ATB 2025 resource classes"],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// E: environmental and permitting screening
+// ---------------------------------------------------------------------------
+
+export interface EpaSubscore {
+  score: number | null;
+  status: ComponentStatus;
+  value: string;
+  missing: string[];
+  warnings: string[];
+  /** Applicable designations with their pollutant, standard, area and classification. */
+  designations: Designation[];
+}
+
+/** The lowest score across EPA designations; unresolved classifications are never guessed. */
+export function epaSubscore(obs: Observation<Designation[]>, policy: ScoringPolicy): EpaSubscore {
+  const none = (reason: string): EpaSubscore => ({ score: null, status: "unavailable", value: "Not available", missing: [`EPA nonattainment designations (${reason})`], warnings: [], designations: [] });
+  if (obs.state === "confirmed_absent" || (obs.state === "available" && obs.value && !obs.value.length)) {
+    return { score: policy.environment.attainmentScore, status: "observed", value: "No listed nonattainment (ozone, PM2.5)", missing: [], warnings: [], designations: [] };
+  }
+  if (obs.state !== "available" || !obs.value) return none(stateReason(obs, "EPA designation data did not load"));
+  const list = obs.value;
+  const label = (d: Designation) => `${d.naaqs ?? d.pollutant ?? "Unnamed standard"} (${d.classification ?? "classification unknown"})`;
+  const scored = list.map((d) => ({ d, s: designationScore(d.classification, policy) }));
+  const known = scored.filter((x): x is { d: Designation; s: number } => x.s !== null);
+  const open = scored.filter((x) => x.s === null);
+  const value = list.map(label).join("; ");
+  if (!known.length) {
+    return { score: null, status: "unavailable", value, missing: [`Score for ${listText(open.map((x) => label(x.d)))}: no documented mapping, so not guessed`], warnings: [], designations: list };
+  }
+  const lowest = Math.min(...known.map((x) => x.s));
+  const warnings = open.length ? [`${open.length} designation${open.length === 1 ? " has an" : "s have an"} unresolved classification (${listText(open.map((x) => label(x.d)))}) that could lower this result: provisional.`] : [];
+  return { score: lowest, status: open.length ? "partial" : "observed", value, missing: open.map((x) => `Classification of ${label(x.d)} (unresolved)`), warnings, designations: list };
+}
+
+/** E = 0.60 E_EPA + 0.40 E_other for combustion; E = E_other otherwise (EPA shown as context). */
+export function scoreEnvironment(site: SiteData, project: ProjectScenario, policy: ScoringPolicy): ComponentResult {
+  const spec = policy.technologies[project.technology];
+  const env = policy.environment;
+  const epa = epaSubscore(site.designations, policy);
+  const screen = site.environmentalScreen.state === "available" ? site.environmentalScreen.value : null;
+  const applies = screen !== null && (screen.technologies === "all" || screen.technologies.includes(project.technology));
+  const otherScore = applies ? validNonNegative(screen?.score) : null;
+  const otherReason = screen && !applies ? `the available screen does not apply to ${lowerFirst(spec.label)}` : stateReason(site.environmentalScreen, "Griddy has no documented, technology-applicable environmental screening method");
+  const otherMetric: MetricResult = {
+    ...metric("other", "Technology-applicable environmental screening (E_other)", spec.combustion ? env.otherWeight : 1, otherScore === null ? null : clamp(otherScore), otherScore === null ? "Not available" : `${fmtScore(otherScore)}/100`),
+    method: screen?.method ?? "an existing, documented screening method (none in Griddy yet)",
+    ...(screen && otherScore !== null ? { source: { kind: "observed" as const, tag: "observed", detail: screen.source } } : {}),
+  };
+  const context: Fact[] = [];
+  const missingFields: string[] = [];
+  if (otherScore === null) missingFields.push(`Environmental screening (${otherReason})`);
+  const area = epa.designations.find((d) => d.area)?.area;
+  if (area) context.push({ label: "Nonattainment area", value: area });
+  const aqi = validNonNegative(site.aqi?.aqi);
+  if (aqi !== null) context.push({ label: "Current AQI (context, not scored)", value: `${Math.round(aqi)}${site.aqi?.category ? ` ${site.aqi.category}` : ""}${site.aqi?.pollutant ? ` · ${site.aqi.pollutant}` : ""}` });
+  for (const w of epa.warnings) context.push({ label: "Unresolved EPA classification", value: w });
+
+  let metrics: MetricResult[];
+  let score: number | null;
+  let status: ComponentStatus;
+  if (spec.combustion) {
+    missingFields.push(...epa.missing);
+    const epaMetric = { ...metric("epa", "EPA nonattainment (lowest applicable designation)", env.epaWeight, epa.score, epa.value), method: "lowest score across designations" };
+    const r = renormalized([epaMetric, otherMetric]);
+    metrics = r.metrics;
+    score = r.mean;
+    status = score === null ? "unavailable" : epa.status === "observed" && otherScore !== null ? "observed" : "partial";
+  } else {
+    // A noncombustion plant is not scored as an operational combustion source: EPA status is context.
+    const shown = epa.score !== null && !epa.designations.length ? `${epa.value} (EPA Green Book)` : epa.designations.length ? epa.value : withReason("Not available", stateReason(site.designations, "EPA designation data did not load"));
+    context.unshift({ label: `EPA status (context: not scored for ${lowerFirst(spec.label)})`, value: shown });
+    const r = renormalized([otherMetric]);
+    metrics = r.metrics;
+    score = r.mean;
+    status = score === null ? "unavailable" : "observed";
+  }
+  const explain = () => {
+    if (status === "unavailable") {
+      return spec.combustion
+        ? "Neither EPA designations nor another environmental screen is available, so this component uses a neutral 50 (not attainment)."
+        : `${spec.label} is not a combustion source, so EPA status is context only, and Griddy has no documented environmental screening for it: this component uses a neutral 50.`;
+    }
+    if (!spec.combustion) return `Environmental screening → ${fmtScore(score as number)}.`;
+    const e = epa.score !== null ? (epa.designations.length ? `EPA: ${epa.value} → lowest ${fmtScore(epa.score)}` : `EPA: no listed ozone or PM2.5 nonattainment → ${fmtScore(epa.score)}`) : "EPA designations unavailable";
+    return `${e}${otherScore === null ? "; no other documented environmental screen, so EPA carries the full weight (partial)" : `; environmental screening → ${fmtScore(otherScore)}`}.`;
+  };
+  const s = env.designationScores;
+  return component("environment", policy, {
+    score,
+    status,
+    method: spec.combustion
+      ? `E = ${env.epaWeight.toFixed(2)} × E_EPA + ${env.otherWeight.toFixed(2)} × E_other (combustion source), renormalized over what is available. E_EPA = lowest across designations: attainment or none listed within coverage ${env.attainmentScore}, Marginal ${s.marginal}, Moderate ${s.moderate}, Serious ${s.serious}, Severe or Extreme ${s.severe}.`
+      : `E = E_other (noncombustion source); EPA status is shown, not scored.`,
+    metrics,
+    context,
+    missingFields,
+    assumptions: [`EPA designation scores and the ${Math.round(env.epaWeight * 100)}/${Math.round(env.otherWeight * 100)} combustion split are policy heuristics.`, `Coverage: ${env.coverage}.`],
+    explanation: explain(),
+    notes: [
+      "Nonattainment can increase permitting complexity, especially for new combustion sources, but does not automatically prohibit development.",
+      "EPA attainment does not establish environmental clearance.",
+      ...(spec.combustion ? [] : ["Construction emissions and emergency generators are not modeled here; they may still need air permits."]),
+      "A current AQI snapshot never changes this score.",
       "Not legal or regulatory advice.",
     ],
+    sources: ["US EPA Green Book nonattainment areas", "AirNow (context)"],
   });
 }
 
-/** I from the utility territory and balancing authority: both 100, one 60, neither 20. */
-export function scoreInfrastructure(utility: Lookup, balancingAuthority: Lookup, outsideCoverage: boolean, reason?: string): ComponentResult {
+// ---------------------------------------------------------------------------
+// C: community exposure proxy
+// ---------------------------------------------------------------------------
+
+/** C from the estimated population within the policy radius. */
+export function scoreCommunity(site: SiteData, policy: ScoringPolicy): ComponentResult {
+  const { radiusKm, scale } = policy.community;
+  const o = site.population;
+  const n = o.state === "available" ? validNonNegative(o.value) : null;
+  const reason = o.state === "available" && n === null ? "invalid value" : stateReason(o, "population data unavailable");
+  const label = `Estimated population within ${radiusKm} km`;
+  const metrics = [{ ...metric("population", label, 1, n === null ? null : communityScore(n, scale), n === null ? "Not available" : `≈ ${fmtPeople(n)} people`), method: `C = 100 × max(0, 1 − ln(1 + N) / ln(${en(scale + 1)}))` }];
+  const score = n === null ? null : communityScore(n, scale);
+  return component("community", policy, {
+    score,
+    status: score === null ? "unavailable" : "observed",
+    method: `C = 100 × max(0, 1 − ln(1 + N) / ln(${en(scale + 1)})), N = estimated population within ${radiusKm} km (2020 Census block groups).`,
+    metrics: metrics.map((m) => ({ ...m, effectiveWeight: m.state === "observed" ? 1 : 0 })),
+    missingFields: n === null ? [`${label} (${reason})`] : [],
+    assumptions: [`Log scale reaching 0 at ${en(scale)} people within ${radiusKm} km (policy heuristic).`],
+    explanation:
+      n === null
+        ? `No usable population estimate (${reason}), so this component uses a neutral 50 (not zero people).`
+        : `About ${fmtPeople(n)} people live within ${radiusKm} km (→ ${fmtScore(score as number)}). The proxy falls on a log scale as nearby residents increase.`,
+    notes: [
+      "An exposure proxy only. It does not measure community consent, environmental justice, demographic vulnerability, Tribal rights or interests, water stress, noise, visual impacts or shadow flicker, or benefits and their distribution.",
+      "A lower population does not make a community inherently preferable, and it does not eliminate impacts.",
+    ],
+    sources: ["US Census 2020 block-group population"],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// I: administrative and infrastructure context
+// ---------------------------------------------------------------------------
+
+type Resolution = "identified" | "not_identified" | "unresolved";
+
+function resolve(o: Observation<string>): Resolution {
+  if (o.state === "available" && o.value) return "identified";
+  if (o.state === "confirmed_absent" || o.state === "outside_coverage") return "not_identified"; // definitive for this context metric
+  return "unresolved";
+}
+
+/** I: both identified 100, one 60, neither 20; any unresolved lookup: neutral 50. */
+export function scoreAdministrative(site: SiteData, policy: ScoringPolicy): ComponentResult {
+  const a = policy.administrative;
+  const sides: [string, string, Observation<string>][] = [
+    ["utility", "Utility service territory", site.utility],
+    ["ba", "Balancing authority", site.balancingAuthority],
+  ];
+  const res = sides.map(([, , o]) => resolve(o));
   const missingFields: string[] = [];
-  const side = (id: string, what: string, l: Lookup): MetricResult => {
-    if (l.status === "unknown") {
-      missingFields.push(withReason(what, reason));
-      return metric(id, what, 0.5, null, "Could not be determined");
+  // Each lookup is shown as found / not found; the component score comes from the policy's table, not a mean.
+  const metrics = sides.map(([id, label, o], i): MetricResult => {
+    if (res[i] === "unresolved") {
+      missingFields.push(`${label} (${stateReason(o, "territory data unavailable")})`);
+      return metric(id, label, 0.5, null, "Could not be determined");
     }
-    if (l.status === "identified") return metric(id, what, 0.5, IDENTIFIED_SCORE, l.name);
-    return metric(id, what, 0.5, NOT_IDENTIFIED_SCORE, outsideCoverage ? "None: outside California coverage" : "None identified");
-  };
-  const metrics = [side("utility", "Utility service territory", utility), side("ba", "Balancing authority", balancingAuthority)];
-  return component("infrastructure", {
+    const value = res[i] === "identified" ? (o.value as string) : o.state === "outside_coverage" ? "None: outside California coverage" : "None identified";
+    return { ...metric(id, label, 0.5, null, value, "observed"), method: "lookup" };
+  });
+  const resolvedCount = res.filter((r) => r !== "unresolved").length;
+  const found = res.filter((r) => r === "identified").length;
+  const score = resolvedCount === 2 ? (found === 2 ? a.both : found === 1 ? a.one : a.neither) : resolvedCount === 1 ? policy.neutralScore : null;
+  const status: ComponentStatus = resolvedCount === 2 ? "observed" : resolvedCount === 1 ? "partial" : "unavailable";
+  return component("administrative", policy, {
+    score,
+    status,
+    method: `Both identified ${a.both}, exactly one ${a.one}, neither ${a.neither}; any unresolved lookup: neutral ${policy.neutralScore}. Contributes at most ${en(Math.round(policy.weights.administrative * 100))} points.`,
     metrics,
     missingFields,
-    explain: (score, status) => {
-      if (status === "unavailable") return withReason("Territory data could not be read, so this component uses a neutral 50 (not 20)", reason) + ".";
-      const found = metrics.filter((m) => m.score === IDENTIFIED_SCORE).length;
-      const known = metrics.filter((m) => m.state === "observed").length;
-      if (known < 2) return `Only one lookup could run (${found ? "identified" : "none found"}), so it carries the full weight (→ ${fmtScore(score)}).`;
-      const what = found === 2 ? "Both utility and balancing authority are identified" : found === 1 ? "One of utility and balancing authority is identified" : outsideCoverage ? "Outside the supported California coverage" : "Neither utility nor balancing authority is identified";
-      return `${what} (→ ${fmtScore(score)}).`;
-    },
-    method: "I = mean of utility and balancing authority, each 100 when identified and 20 when not (both 100, one 60, neither 20). A lookup that could not run drops out; neither → neutral 50.",
-    notes: ["An identified service territory is administrative context, not available electrical capacity."],
+    assumptions: ["A confirmed outside-coverage result counts as a definitive non-identification for this limited context metric, not as evidence that no real-world authority exists."],
+    explanation:
+      status === "unavailable"
+        ? "Neither lookup could run, so this component uses a neutral 50 (not 20)."
+        : status === "partial"
+          ? "One lookup is unresolved (missing data or a failed lookup), so this component uses a neutral 50 rather than reading the gap as absence."
+          : `${found === 2 ? "Both utility and balancing authority are identified" : found === 1 ? "One of utility and balancing authority is identified" : "Neither utility nor balancing authority is identified"} (→ ${fmtScore(score as number)}).`,
+    notes: [
+      "Administrative context and source coverage only: not capacity, interconnection eligibility, purchase agreements or the identity of every required counterparty.",
+    ],
+    sources: ["CEC Electric Load Serving Entities", "CEC Balancing Authority Areas"],
   });
+}
+
+// ---------------------------------------------------------------------------
+// Critical constraints: assessed apart from the score
+// ---------------------------------------------------------------------------
+
+export function assessConstraints(site: SiteData, project: ProjectScenario, policy: ScoringPolicy): ConstraintsResult {
+  const tech = project.technology;
+  const applies = (t: GenerationTechnology[] | "all") => t === "all" || t.includes(tech);
+  const checks: ConstraintCheckResult[] = [];
+  const critical: ConstraintFinding[] = [];
+  const screening: ConstraintFinding[] = [];
+
+  for (const c of policy.constraints.filter((x) => applies(x.technologies))) {
+    const add = (status: ConstraintAssessment, detail: string) => checks.push({ id: c.id, label: c.label, tier: c.tier, status, detail });
+    if (c.dataset === "statute") {
+      if (site.inCoverage !== true) {
+        add("not_assessed", site.inCoverage === false ? "Outside California: California statutes are the only ones encoded." : "Whether the site is in California is unknown.");
+        continue;
+      }
+      const hits = policy.statutes.filter((s) => s.technologies.includes(tech));
+      for (const s of hits) {
+        const f: ConstraintFinding = { checkId: c.id, type: "documented_legal_restriction", title: s.title, evidence: s.evidence, source: s.source, url: s.url, date: s.date, technologies: s.technologies, basis: "documented_prohibition" };
+        (c.tier === "critical" ? critical : screening).push(f);
+      }
+      add(hits.length ? "identified" : "none_identified_in_available_data", hits.length ? hits.map((s) => s.source).join("; ") : "None among the statutes encoded in this policy (not a legal review).");
+    } else if (c.dataset === "protected_areas") {
+      const o = site.protectedShare;
+      const share = o.state === "available" ? validNonNegative(o.value) : null;
+      if (share === null) {
+        add("not_assessed", stateReason(o, "land screening covers the demo areas only"));
+        continue;
+      }
+      if (share >= policy.protectedShareConcern) {
+        const f: ConstraintFinding = {
+          checkId: c.id,
+          type: "protected_area_proximity",
+          title: "Protected area within the 2 km screening buffer",
+          evidence: `${fmtPct(share)} of the 2 km buffer overlaps a protected area. Proximity is a screening concern, not a prohibition: check the boundary against the project footprint.`,
+          source: "E's land screening (protected-area overlap)",
+          technologies: "all",
+          basis: "screening_concern",
+        };
+        (c.tier === "critical" ? critical : screening).push(f);
+        add("identified", f.evidence);
+      } else add("none_identified_in_available_data", `${fmtPct(share)} of the 2 km buffer overlaps a protected area.`);
+    } else add("not_assessed", c.description);
+  }
+
+  const criticalChecks = checks.filter((c) => c.tier === "critical");
+  const assessment: ConstraintAssessment = critical.length ? "identified" : criticalChecks.some((c) => c.status === "not_assessed") ? "not_assessed" : "none_identified_in_available_data";
+  const notAssessed = criticalChecks.filter((c) => c.status === "not_assessed").length;
+  const summary =
+    assessment === "identified"
+      ? `${CRITICAL_HEADLINE}${notAssessed ? ` ${notAssessed} other critical check${notAssessed === 1 ? " was" : "s were"} not assessed.` : ""}`
+      : assessment === "not_assessed"
+        ? `${NOT_FULLY_ASSESSED} ${notAssessed} of ${criticalChecks.length} critical checks have no data in Griddy; none identified does not mean none exist.`
+        : "None identified in the available data. This is not a finding that no constraints exist.";
+  return { assessment, summary, checks, critical, screening };
 }
 
 // ---------------------------------------------------------------------------
 // Overall score
 // ---------------------------------------------------------------------------
 
-/** Model signals from a cell farther than 5 km describe somewhere else: treat them as missing. */
-function usableMl(input: FeasibilityInput): MlSignals | null {
-  const ml = input.ml ?? null;
-  const km = validNonNegative(ml?.cellKm);
-  return ml && km !== null && km <= ML_MAX_CELL_KM && !input.outsideCoverage ? ml : null;
-}
+const POLICY_WEIGHT_TOLERANCE = 1e-9;
 
-/** Both 220 kV+ distances known and beyond reach: no community or air score may lift the grade past the cap. */
-export function mustHaveCap(grid: ComponentResult): GradeCap | null {
-  const dist = grid.metrics.filter((m) => m.id === "substation" || m.id === "line");
-  if (dist.some((m) => m.state !== "observed" || m.score === null) || dist.some((m) => (m.score as number) > 0)) return null;
-  return { limit: MUST_HAVE_CAP, reason: `No ${HV_KV} kV+ substation or line within ${GRID_REACH_KM} km` };
-}
-
-export function calculateFeasibilityScore(input: FeasibilityInput, targetLoadMW: number = DEFAULT_LOAD_MW): FeasibilityResult {
-  const loadValid = validPositive(targetLoadMW) !== null;
-  const load = loadValid ? targetLoadMW : DEFAULT_LOAD_MW;
-  const why = input.reasons ?? {};
-  const ml = usableMl(input);
-  const mlReason = ml ? undefined : input.ml ? `nearest model cell is over ${ML_MAX_CELL_KM} km away` : (input.mlReason ?? "model signals unavailable");
-  const components = [
-    scoreGridProximity(input.substation, input.line, why.grid, ml, load, mlReason),
-    scoreGeneration(input.generation, load, why.generation, ml, mlReason),
-    scoreCommunity(input.population, why.community),
-    scoreAirPermitting(input.designations, input.aqi, why.air),
-    scoreInfrastructure(input.utility, input.balancingAuthority, input.outsideCoverage, why.infrastructure),
-  ];
-  const byKey = <T>(f: (c: ComponentResult) => T) => Object.fromEntries(components.map((c) => [c.key, f(c)])) as Record<ComponentKey, T>;
-
-  const pointsTotal = clamp(components.reduce((a, c) => a + c.weightedContribution, 0));
-  const limit = mustHaveCap(components[0]);
-  const cap = limit && pointsTotal > limit.limit ? limit : null;
-  const raw = cap ? cap.limit : pointsTotal;
-  const overallScore = Math.round(raw * 10) / 10;
-  const share = (status: ComponentStatus) => Math.round(1000 * components.filter((c) => c.status === status).reduce((a, c) => a + c.weight, 0)) / 10;
-  const completeness = share("observed");
-  const label = completenessLabelFor(completeness);
-  const placeholders = components.filter((c) => c.status !== "observed").length;
-
-  let qualification: string | null = null;
-  if (label !== "High") {
-    qualification = `${label} data completeness (${completeness}%): ${placeholders} of ${components.length} components use a neutral 50 or partial data.`;
-    if (label === "Low") qualification += ` Treat this score as provisional${overallScore >= 60 ? ": a favorable score resting on this little data is not reliable" : ""}.`;
+export function calculatePowerPlantFeasibility(site: SiteData, projectInput: ProjectInput, policy: ScoringPolicy): FeasibilityResult | InvalidProjectResult {
+  const sum = COMPONENT_KEYS.reduce((a, k) => a + policy.weights[k], 0);
+  if (Math.abs(sum - 1) > POLICY_WEIGHT_TOLERANCE || COMPONENT_KEYS.some((k) => !(policy.weights[k] >= 0))) {
+    return { valid: false, policyVersion: policy.version, errors: [`Scoring policy ${policy.version}: component weights must be non-negative and sum to 1 (they sum to ${sum}).`] };
   }
+  const v = validateProject(projectInput, policy);
+  if (!v.ok) return { valid: false, policyVersion: policy.version, errors: v.errors };
+  const project = v.project;
+  const spec = policy.technologies[project.technology];
+  const tier = voltageTierFor(project.capacityMw, policy);
 
-  const considerations = considerationsFor(input, components, ml, mlReason, cap);
+  const components = [scoreGrid(site, project, policy), scoreResource(site, project, policy), scoreEnvironment(site, project, policy), scoreCommunity(site, policy), scoreAdministrative(site, policy)];
+  const byKey = <T>(f: (c: ComponentResult) => T) => Object.fromEntries(components.map((c) => [c.key, f(c)])) as Record<ComponentKey, T>;
+  const get = (k: ComponentKey) => components.find((c) => c.key === k) as ComponentResult;
+
+  const pointsTotal = components.reduce((a, c) => a + c.weightedContribution, 0);
+  const raw = clamp(pointsTotal);
+  const overallScore = Math.round(raw);
+  const category = categoryFor(overallScore, policy);
+  // Unrounded for the label boundaries, but without float noise: 0.30 + 0.15 + 0.05 is 50%, not 49.999…%.
+  const completeness = Number((100 * components.reduce((a, c) => a + (c.status === "observed" ? c.weight : 0), 0)).toFixed(9));
+  const label = completenessLabelFor(completeness, policy);
+  const constraints = assessConstraints(site, project, policy);
+  const provisional = isProvisional(site, tier);
+
+  const notices: Notice[] = [];
+  for (const f of constraints.critical) notices.push({ tone: "constraint", text: `${f.title} (${f.source}).` });
+  const r = get("resource");
+  if (r.status === "unavailable") notices.push({ tone: "warning", text: `Technology-specific resource screening unavailable: Griddy does not expose ${listText(spec.submetrics.filter((s) => s.methods.length === 0 || r.metrics.find((m) => m.id === s.id)?.state === "missing").map((s) => lowerFirst(s.label)))} for ${lowerFirst(spec.label)}, so R is a neutral ${policy.neutralScore}.` });
+  else if (r.status === "partial") notices.push({ tone: "warning", text: `Resource screening incomplete for ${lowerFirst(spec.label)}: ${listText(r.metrics.filter((m) => m.state === "missing").map((m) => lowerFirst(m.label)))} not available.` });
+  if (label === "Low") notices.push({ tone: "warning", text: LIMITED_EVIDENCE });
+  if (constraints.assessment === "not_assessed") notices.push({ tone: "info", text: NOT_FULLY_ASSESSED });
+  if (provisional) notices.push({ tone: "info", text: "Some site data is still loading: the score is provisional and may change." });
+
+  const storage = validNonNegative(project.storageMw);
   const explanatoryNotes = [
-    "Preliminary screening heuristic: the weights and thresholds are initial product assumptions, not validated predictions of interconnection approval, cost, permitting, construction feasibility or economic viability.",
-    `Assumed average data center load: ${fmtMw(load)}${loadValid ? "" : ` (the configured load was invalid, so the ${DEFAULT_LOAD_MW} MW default is used)`}. Only the nearby-generation capacity term and the regional demand pressure (context) depend on it.`,
-    `Must-have: when both the nearest ${HV_KV} kV+ substation and line are more than ${GRID_REACH_KM} km away, the grade is capped at ${MUST_HAVE_CAP}, so high community or air scores can't offset a site without grid access.`,
-    "Land is not scored: slope, land cover, zoning, parcels and flood risk need their own review (see Site intelligence for land screening).",
-    "Missing inputs never count as 0 km, 0 people or 0 MW: a missing metric drops out of its component and the others are reweighted; a component with no data scores a neutral 50.",
-    `Model signals (county interconnection queue, clean-build similarity, demand forecast) come from the nearest 5 km cell of Griddy's site-location artifact, within ${ML_MAX_CELL_KM} km. They supplement the rules: when missing they drop out and don't change data completeness, and they never stand in for a component's own data. EPA nonattainment and grid distances are not taken from the model cells, so nothing is counted twice.`,
-    "Data completeness is the share of the score's weight that comes from fully observed components. It measures data coverage, not statistical confidence or the probability of success.",
-    "Use it to guide further investigation. It does not replace utility interconnection studies, site engineering, permitting review or community engagement.",
+    PRELIMINARY,
+    `Scoring policy ${policy.version} (${policy.date}): S = ${formulaFor(policy)}. Weights, thresholds, reference ranges and mappings are versioned initial product heuristics, not empirically optimized weights or validated predictions of project success.`,
+    "The overall weights are fixed: missing data never moves weight between components. A component with no usable data scores a neutral 50; inside a component, missing metrics drop out and the rest are reweighted.",
+    "Missing inputs never count as 0 km, 0 people, attainment or favorable resource evidence, and unknown coverage is never read as confirmed absence.",
+    `${COMPLETENESS_SCOPE} It is not a probability of success or statistical confidence, and a fully observed component can still rest on a limited method.`,
+    `Defaults (${policy.technologies[policy.defaults.technology].label}, ${fmtMw(policy.defaults.capacityMw)}) are editable product defaults, not universal plant characteristics.`,
+    ...(storage !== null && storage > 0 ? [`Co-located storage (${fmtMw(storage)}) is shown separately: it is not primary generation, is not counted as additional generation and is not scored. No export limit is assumed.`] : []),
+    "Economic viability is not scored: Griddy has no compatible financial inputs for this screen.",
+    `Not a substitute for ${listText(NOT_A_SUBSTITUTE)}.`,
   ];
 
   return {
-    overallScore,
+    valid: true,
+    policyVersion: policy.version,
+    project,
+    technologyLabel: spec.label,
+    technologyNoun: lowerFirst(spec.label),
+    voltageTier: tier,
     overallScoreRaw: raw,
+    overallScore,
     pointsTotal,
-    cap,
-    category: categoryFor(overallScore),
-    targetLoadMw: load,
+    category,
+    headline: constraints.assessment === "identified" ? CRITICAL_HEADLINE : category,
     dataCompletenessPercent: completeness,
-    partialPercent: share("partial"),
     completenessLabel: label,
     components,
     componentScores: byKey((c) => c.score),
     weightedContributions: byKey((c) => c.weightedContribution),
     componentStatuses: byKey((c) => c.status),
     missingFields: components.flatMap((c) => c.missingFields.map((f) => `${c.label}: ${f}`)),
-    considerations,
-    seriousConstraints: considerations.filter((c) => c.tone === "constraint").map((c) => c.text),
-    qualification,
+    constraints,
+    considerations: considerationsFor(site, project, policy, components, constraints),
+    notices,
     explanatoryNotes,
+    exclusions: [
+      { id: "land_suitability", label: "Land suitability", text: `${LAND_DISCLOSURE} ${LAND_NOT_CLEARED}` },
+      { id: "economics", label: "Economic and financial viability", text: "Not scored: no compatible financial inputs. Costs, revenue and financing need their own analysis." },
+    ],
+    provisional,
   };
 }
 
-/** Key considerations: infrastructure advantages apart from community and environmental tradeoffs. */
-function considerationsFor(input: FeasibilityInput, components: ComponentResult[], ml: MlSignals | null, mlReason: string | undefined, gradeCap: GradeCap | null): Consideration[] {
+/** Any input the score reads is still loading. */
+function isProvisional(site: SiteData, tier: VoltageTier): boolean {
+  const grid = site.grid[tier.minKv];
+  const states = [grid?.substation.state, grid?.line.state, site.population.state, site.designations.state, site.utility.state, site.balancingAuthority.state, ...Object.values(site.sitingSimilarity).map((o) => o?.state)];
+  return states.includes("loading");
+}
+
+/** Key considerations: grid and resource findings apart from community and environmental ones. */
+function considerationsFor(site: SiteData, project: ProjectScenario, policy: ScoringPolicy, components: ComponentResult[], constraints: ConstraintsResult): Consideration[] {
   const out: Consideration[] = [];
-  const get = (k: ComponentKey) => components.find((c) => c.key === k) as ComponentResult;
   const add = (group: ConsiderationGroup, tone: ConsiderationTone, text: string) => out.push({ group, tone, text });
+  const get = (k: ComponentKey) => components.find((c) => c.key === k) as ComponentResult;
+  const spec = policy.technologies[project.technology];
+  const tier = voltageTierFor(project.capacityMw, policy);
 
   const grid = get("grid");
-  for (const m of grid.metrics.filter((x) => x.id === "substation" || x.id === "line")) {
-    const what = m.label.replace("Nearest ", "");
+  add("grid", "neutral", `Voltage-search threshold: ${tierLabel(tier, policy)} (${fmtMw(project.capacityMw)} proposed)`);
+  for (const m of grid.metrics) {
     if (m.state !== "observed" || m.score === null) {
-      add("infrastructure", "missing", `Nearest ${what}: not available`);
+      add("grid", "missing", `${m.label}: not available`);
       continue;
     }
-    const km = validNonNegative((m.id === "substation" ? input.substation : input.line)?.distanceKm) as number;
-    const tone: ConsiderationTone = km >= GRID_ZERO_KM ? "constraint" : km > 10 ? "tradeoff" : km <= 5 ? "advantage" : "neutral";
-    add("infrastructure", tone, `Nearest ${what}: ${m.value}${km >= GRID_ZERO_KM ? `, ${GRID_ZERO_KM} km or more away` : ""}`);
+    const km = Number.parseFloat(m.value);
+    const tone: ConsiderationTone = m.score === 0 ? "tradeoff" : km <= 5 ? "advantage" : km > 20 ? "tradeoff" : "neutral";
+    add("grid", tone, `${m.label}: ${m.value}${m.score === 0 && Number.isFinite(km) ? `, beyond the ${policy.grid.zeroKm} km scoring range` : ""}`);
   }
-  if (gradeCap) add("infrastructure", "constraint", `GriddyGrade capped at ${gradeCap.limit}: ${gradeCap.reason.charAt(0).toLowerCase()}${gradeCap.reason.slice(1)}, a must-have for a data center load`);
-  const queue = grid.metrics.find((m) => m.id === "queue");
-  const q = validNonNegative(ml?.queueMw);
-  if (queue?.state === "observed" && q !== null) {
-    add(
-      "infrastructure",
-      q >= QUEUE_HIGH_MW ? "tradeoff" : q < 1000 ? "advantage" : "neutral",
-      q >= QUEUE_HIGH_MW
-        ? `Congested interconnection queue: ${queue.value} (LBNL). Expect long study timelines; needs a utility interconnection study`
-        : `Interconnection queue: ${queue.value} (LBNL)`,
-    );
+  const q = site.queue.state === "available" ? site.queue.value : null;
+  if (q && validNonNegative(q.activeMw) !== null && (q.activeMw as number) >= 10_000) {
+    add("grid", "tradeoff", `Congested county queue: ${fmtMw(q.activeMw as number)} of active requests in ${q.county ?? "the county"} (LBNL). Queued projects compete for transmission access; expect long study timelines.`);
   }
+  add("grid", "caveat", `${GRID_NOT_VERIFIED} Distances do not show hosting capacity or upgrade needs; exporting from a new plant needs a utility interconnection study.`);
 
-  const gen = get("generation");
-  const cap = gen.metrics[0];
-  if (cap.state === "observed" && cap.score !== null) {
-    const plants = validNonNegative(input.generation?.plantCount);
-    const text = `${cap.value.split(" vs ")[0]} operating nameplate generation within ${GENERATION_RADIUS_KM} km${plants !== null ? ` (${en(plants)} plant${plants === 1 ? "" : "s"})` : ""}`;
-    add("infrastructure", cap.score >= 100 ? "advantage" : cap.score === 0 ? "tradeoff" : "neutral", cap.score === 0 ? `No operating generation within ${GENERATION_RADIUS_KM} km` : text);
-  } else add("infrastructure", "missing", `Operating generation within ${GENERATION_RADIUS_KM} km: not available`);
-  const clean = gen.metrics.find((m) => m.id === "clean_build");
-  if (clean?.state === "observed" && clean.score !== null) {
-    const tone: ConsiderationTone = clean.score >= 80 ? "advantage" : clean.score < 20 ? "tradeoff" : "neutral";
-    add("infrastructure", tone, `Clean-build similarity within ${CLEAN_BUILD_RADIUS_KM} km: ${clean.value.split(" (")[0]} (${ML_TAG}; resembles where plants were built, not a feasibility finding)`);
+  const r = get("resource");
+  for (const m of r.metrics) {
+    if (m.state === "observed" && m.score !== null) add("resource", m.score >= 70 ? "advantage" : m.score < 30 ? "tradeoff" : "neutral", `${m.label}: ${m.value} → ${fmtScore(m.score)}${m.source?.kind === "inferred" ? " (inferred, not a resource measurement)" : ""}`);
+    else if (m.state === "not_applicable") add("resource", "neutral", `${m.label}: ${lowerFirst(m.value)}`);
   }
+  for (const f of r.missingFields) add("resource", "missing", `Missing operating prerequisite: ${f}`);
+  for (const f of r.context.filter((x) => x.label.includes("shown, not scored"))) add("resource", "missing", `${f.label}: ${f.value}`);
 
-  const infra = get("infrastructure");
-  const names = infra.metrics.map((m) => `${m.label}: ${m.value}`).join(" · ");
-  add("infrastructure", infra.status === "unavailable" ? "missing" : infra.score >= 100 ? "neutral" : "tradeoff", names);
+  const pop = site.population.state === "available" ? validNonNegative(site.population.value) : null;
+  if (pop !== null) add("community", "neutral", `≈ ${fmtPeople(pop)} people within ${policy.community.radiusKm} km (Census estimate): an exposure proxy, not a measure of impacts or support`);
+  else add("community", "missing", `Population within ${policy.community.radiusKm} km: not available`);
 
-  const community = get("community");
-  const pop = validNonNegative(input.population);
-  if (pop !== null) {
-    add("community", community.score < 25 ? "tradeoff" : "neutral", `≈ ${fmtPeople(pop)} people within ${POPULATION_RADIUS_KM} km (Census estimate)${community.score < 25 ? ": plan early, substantive community engagement" : ""}`);
-  } else add("community", "missing", `Population within ${POPULATION_RADIUS_KM} km: not available`);
+  const epa = epaSubscore(site.designations, policy);
+  const relevance = spec.combustion ? "scored: nonattainment adds permitting steps for a new combustion source" : `context only: ${lowerFirst(spec.label)} is not a combustion source, though construction equipment and backup generators may need air permits`;
+  if (epa.score === null && !epa.designations.length) add("environment", "missing", `EPA nonattainment status: not available (${epa.missing[0] ?? "no data"})`);
+  else if (epa.designations.length) add("environment", spec.combustion && (epa.score ?? 100) <= 30 ? "tradeoff" : "neutral", `EPA nonattainment: ${epa.value} (${relevance})`);
+  else add("environment", "neutral", `No listed ozone or PM2.5 nonattainment (EPA Green Book; ${relevance})`);
+  if (get("environment").metrics.some((m) => m.id === "other" && m.state === "missing")) add("environment", "missing", "No documented, technology-applicable environmental screening (habitat, wetlands, cultural resources, coastal zone) in Griddy");
 
-  const air = get("air");
-  if (air.status === "unavailable") add("community", "missing", "EPA nonattainment status: not available");
-  else if (input.designations && input.designations.length) {
-    add("community", air.score <= 30 ? "constraint" : "tradeoff", `EPA nonattainment: ${air.metrics[0].value}`);
-  } else add("community", "neutral", "No listed ozone or PM2.5 nonattainment (EPA Green Book)");
-
+  for (const f of constraints.critical) add("constraints", "constraint", `${f.title}: ${f.evidence} (${f.source}${f.date ? `, ${f.date}` : ""})`);
+  for (const f of constraints.screening) add("constraints", "tradeoff", `${f.title}: ${f.evidence}`);
+  for (const c of constraints.checks.filter((x) => x.status === "not_assessed" && x.tier === "critical")) add("constraints", "missing", `${c.label}: not assessed`);
 
   for (const c of components) {
-    const own = c.missingFields.filter((f) => !f.includes("(model signal)"));
-    if (c.status === "unavailable") add("data", "missing", `${c.label}: no data, scored as a neutral ${NEUTRAL_SCORE}`);
-    else if (c.status === "partial") add("data", "missing", `${c.label}: partial data (${own.join("; ")})`);
+    if (c.status === "unavailable") add("data", "missing", `${c.label}: no usable data, scored as a neutral ${policy.neutralScore}`);
+    else if (c.status === "partial") add("data", "missing", `${c.label}: partially observed (${c.missingFields.join("; ")})`);
   }
-  if (!ml) add("data", "missing", `Model signals (interconnection queue, clean-build similarity, demand forecast): not available${mlReason ? ` (${mlReason})` : ""}; the grade uses the rules alone`);
-  add(
-    "data",
-    "caveat",
-    "Actual grid capacity has not been verified. Distances and nearby generation do not show spare capacity; serving a data center load needs a utility interconnection / large-load study.",
-  );
+  add("data", "missing", "Land suitability: Not assessed — excluded from this score.");
   return out;
 }
