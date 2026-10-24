@@ -202,11 +202,12 @@ function footprintCard(p: Props): HTMLElement {
     subtitle: name ? `${label} · ${facts}` : facts,
     rows: [
       ["Note", notes.length ? notes.join(". ") : null],
-      ["Land use", str(p.lapm_source)],
+      ["Land use", `Estimate (assumption): ${str(p.lapm_source) ?? "Evaluate catalog"}`],
       ["Layout", p.placed === "auto" ? "Schematic, east of the site" : "At the asset's location"],
       ["Height", "Schematic, for legibility"],
     ],
-    source: str(p.source) ?? "Evaluate catalog",
+    link: { href: str(p.source_url), text: "Land-use study" },
+    source: str(p.source) ?? "Evaluate catalog land-use assumption",
   });
 }
 

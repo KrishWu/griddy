@@ -53,13 +53,54 @@ function queueStatus(fc: FC): number | "unavailable" {
   return fc.features.filter((f) => (num(f.properties?.queue_active_projects) ?? 0) > 0).length;
 }
 
-/** Camera padding for framing footprints: clear of the layers card (top-right) and of D's floating
- *  Site cards (bottom-left, up to 55% of the map height + 32 px), when the map is big enough to afford it.
- *  The extra 8% of the height at the bottom covers what the pitch and extrusions push below the fitted bounds. */
-function framePadding(m: MLMap): { top: number; right: number; bottom: number; left: number } {
+type Padding = { top: number; right: number; bottom: number; left: number };
+
+// D's AppShell floats the Site cards over the map from this viewport width (its LARGE query), as
+// "absolute bottom-8 left-3 w-80 max-h-[55%]"; they reach that max height once the site summary and
+// site intelligence load. Below it they sit in the sidebar. Map pixels throughout.
+const FLOATING_CARDS_QUERY = "(min-width: 1024px)";
+const CARDS = { left: 12, width: 320, bottom: 32, maxShare: 0.55 };
+// The layers card wrapper below: right-2.5 top-[106px], holding the w-56 LayerControl.
+const LAYERS_CARD = { right: 10, top: 106, width: 224 };
+
+function siteCardsRect(h: number): { right: number; top: number } | null {
+  if (typeof window === "undefined" || !window.matchMedia(FLOATING_CARDS_QUERY).matches) return null;
+  return { right: CARDS.left + CARDS.width, top: h - CARDS.bottom - CARDS.maxShare * h };
+}
+
+/** Layers card max height: 45% of the map, clear of the scale bar; but when the map is too narrow for it to
+ *  sit beside the floating Site cards (which paint on top), it stops above them so its toggles stay clickable.
+ *  An overlap up to 8 px is fine: the card's 12 px left padding keeps the checkboxes clear. */
+function layersMaxHeight(w: number, h: number): number {
+  const base = Math.min(0.45 * h, h - 176);
+  const cards = siteCardsRect(h);
+  if (!cards || cards.right - (w - LAYERS_CARD.right - LAYERS_CARD.width) <= 8) return base;
+  return Math.max(96, Math.min(base, cards.top - 8 - LAYERS_CARD.top));
+}
+
+/** Camera padding for framing footprints: the largest clear rectangle of the map, away from the view
+ *  buttons (top-left), the layers card (top-right), D's floating Site cards (bottom-left) and the scale bar.
+ *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds. */
+function framePadding(m: MLMap): Padding {
   const { clientWidth: w, clientHeight: h } = m.getContainer();
-  if (w < 640 || h < 600) return { top: 40, right: 40, bottom: 40, left: 40 };
-  return { top: 60, right: 250, bottom: Math.round(h * 0.63) + 64, left: 50 };
+  const cards = siteCardsRect(h);
+  const layersLeft = w - LAYERS_CARD.right - LAYERS_CARD.width;
+  const layersBottom = LAYERS_CARD.top + layersMaxHeight(w, h);
+  const gap = 12;
+  const top = 48; // below the view buttons
+  const floor = 40; // scale bar and attribution
+  const aboveCards = cards ? h - cards.top + gap : floor;
+  const candidates: Padding[] = [
+    { top, left: gap, right: w - layersLeft + gap, bottom: aboveCards }, // beside the layers card
+    { top: layersBottom + gap, left: cards ? cards.right + gap : gap, right: gap, bottom: floor }, // below it
+    { top: layersBottom + gap, left: gap, right: gap, bottom: aboveCards }, // between it and the cards
+  ];
+  const size = (p: Padding) => [w - p.left - p.right, h - p.top - p.bottom] as const;
+  const area = (p: Padding) => Math.max(0, size(p)[0]) * Math.max(0, size(p)[1]);
+  const best = candidates.reduce((a, b) => (area(b) > area(a) ? b : a));
+  const [bw, bh] = size(best);
+  if (bw < 120 || bh < 100) return { top: 40, right: 40, bottom: 40, left: 40 };
+  return { ...best, bottom: best.bottom + Math.round(Math.min(0.08 * h, 0.25 * bh)) };
 }
 
 // One fetch per layer per page load, shared across remounts (StrictMode, error-boundary resets).
@@ -147,6 +188,15 @@ export function MapView() {
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
   const retryBasemap = useRef<(() => void) | null>(null);
+  // Map size, so the layers card can stop above D's floating Site cards when the map is narrow.
+  const [layersMaxH, setLayersMaxH] = useState<number | null>(null);
+  useEffect(() => {
+    const node = el.current;
+    if (!node) return;
+    const ro = new ResizeObserver(() => setLayersMaxH(Math.round(layersMaxHeight(node.clientWidth, node.clientHeight))));
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
 
   // Latest values for map event handlers (they're registered once).
   const selectRef = useRef(selectSite);
@@ -551,8 +601,12 @@ export function MapView() {
         )}
       </div>
       {/* Top-right, below MapLibre's zoom/compass control (10 px margin + 3 x 29 px buttons): layers + legend,
-          capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right). */}
-      <div className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end">
+          capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right),
+          and of the floating Site cards on narrow maps (layersMaxHeight). */}
+      <div
+        className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end"
+        style={layersMaxH !== null ? { maxHeight: layersMaxH } : undefined}
+      >
         <LayerControl
           container={el}
           visible={visible}

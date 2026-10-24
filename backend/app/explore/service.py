@@ -958,11 +958,19 @@ def _poi_matches(poi: str | None, key: str) -> bool:
     return re.search(rf"\b{re.escape(key)}\b", " ".join(_words(poi))) is not None
 
 
-def _poi_is_line(poi: str) -> bool:
+def _poi_is_line(poi: str, station: str | None = None) -> bool:
     if re.search(r"\bline\b|\btap\b|#\s*\d|\bno\.?\s*\d", poi, flags=re.IGNORECASE):
         return True
-    # A two-ended "A-B" name with no kV bus is a line ("DELEVAN-CORTINA"); "Vaca-Dixon 230 kV" is a bus.
-    return re.search(r"\w\s*-\s*\w", poi) is not None and re.search(r"\d\s*kv", poi, re.IGNORECASE) is None
+    ends = re.split(r"\s*-\s*", poi.strip())
+    if len(ends) < 2 or not all(ends):
+        return False
+    # A two-ended "A-B" name with no kV bus is a line ("DELEVAN-CORTINA").
+    if re.search(r"\d\s*kv", poi, re.IGNORECASE) is None:
+        return True
+    # With a kV it is one substation's bus ("Vaca-Dixon 230 kV") unless the matched substation names only
+    # one end: "Westly-Quinto 230 kV" or "QUINTO SW STA- FINK SW STA 230 kV" run between two stations.
+    keys = [k for k in (_substation_key(e) for e in ends) if k]
+    return station is not None and len(keys) >= 2 and not all(_poi_matches(station, k) for k in keys)
 
 
 def _project_label(p: dict[str, Any], with_tech: bool) -> str:
@@ -1005,10 +1013,10 @@ def _queue_finding(qc: dict[str, Any], hv: dict[str, Any] | None) -> Finding:
             return ""
         if id(p) in at_hv_ids and hv is not None:
             if named_hv:
-                return f", also {'on the' if _poi_is_line(p['poi']) else 'at'} {p['poi']}"
+                return f", also {'on the' if _poi_is_line(p['poi'], hv['name']) else 'at'} {p['poi']}"
             named_hv = True
             nearest = f"the site's nearest 220 kV+ substation ({hv['distance_km']:.1f} km away)"
-            if _poi_is_line(p["poi"]):
+            if _poi_is_line(p["poi"], hv["name"]):
                 return f" on the {p['poi']}, which runs to {hv['name']}, {nearest}"
             return f" at {p['poi']}, {nearest}"
         return f" at {p['poi']}"

@@ -34,6 +34,13 @@ export function loadCatalog(): Promise<Catalog> {
   return catalogPromise;
 }
 
+/** The land-use study behind a tech's acres/MW. C's catalog cites it in provenance.note as
+ *  "Land <value> <units>: <source> (<url>)."; provenance.source is the ATB cost case, not the land figure. */
+export function landCitation(tech: TechSpec | undefined): { source: string; url: string | null } | null {
+  const m = /Land\s+[\d.]+\s[^:]*:\s*(.+?)\s*\((https?:\/\/[^\s)]+)\)/.exec(tech?.provenance?.note ?? "");
+  return m ? { source: m[1], url: m[2] } : null;
+}
+
 interface Item {
   asset: Asset;
   tech: TechSpec | undefined;
@@ -125,6 +132,7 @@ export function footprintsFC(assets: Asset[] | undefined, site: LngLat | undefin
   const features: GeoJSON.Feature[] = [];
   const push = (item: Item, ring: [number, number][], placed: "auto" | "located") => {
     const { asset: a, tech } = item;
+    const land = item.fromOverride ? null : landCitation(tech);
     features.push({
       type: "Feature",
       geometry: { type: "Polygon", coordinates: [ring] },
@@ -144,7 +152,8 @@ export function footprintsFC(assets: Asset[] | undefined, site: LngLat | undefin
         min_display: item.sideKm < MIN_SIDE_KM,
         height_m: FOOTPRINT_HEIGHT_M[a.kind] ?? 20,
         placed,
-        source: item.fromOverride ? "Scenario override" : (tech?.provenance?.source ?? "Evaluate catalog"),
+        source: item.fromOverride ? "Scenario override" : (land?.source ?? "Evaluate catalog land-use assumption"),
+        source_url: land?.url ?? null,
       },
     });
   };

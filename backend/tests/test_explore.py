@@ -383,7 +383,23 @@ def test_substation_key_and_line_heuristics():
     assert service._poi_is_line("DELEVAN-CORTINA")
     assert service._poi_is_line("Midway-Kern Line #2")
     assert not service._poi_is_line("Vaca-Dixon 230 kV")
-    assert not service._poi_is_line("Midway 230 kV")
+    assert not service._poi_is_line("Vaca-Dixon 230 kV", "Vaca-Dixon Substation")
+    assert not service._poi_is_line("Midway 230 kV", "Midway Substation")
+    # Two stations on either side of the hyphen: a line, even with a kV.
+    assert service._poi_is_line("QUINTO SW STA- FINK SW STA 230 kV", "Fink Switching Station")
+    assert service._poi_is_line("Westly-Quinto 230 kV", "Quinto Substation")
+
+
+def test_queue_finding_names_a_line_as_a_line():
+    """A Stanislaus site nearest Fink Switching Station: the matching POI is the Quinto-Fink line."""
+    s = service.summarize_site(LngLat(lon=-121.4, lat=37.25))
+    hv = s.extras.get("nearest_hv_substation") or {}
+    if "fink" not in (hv.get("name") or "").lower():
+        pytest.skip("substation data changed; this site no longer resolves to Fink")
+    q = next((f for f in s.findings if f.id == "interconnection_queue"), None)
+    if q is None or "FINK SW STA" not in q.detail:
+        pytest.skip("queue data changed; no Fink request among the county's largest")
+    assert "on the QUINTO SW STA- FINK SW STA 230 kV, which runs to Fink" in q.detail
 
 
 def test_voltage_named_substation_claims_no_queue_poi():
