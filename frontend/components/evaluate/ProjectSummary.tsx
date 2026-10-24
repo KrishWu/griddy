@@ -102,7 +102,7 @@ function WhyBuild({ result, c }: { result: ScenarioResult; c: EconomicCase }) {
     ? <Headline tone={c.verdict === "grid_baseline" ? "neutral" : "bad"} label={<Label term="simple_payback" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
         value={c.verdict === "grid_baseline" ? "—" : "Doesn't pay back"} sub={c.verdict === "grid_baseline" ? "this is the buy-from-utility case: nothing to earn back" : `vs utility rates: costs ${usd(-c.savingsUsd)}/yr more to run`} />
     : <Headline tone={v.tone} label={<Label term="simple_payback" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
-        value={`${years1(c.paybackYears)} years`} sub={c.paybackYears > c.years ? `longer than the ${c.years}-year analysis` : `simple payback on ${usd(c.capexUsd)} upfront`} />;
+        value={`${years1(c.paybackYears)} years`} sub={c.paybackYears > c.years ? `longer than the ${c.years}-year analysis` : `from go-ahead: ${c.buildYears}-yr build + discounted savings on ${usd(c.capexUsd)}`} />;
   return <section aria-label="Why build it" className="mb-4 rounded-xl border-2 border-zinc-200 p-3 dark:border-zinc-700">
     <BlockHeader title="Why build it" verdict={c.verdict} />
     <div className="grid grid-cols-2 gap-2">

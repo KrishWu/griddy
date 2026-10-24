@@ -5,6 +5,7 @@
 import type { Provenance, ScenarioResult } from "@/lib/contract";
 import { usd } from "@/lib/format";
 
+import { evalExtras } from "./extras";
 import { projectOf, resilienceOf } from "./project";
 
 /** EIA RECS 2020 California average household electricity use (data/household/assumptions.json "ca_avg_annual_kwh"). */
@@ -51,8 +52,15 @@ export interface EconomicCase {
   /** gridAnnualUsd - designAnnualUsd; negative means the design costs more to run. */
   savingsUsd: number;
   capexUsd: number;
-  /** capex / savings when savings > 0, else null. */
+  /** Years to profitable: build years + discounted payback; null when savings never repay the capital. */
   paybackYears: number | null;
+  /** capex / savings when savings > 0, else null (shown in the provenance only). */
+  simplePaybackYears: number | null;
+  discountedPaybackYears: number | null;
+  buildYears: number;
+  demandGrowth: number;
+  /** Cumulative discounted cash vs buying from the utility: index 0 = go-ahead (-CAPEX), then each operating year. */
+  cumulativePvUsd: number[];
   /** gridAnnualUsd x AF(r, N) - NPC: positive means this design is cheaper over N years, today's dollars. */
   netSavingsPvUsd: number;
   npcUsd: number;
@@ -104,6 +112,30 @@ export function economicCaseOf(result: ScenarioResult): EconomicCase | null {
   const cost = served * retail.usdPerMwh;
   const e = result.evaluation.economics;
   const savings = cost - e.annual_opex_usd;
+  // Years to profitable: a year-by-year discounted cash-flow walk from the go-ahead, not a fixed ratio.
+  // Capital is committed at year 0; operating savings start after the build. Each operating year t:
+  //   savings_t = utility cost x growth_t - (fixed O&M + variable OPEX x growth_t) - replacement_t + salvage_t
+  // where growth_t follows the planner's demand forecast (annual growth for its projection years, after
+  // which the plant is fully used), fixed O&M stays flat, fuel and grid purchases scale with served energy,
+  // and replacement/salvage come from the evaluation's own cash flows (e.g. the battery at year 15).
+  const project = (result.scenario.options?.project ?? {}) as { construction_years?: number; annual_demand_growth?: number; projection_years?: number };
+  const buildYears = Math.max(0, project.construction_years ?? 2);
+  const growth = Math.max(0, project.annual_demand_growth ?? 0);
+  const growYears = Math.max(0, project.projection_years ?? 0);
+  const fixedOm = e.lines.filter(l => l.category === "fixed_om").reduce((t, l) => t + l.usd, 0);
+  const variableOpex = e.annual_opex_usd - fixedOm;
+  const flows = new Map((evalExtras(result.evaluation).cash_flows ?? []).map(f => [f.year, f]));
+  const cumulative: number[] = [-e.capex_total_usd];
+  let cum = -e.capex_total_usd, discounted: number | null = null;
+  for (let t = 1; t <= years; t++) {
+    const g = (1 + growth) ** Math.min(t - 1, growYears);
+    const f = flows.get(t);
+    const net = cost * g - (fixedOm + variableOpex * g) - (f ? f.replacement_usd + f.salvage_usd : 0);
+    const pv = net / (1 + r) ** (buildYears + t);
+    if (discounted === null && cum < 0 && cum + pv >= 0) discounted = t - 1 + (pv > 0 ? -cum / pv : 0);
+    cum += pv;
+    cumulative.push(cum);
+  }
   const af = annuityFactor(r, years);
   const net = cost * af - e.npc_usd;
   const importShare = served > 0 ? Math.min(1, s.imports_mwh / served) : 0;
@@ -115,7 +147,12 @@ export function economicCaseOf(result: ScenarioResult): EconomicCase | null {
     designAnnualUsd: e.annual_opex_usd,
     savingsUsd: savings,
     capexUsd: e.capex_total_usd,
-    paybackYears: savings > 0 ? e.capex_total_usd / savings : null,
+    paybackYears: discounted === null ? null : buildYears + discounted,
+    simplePaybackYears: savings > 0 ? e.capex_total_usd / savings : null,
+    discountedPaybackYears: discounted,
+    buildYears,
+    demandGrowth: growth,
+    cumulativePvUsd: cumulative,
     netSavingsPvUsd: net,
     npcUsd: e.npc_usd,
     af,
@@ -163,7 +200,7 @@ export function verdictSentence(c: EconomicCase, subject = "this design"): strin
     case "slow_payback":
       return `Cuts running costs by ${money(c.savingsUsd)} a year versus ${grid}, but doesn't earn back its ${money(c.capexUsd)} build cost within ${c.years} years (${money(c.netSavingsPvUsd)} behind in today's dollars). ${rest}`;
     case "pays_back":
-      return `Worth building on cost: it cuts running costs by ${money(c.savingsUsd)} a year versus ${grid}, earns back its ${money(c.capexUsd)} build cost in about ${years1(c.paybackYears ?? 0)} years and ends ${money(c.netSavingsPvUsd)} ahead over ${c.years} years (today's dollars).`;
+      return `Worth building on cost: it cuts running costs by ${money(c.savingsUsd)} a year versus ${grid}, is profitable about ${years1(c.paybackYears ?? 0)} years after the go-ahead (${years1(c.buildYears)}-year build, then ${years1(c.discountedPaybackYears ?? 0)} years to repay ${money(c.capexUsd)} at a ${(c.discountRate * 100).toFixed(0)}% cost of capital) and ends ${money(c.netSavingsPvUsd)} ahead over ${c.years} years (today's dollars).`;
   }
 }
 
@@ -190,7 +227,7 @@ export function economicProvenance(c: EconomicCase) {
       source: "Simple payback = upfront capital (CAPEX) ÷ annual savings vs grid-only",
       note: c.paybackYears === null
         ? `No payback: the design's operating cost is not below the grid-only cost, so there are no savings to repay ${usd(c.capexUsd)}.`
-        : `${usd(c.capexUsd)} ÷ ${usd(c.savingsUsd)} a year = ${c.paybackYears.toFixed(1)} years, undiscounted and before replacements or salvage.`,
+        : `Year-by-year cash walk: ${usd(c.capexUsd)} committed at go-ahead, ${c.buildYears.toFixed(1)}-year build, then each year's savings vs the utility (growing ${(c.demandGrowth * 100).toFixed(1)}%/yr with the demand forecast, minus modelled replacements) discounted at ${(c.discountRate * 100).toFixed(0)}% real; cumulative cash turns positive after ${c.paybackYears.toFixed(1)} years (simple payback ignoring build time and cost of capital: ${(c.simplePaybackYears ?? 0).toFixed(1)} years).`,
     } satisfies Provenance,
     net: {
       kind: "inferred",
