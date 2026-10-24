@@ -32,7 +32,7 @@ STANDARDS = {  # Green Book file stem -> (pollutant, NAAQS label)
     "pm25_2006std": ("PM2.5", "2006 24-hour PM2.5"),
 }
 AIRNOW_FILE = "https://files.airnowtech.org/airnow/{y}/{d}/HourlyAQObs_{ts}.dat"
-UA = {"User-Agent": "GridForge-hackathon/0.1"}
+UA = {"User-Agent": "Griddy-hackathon/0.1"}
 SIMPLIFY_DEG = 0.003  # ~300 m: plenty for point-in-polygon at site scale
 
 

@@ -80,7 +80,7 @@ export function AppShell() {
   return (
     <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <header className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-        <h1 className="text-lg font-bold">GridForge</h1>
+        <h1 className="text-lg font-bold">Griddy</h1>
         <span className="hidden text-sm text-zinc-500 xl:inline">Energy infrastructure planning</span>
         <Toggle<View>
           value={view}

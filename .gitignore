@@ -219,7 +219,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# GridForge: raw downloads stay local; commit only small processed files under data/<module>/
+# Griddy: raw downloads stay local; commit only small processed files under data/<module>/
 data/raw/
 *.tif
 *.tiff

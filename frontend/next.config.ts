@@ -5,7 +5,7 @@ import type { NextConfig } from "next";
 const API_ORIGIN = process.env.GRIDFORGE_API_ORIGIN ?? "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
-  // GridForge is a client-heavy single page app; keep the classic rendering model
+  // Griddy is a client-heavy single page app; keep the classic rendering model
   // so map/chart components don't trip Cache Components prerender checks.
   cacheComponents: false,
   partialPrefetching: false,

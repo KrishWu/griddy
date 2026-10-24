@@ -1,4 +1,4 @@
-"""GridForge shared contract.
+"""Griddy shared contract.
 
 These are the ONLY types that cross workstream boundaries. Every module reads and
 writes these shapes; the frontend mirrors them in frontend/lib/contract.ts.

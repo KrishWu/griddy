@@ -1,4 +1,4 @@
-"""GridForge backend.  SHARED (foundation).
+"""Griddy backend.  SHARED (foundation).
 
 Loads backend/.env (git-ignored) so API keys are available via os.environ to the
 server, tests and prep scripts alike. Copy backend/.env.example to get started.

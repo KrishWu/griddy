@@ -76,7 +76,7 @@ def download(raw_dir: Path = RAW_DIR) -> list[Path]:
         if not (path.exists() and path.stat().st_size > 1_000_000):
             print(f"downloading {url}")
             tmp = path.with_suffix(".part")
-            req = urllib.request.Request(url, headers={"User-Agent": "GridForge-prep/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Griddy-prep/1.0"})
             with urllib.request.urlopen(req, timeout=300) as resp, tmp.open("wb") as fh:
                 while chunk := resp.read(1 << 20):
                     fh.write(chunk)

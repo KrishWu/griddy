@@ -20,7 +20,7 @@ OUT_DIR = DATA_DIR / "explore"
 RAW_DIR = OUT_DIR / "raw"
 CA_ALBERS = "EPSG:3310"  # California Albers (meters): use for distances, buffers, simplification
 WGS84 = "EPSG:4326"
-USER_AGENT = "GridForge/0.1 (Stanford Cleantech Hackathon 2026; github.com/heruirayli/cleantech-hacks)"
+USER_AGENT = "Griddy/0.1 (Stanford Cleantech Hackathon 2026; github.com/heruirayli/cleantech-hacks)"
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
 

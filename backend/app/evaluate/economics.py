@@ -353,7 +353,7 @@ def _grid_lines(scenario: Scenario, imports: np.ndarray, exports: np.ndarray, pr
         prov = Provenance(
             kind="simulated",
             source=(
-                f"GridForge hourly simulation: imports x (hourly price + import adder), price source '{a.price_source}'"
+                f"Griddy hourly simulation: imports x (hourly price + import adder), price source '{a.price_source}'"
                 + (f" (${a.flat_price_usd_per_mwh:g}/MWh every hour)" if a.price_source == "flat" else "")
             ),
             note=(

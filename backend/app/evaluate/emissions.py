@@ -66,7 +66,7 @@ def compute_emissions(
     provenance = [
         Provenance(kind="observed", source=f"EPA 40 CFR 98 Subpart C Table C-1: natural gas {co2['value']} kg CO2/MMBtu", url=co2["url"],
                    note="On-site combustion CO2 = gas MMBtu (ATB full-load heat rate x simulated MWh) x factor. Combustion CH4/N2O (<0.1% of CO2e) omitted."),
-        Provenance(kind="simulated", source="GridForge hourly simulation: imports x hourly CAISO average grid CO2 intensity",
+        Provenance(kind="simulated", source="Griddy hourly simulation: imports x hourly CAISO average grid CO2 intensity",
                    note=f"{imports_mwh:,.0f} MWh imported" + (f" at an import-weighted {import_weighted:,.0f} kg/MWh." if import_weighted else ".")),
         Provenance(kind="observed", source=ref("carb_unspecified_import_t_co2_per_mwh")["source"], url=ref("carb_unspecified_import_t_co2_per_mwh")["url"],
                    note=f"Alternative import accounting (extras only): {carb_tl} x {carb_ef} t CO2e/MWh = {carb_t:,.0f} t/yr."),
