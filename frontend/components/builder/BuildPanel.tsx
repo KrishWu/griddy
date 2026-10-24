@@ -46,7 +46,7 @@ export function BuildPanel() {
 
   const mode = scenario.mode ?? "industrial";
   const community = mode === "community";
-  const dataCenter = scenario.options?.demand_use === "data_center" || ["ai_training", "ai_inference"].includes(scenario.demand.profile);
+  const dataCenter = scenario.options?.demand_use === "data_center" || ["ai_training", "ai_inference"].includes(scenario.demand.profile ?? "flat");
   const peak = scenario.demand.peak_mw;
   const modePresets = presets.filter((p) => (p.mode ?? "industrial") === mode);
 

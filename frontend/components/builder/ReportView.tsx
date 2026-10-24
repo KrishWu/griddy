@@ -208,7 +208,7 @@ export function ReportView() {
             <Table
               head={["", "Value"]}
               rows={[
-                ...(!(sc.options?.demand_use === "data_center" || ["ai_training", "ai_inference"].includes(sc.demand.profile))
+                ...(!(sc.options?.demand_use === "data_center" || ["ai_training", "ai_inference"].includes(sc.demand.profile ?? "flat"))
                   ? [["Peak demand to serve", mw(sc.demand.peak_mw)]]
                   : [
                       ["IT load (compute)", mw(sc.demand.peak_mw / (sc.demand.pue ?? 1.2))],

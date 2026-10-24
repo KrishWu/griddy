@@ -24,7 +24,7 @@ export function ProjectPlanner() {
   const projected = proposal?.projection;
   return <Panel title="Plan grid infrastructure">
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">Plan power plants, storage and a grid connection to serve an area's demand. Compare cost, power, carbon and resilience before detailed engineering.</p>
+      <p className="text-xs text-zinc-500">Plan power plants, storage and a grid connection to serve an area&apos;s demand. Compare cost, power, carbon and resilience before detailed engineering.</p>
       <label className="block text-xs">Start from a design
         <select className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1.5 dark:border-zinc-700" value={scenario.preset ?? "custom"} onChange={e => applyPreset(e.target.value)}>
           <option value="custom">Custom project</option>
@@ -79,7 +79,7 @@ export function ProjectPlanner() {
           <NumberField label="Other known upfront carbon" unit="t CO₂e" value={field("other_upfront_t_co2e", 0)} max={1e10} onChange={v => set("other_upfront_t_co2e", v)} />
           <p className="text-zinc-500">Use other carbon for known gas-plant, grid, civil works or other construction not covered by the reference factors.</p>
           <NumberField label={<><Term k="carbon_price">Carbon price</Term> sensitivity</>} unit="USD / t CO₂e" value={scenario.assumptions?.carbon_price_usd_per_t ?? 0} max={1000} onChange={v => updateScenario(s => ({ ...s, assumptions: { ...s.assumptions, carbon_price_usd_per_t: v } }))} />
-          <NumberField label="Carbon & cost analysis horizon" unit="years" value={scenario.assumptions.analysis_years} min={1} max={100} onChange={v => updateScenario(s => ({ ...s, assumptions: { ...s.assumptions, analysis_years: Math.round(v) } }))} />
+          <NumberField label="Carbon & cost analysis horizon" unit="years" value={scenario.assumptions?.analysis_years ?? 20} min={1} max={100} onChange={v => updateScenario(s => ({ ...s, assumptions: { ...s.assumptions, analysis_years: Math.round(v) } }))} />
         </div>
       </details>
       {busy && <p role="status" aria-live="polite" className="text-xs text-zinc-500">Recalculating project…</p>}

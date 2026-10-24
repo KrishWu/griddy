@@ -55,7 +55,7 @@ export function Mission() {
           It is a <strong>screening tool</strong> for planners, communities, developers and students, built at the Stanford Cleantech
           Hackathon 2026.
         </p>
-        <p>Data centers are one optional demand profile. The primary workflow plans electricity infrastructure for an area's needs; it does not replace a utility interconnection study or detailed power-system design.</p>
+        <p>Data centers are one optional demand profile. The primary workflow plans electricity infrastructure for an area&apos;s needs; it does not replace a utility interconnection study or detailed power-system design.</p>
       </div>
     </Section>
   );
