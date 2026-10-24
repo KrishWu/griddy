@@ -16,11 +16,11 @@ import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature
 
 import { countyByGeoid, scenarioLabel } from "@/components/forecast/forecastData";
 import { ForecastView } from "@/components/forecast/ForecastView";
-import { forecastAdjusted, usePhase2 } from "@/components/forecast/usePhase2";
+import { forecastAdjusted, getPhase2State, usePhase2 } from "@/components/forecast/usePhase2";
 import { PanelGuard } from "@/components/shell/PanelGuard";
 import { showLeftTabFromMap } from "@/components/shell/sidebarTabs";
 import { api, request } from "@/lib/api";
-import type { Asset, Catalog, DemandForecast, LngLat, SiteRecommendation, SiteSummary } from "@/lib/contract";
+import type { Asset, Catalog, DemandForecast, LngLat, SiteCandidate, SiteRecommendation, SiteSummary } from "@/lib/contract";
 import { prefersReducedMotion, useSettings } from "@/lib/settings";
 import { useGridForge } from "@/lib/store";
 
@@ -232,7 +232,7 @@ export function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
   const areaClick = useRef<((p: LngLat) => void) | null>(null);
-  const { scenario, selectSite, overlays } = useGridForge();
+  const { scenario, selectSite, selectRecommendedSite, overlays } = useGridForge();
   const { summary } = useSiteSummary();
   // Phase 2: the forecast and site recommendation for the drawer's current what-if (shared state).
   const forecast = usePhase2((s) => s.forecast);
@@ -282,6 +282,7 @@ export function MapView() {
 
   // Latest values for map event handlers (they're registered once).
   const selectRef = useRef(selectSite);
+  const selectRecommendedRef = useRef(selectRecommendedSite);
   const visibleRef = useRef(visible);
   const hiddenOverlaysRef = useRef(hiddenOverlays);
   const layerData = useRef<Partial<Record<DataKey, FC>>>({});
@@ -297,7 +298,8 @@ export function MapView() {
 
   useEffect(() => {
     selectRef.current = selectSite;
-  }, [selectSite]);
+    selectRecommendedRef.current = selectRecommendedSite;
+  }, [selectSite, selectRecommendedSite]);
   useEffect(() => {
     forecastRef.current = forecast;
   }, [forecast]);
@@ -458,10 +460,10 @@ export function MapView() {
         );
       };
       // "Use this site" on a recommended site: make it the scenario site and fly there (beside the drawer).
-      const adoptSite = (p: LngLat) => {
+      const adoptSite = (p: LngLat, candidate?: SiteCandidate) => {
         userMoved.current = true;
         clickedKey.current = locKey(p);
-        trackSiteSelection(p, selectRef.current(p));
+        trackSiteSelection(p, candidate ? selectRecommendedRef.current(candidate) : selectRef.current(p));
         showLeftTabFromMap("site"); // the new site's summary, where the viewer looks next
         m.flyTo({ center: [p.lon, p.lat], zoom: Math.max(m.getZoom(), SITE_ZOOM), offset: [-shiftRef.current / 2, 0], duration: 1200, ...motion() });
       };
@@ -469,10 +471,12 @@ export function MapView() {
         if (f.layer.id === "demand-fill") return demandCard(f.properties, demandInfo(forecastRef.current, f.properties?.geoid));
         if (f.layer.id === "rec-sites" && f.geometry.type === "Point") {
           const [lon, lat] = f.geometry.coordinates;
-          return recSiteCard(f.properties, () => {
+          const candidate = getPhase2State().recommendation?.sites?.find((site) => site.id === f.properties?.id);
+          const usable = candidate && Number.isFinite(candidate.mw) && candidate.mw > 0 && candidate.mw <= 20000;
+          return recSiteCard(f.properties, usable ? () => {
             pop.remove();
-            adoptSite({ lon, lat });
-          });
+            adoptSite({ lon, lat }, candidate);
+          } : null);
         }
         return popupContent(f.layer.id, f.properties);
       };

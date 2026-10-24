@@ -11,7 +11,7 @@ import { useGridForge } from "@/lib/store";
 export function RecommendedSites() {
   const rec = usePhase2((s) => s.recommendation);
   const status = usePhase2((s) => s.sitesStatus);
-  const { selectSite, scenario } = useGridForge();
+  const { selectRecommendedSite, scenario } = useGridForge();
   const { visible, setVisible } = useLayerState();
   const sites = [...(rec?.sites ?? [])].filter((site) => Number.isFinite(site.suitability))
     .sort((a, b) => b.suitability - a.suitability || b.mw - a.mw).slice(0, 3);
@@ -19,7 +19,7 @@ export function RecommendedSites() {
   const pick = (site: SiteCandidate) => {
     setVisible((value) => ({ ...value, sites: true }));
     closeForecastDrawer();
-    void selectSite(site.location);
+    void selectRecommendedSite(site);
   };
   return <Panel title="Recommended sites">
     <p className="text-xs text-zinc-500">Choose a candidate site before planning its power supply.</p>
@@ -27,7 +27,7 @@ export function RecommendedSites() {
     {status === "error" ? <div role="alert" className="mt-2 text-xs"><p>Could not load recommended sites.</p><button type="button" onClick={retryPhase2} className="mt-1 underline">Retry</button></div>
       : rec?.available && sites.length > 0 ? <ol className="mt-2 divide-y divide-zinc-200 dark:divide-zinc-800">
         {sites.map((site, index) => {
-          const selected = scenario && Math.abs(scenario.site.location.lon - site.location.lon) < 0.00001 && Math.abs(scenario.site.location.lat - site.location.lat) < 0.00001;
+          const selected = scenario && Math.abs(scenario.site.location.lon - site.location.lon) < 0.00001 && Math.abs(scenario.site.location.lat - site.location.lat) < 0.00001 && Math.abs(scenario.demand.peak_mw - site.mw) < 0.00001;
           return <li key={site.id} className="py-2 text-xs">
             <div className="flex items-start gap-2">
               <Star color={FUEL_COLOR[ASSET_FUEL[site.kind]] ?? FUEL_COLOR.other} size={18} />
@@ -36,7 +36,7 @@ export function RecommendedSites() {
                 <p className="mt-0.5 text-zinc-500">{ASSET_LABEL[site.kind]} · {Math.round(site.mw).toLocaleString()} MW</p>
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                   <span className="tabular-nums">Suitability {Math.round(Math.max(0, Math.min(1, site.suitability)) * 100)}/100</span>
-                  <button type="button" disabled={updating || !!selected} onClick={() => pick(site)} className="rounded border border-emerald-600 px-2 py-1 font-medium text-emerald-800 disabled:opacity-50 dark:border-cyan-400 dark:text-cyan-300">{selected ? "Selected" : "Select site"}</button>
+                  <button type="button" disabled={updating || !scenario || !Number.isFinite(site.mw) || site.mw <= 0 || site.mw > 20000 || !!selected} onClick={() => pick(site)} className="rounded border border-emerald-600 px-2 py-1 font-medium text-emerald-800 disabled:opacity-50 dark:border-cyan-400 dark:text-cyan-300">{selected ? "Selected" : "Select site"}</button>
                 </div>
               </div>
             </div>

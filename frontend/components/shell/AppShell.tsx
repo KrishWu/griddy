@@ -146,7 +146,7 @@ export function AppShell() {
   ];
 
   const noResult = (
-    <p className="p-4 text-sm text-zinc-500 dark:text-zinc-400">{running ? "Simulating a year, hour by hour..." : "Pick a preset to see results."}</p>
+    <p className="p-4 text-sm text-zinc-500 dark:text-zinc-400">{projectPlanning.busy ? "Updating the selected site’s project…" : running ? "Calculating results for the selected site…" : projectPlanning.error ? "Retry project planning to see updated results." : "Results will appear after the project is calculated."}</p>
   );
   const withResult = (node: ReactNode) => (result ? node : noResult);
   const rightTabs: SidebarTab[] = advanced
