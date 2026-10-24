@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WRANGLER=(npx --yes wrangler@4.149.0)
 
-(cd "$ROOT/frontend" && rm -rf out && STATIC_EXPORT=1 npm run build)
+bash "$ROOT/deploy/cloudflare-pages/build.sh"
 
 cd "$ROOT/deploy/cloudflare-pages"
 if ! "${WRANGLER[@]}" pages project list 2>/dev/null | grep -qw griddy; then
