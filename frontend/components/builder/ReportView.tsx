@@ -180,9 +180,14 @@ export function ReportView() {
             <Table
               head={["", "Value"]}
               rows={[
-                ["Peak demand", mw(sc.demand.peak_mw)],
+                ...(sc.mode === "community"
+                  ? [["Peak demand", mw(sc.demand.peak_mw)]]
+                  : [
+                      ["IT load (compute)", mw(sc.demand.peak_mw / (sc.demand.pue ?? 1.2))],
+                      ["PUE", (sc.demand.pue ?? 1.2).toFixed(2)],
+                      ["Facility peak (IT × PUE)", mw(sc.demand.peak_mw)],
+                    ]),
                 ["Load factor", (sc.demand.load_factor ?? 0.9).toFixed(2)],
-                ...(sc.mode === "community" ? [] : [["PUE", (sc.demand.pue ?? 1.2).toFixed(2)]]),
                 ["Load profile", sc.demand.profile ?? "flat"],
                 ["Annual demand", mwh(s.demand_mwh)],
                 ["Peak grid import", mw(s.peak_import_mw)],

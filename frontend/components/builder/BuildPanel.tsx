@@ -3,7 +3,7 @@
 // Edits auto-run (debounced in the store).  OWNER: workstream D (Build + Report + UI).
 import { Panel } from "@/components/shell/Panel";
 import type { Asset, AssetKind, DemandSpec } from "@/lib/contract";
-import { useGridForge } from "@/lib/store";
+import { itLoadMw, useGridForge } from "@/lib/store";
 
 import { ASSET_META, ASSET_ORDER } from "./assetMeta";
 import { SliderField } from "./SliderField";
@@ -30,6 +30,8 @@ export function BuildPanel() {
     applyPreset,
     updateScenario,
     setPeakMw,
+    setItLoadMw,
+    setPue,
     scaleWithDemand,
     setScaleWithDemand,
     autoRun,
@@ -92,16 +94,38 @@ export function BuildPanel() {
         </Section>
 
         <Section title={community ? "Community demand" : "Data center demand"}>
-          <SliderField
-            label="Peak demand"
-            unit="MW"
-            value={peak}
-            onChange={setPeakMw}
-            min={1}
-            max={community ? 100 : 3000}
-            inputMax={10000}
-            step={community ? 1 : 10}
-          />
+          {community ? (
+            <SliderField label="Peak demand" unit="MW" value={peak} onChange={setPeakMw} min={1} max={100} inputMax={10000} step={1} />
+          ) : (
+            <>
+              {/* Facility peak = IT x PUE (the contract's peak_mw), so better cooling means
+                  less grid energy for the same compute. */}
+              <SliderField
+                label="IT load (compute)"
+                unit="MW"
+                value={itLoadMw(scenario)}
+                onChange={setItLoadMw}
+                min={10}
+                max={2500}
+                inputMax={10000}
+                step={10}
+                decimals={0}
+              />
+              <SliderField
+                label="PUE (cooling + power overhead)"
+                value={scenario.demand.pue ?? 1.2}
+                onChange={setPue}
+                min={1.05}
+                max={2}
+                inputMax={3}
+                step={0.01}
+                hint="Lower PUE = less grid energy for the same compute."
+              />
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                Facility peak at the meter: <span className="font-medium tabular-nums">{Math.round(peak).toLocaleString()} MW</span> (IT × PUE)
+              </p>
+            </>
+          )}
           <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
             <input type="checkbox" checked={scaleWithDemand} onChange={(e) => setScaleWithDemand(e.target.checked)} />
             Scale portfolio with demand
@@ -117,10 +141,6 @@ export function BuildPanel() {
           />
           {!community && (
             <>
-              {/* Read-only until B's cooling model uses PUE; a slider that moves nothing looks broken on stage. */}
-              <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                PUE {(scenario.demand.pue ?? 1.2).toFixed(2)} · IT load ≈ {Math.round(peak / (scenario.demand.pue ?? 1.2)).toLocaleString()} MW
-              </p>
               <label className="block text-xs text-zinc-600 dark:text-zinc-400">
                 Load profile
                 <select
