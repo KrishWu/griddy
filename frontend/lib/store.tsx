@@ -175,18 +175,34 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     setErrorSource(source);
   }, []);
 
+  // Fetch the site cards (A's summary, E's screening) for a location, dropping responses
+  // for a site that is no longer the latest one.
+  const fetchSiteCards = useCallback(async (p: LngLat, id: string): Promise<SiteSummary | null> => {
+    latestSiteId.current = id;
+    setSiteSummary(null);
+    setSiteIntel(null);
+    const [summary, intel] = await Promise.allSettled([api.siteSummary(p), api.siteIntel(p)]);
+    if (latestSiteId.current !== id) return null;
+    if (summary.status === "fulfilled") setSiteSummary(summary.value);
+    setSiteIntel(intel.status === "fulfilled" ? intel.value : null);
+    return summary.status === "fulfilled" ? summary.value : null;
+  }, []);
+
   const loadPresets = useCallback(() => {
     api
       .presets()
       .then((ps) => {
-        const saved = readSavedScenario();
+        const initial = readSavedScenario() ?? ps.find((p) => p.id === DEFAULT_PRESET.industrial) ?? ps[0] ?? null;
         setPresets(ps);
         setError(null);
         setErrorSource(null);
-        setScenario((cur) => cur ?? saved ?? ps.find((p) => p.id === DEFAULT_PRESET.industrial) ?? ps[0] ?? null);
+        setScenario((cur) => cur ?? initial);
+        // Fill the site cards for the starting site too (not only after a map click). This
+        // only loads the cards; it doesn't change the design, so a preset stays unmodified.
+        if (initial) void fetchSiteCards(initial.site.location, initial.site.id);
       })
       .catch((e: Error) => fail("presets", `Could not load presets (is the backend running?): ${e.message}`));
-  }, [fail]);
+  }, [fail, fetchSiteCards]);
 
   useEffect(() => loadPresets(), [loadPresets]);
 
@@ -270,7 +286,9 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       if (!scenario || (scenario.mode ?? "industrial") === mode) return;
       const p = presets.find((x) => x.id === DEFAULT_PRESET[mode]) ?? presets.find((x) => (x.mode ?? "industrial") === mode);
       if (!p) return;
-      setScenario((cur) => (cur && (cur.mode ?? "industrial") === mode ? cur : withLineContext(adaptPreset(p, cur, false), siteSummary)));
+      // A clicked site's line context goes back on; the preset site keeps the preset's own grid.
+      const clicked = scenario.site.id.startsWith("site-") ? siteSummary : null;
+      setScenario((cur) => (cur && (cur.mode ?? "industrial") === mode ? cur : withLineContext(adaptPreset(p, cur, false), clicked)));
       setCompareResults(null);
       setPanelEpoch((e) => e + 1);
     },
@@ -335,29 +353,21 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     // A clicked point is a new site: fresh id/name, never the preset's Kern labels.
     // Modules that cache per site should key on location rounded to 0.01 deg, not id.
     const id = `site-${p.lon.toFixed(3)}-${p.lat.toFixed(3)}`;
-    latestSiteId.current = id;
     setScenario((s) =>
       s
         ? { ...s, site: { id, name: `Site at ${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}`, location: p, balancing_authority: s.site.balancing_authority } }
         : s,
     );
-    setSiteSummary(null);
-    setSiteIntel(null);
-    const [summary, intel] = await Promise.allSettled([api.siteSummary(p), api.siteIntel(p)]);
-    if (latestSiteId.current !== id) return; // a newer click won; drop stale responses
-    if (summary.status === "fulfilled") {
-      const { site } = summary.value;
-      setSiteSummary(summary.value);
-      // Hand A's grid context to the scenario: B's stress test reads poi_voltage_kv,
-      // C costs the tie line from interconnection_km. Industrial scenarios only.
-      setScenario((s) =>
-        s && s.site.id === id
-          ? withLineContext({ ...s, site: { ...s.site, county: site.county, utility_territory: site.utility_territory } }, summary.value)
-          : s,
-      );
-    }
-    setSiteIntel(intel.status === "fulfilled" ? intel.value : null);
-  }, []);
+    const summary = await fetchSiteCards(p, id);
+    if (!summary) return; // failed, or a newer click won
+    // Hand A's grid context to the scenario: B's stress test reads poi_voltage_kv,
+    // C costs the tie line from interconnection_km. Industrial scenarios only.
+    setScenario((s) =>
+      s && s.site.id === id
+        ? withLineContext({ ...s, site: { ...s.site, county: summary.site.county, utility_territory: summary.site.utility_territory } }, summary)
+        : s,
+    );
+  }, [fetchSiteCards]);
 
   const compareStale = useMemo(
     () => compareResults !== null && scenario !== null && compareKey !== designKey(scenario),
