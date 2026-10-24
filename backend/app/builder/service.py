@@ -52,7 +52,9 @@ def _base(
         mode=mode,
         preset=id_,
         site=site,
-        demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.0, profile="flat"),
+        # Preserve saved-preset compatibility; a flat demand profile uses peak_mw directly.
+        # PUE is exposed only when the optional data-center use case is selected.
+        demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.2, profile="flat"),
         assets=assets,
         # Starts at the default site's nearest 230 kV tie; A's nearest-line data replaces these after a map click.
         grid=grid

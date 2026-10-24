@@ -1,0 +1,286 @@
+{
+ "_meta": {
+  "description": "Household-scale assumptions for Griddy Home (California). Each entry uses the common shape {value, units, kind, source, url, note, retrieved}. 'observed' = published number; 'inferred' = computed by us from a published dataset (method in note); 'assumption' = a cited rule of thumb we chose to apply. Occupant keys '1'..'5' mean household members, '5' = 5 or more. Climate keys: 'coastal' = Building America 'Marine' zone, 'inland' = Building America 'Hot-Dry' zone (RECS BA_climate); in California RECS 2020 weights, Hot-Dry holds ~9.87 M households and Marine ~3.09 M (Mixed-Dry/Cold together <0.25 M, ignored).",
+  "retrieved": "2026-10-24",
+  "raw": "data/household/raw/recs (microdata, codebook, state PDF, ca_summary.json), raw/epa, raw/web (git-ignored)"
+ },
+ "ca_avg_annual_kwh": {
+  "value": 6482,
+  "units": "kWh per household per year (2020)",
+  "kind": "observed",
+  "source": "U.S. EIA, RECS 2020, 'Annual household site fuel consumption in U.S. homes by state—totals and averages, 2020' (Data release date: March 2023)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/state/pdf/State%20consumption.pdf",
+  "note": "California row of the per-household averages table (columns: housing units (million), total electricity (billion kWh), ..., average Electricity (kWh) per household using the fuel), quoted as extracted: 'California 13.18 85.4 390.2 219.9 Q 6482 336 350 Q'. Includes electricity from on-site solar per EIA. 2020 was a COVID year (more time at home). Our microdata cross-check: weighted mean KWH over CA records = 6481.6 kWh.",
+  "retrieved": "2026-10-24"
+ },
+ "ca_avg_annual_kwh_by_occupants": {
+  "value": {
+   "1": 4008,
+   "2": 6679,
+   "3": 7301,
+   "4": 7654,
+   "5": 8279
+  },
+  "units": "kWh per household per year (2020), by number of household members",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Weighted mean of KWH ('Total electricity use, in kilowatthours, 2020, including self-generation of solar power') by NHSLDMEM ('Number of household members (top-coded)', capped at 5 here). Unweighted sample sizes: {'1': 260, '2': 375, '3': 204, '4': 180, '5': 133}. Codebook: https://www.eia.gov/consumption/residential/data/2020/xls/RECS%202020%20Codebook%20for%20Public%20File%20-%20v7.xlsx",
+  "retrieved": "2026-10-24"
+ },
+ "ev_kwh_per_mile": {
+  "value": 0.278,
+  "units": "kWh per mile",
+  "kind": "observed",
+  "source": "U.S. EPA, Greenhouse Gas Equivalencies Calculator - Calculations and References (last updated August 4, 2026), section 'Electricity consumed by the average all-electric passenger vehicle'",
+  "url": "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
+  "note": "Quoted: 'The weighted average combined electric efficiency of U.S. electric vehicles sales from 2019 and earlier is 3.60 miles per kWh (DOE 2023).' Value = 1/3.60 = 0.278 kWh/mile. Newer/smaller EVs can be more efficient and trucks/SUVs less; cross-check: AFDC home-charging page example uses 'the vehicle consumes 27 kWh to travel 100 miles' (https://afdc.energy.gov/fuels/electricity-charging-home).",
+  "retrieved": "2026-10-24"
+ },
+ "ev_default_miles_per_day": {
+  "value": 29.8,
+  "units": "miles per day",
+  "kind": "inferred",
+  "source": "U.S. EPA, Greenhouse Gas Equivalencies Calculator - Calculations and References",
+  "url": "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
+  "note": "Quoted: 'The average vehicle miles traveled (VMT) in 2022 was 10,917 miles per year and is assumed to be the same for electric cars (FHWA 2024).' 10,917 / 366 days (2024 calendar) = 29.8 mi/day. National, not California-specific.",
+  "retrieved": "2026-10-24"
+ },
+ "l2_charger_kw": {
+  "value": 7.2,
+  "units": "kW",
+  "kind": "observed",
+  "source": "U.S. DOE Alternative Fuels Data Center, 'Developing Infrastructure to Charge Electric Vehicles' (Electricity stations)",
+  "url": "https://afdc.energy.gov/fuels/electricity-stations",
+  "note": "Quoted: 'Most residential Level 2 chargers operate at up to 30 Amps, delivering 7.2 kW of power. These units require a dedicated 40-Amp circuit' and 'A Level 2 unit can range from 2.9 to 19.2 kW power output.' Level 1 for reference: 'Assumes 1.9 kW charging power'. Treat 7.2 kW as charger output; vehicle onboard charger may cap it.",
+  "retrieved": "2026-10-24",
+  "range": [
+   2.9,
+   19.2
+  ],
+  "level1_kw": 1.9
+ },
+ "dishwasher_kwh_per_cycle": {
+  "value": 0.66,
+  "units": "kWh per cycle (electricity at the machine)",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Ratio of weighted sums over CA households with a dishwasher (DISHWASH=1, DWASHUSE>0, n=663): sum(KWHDWH) / sum(DWASHUSE x 52). KWHDWH = 'Calibrated electricity usage for dishwashers, in kilowatt-hours, 2020'; DWASHUSE = 'Frequency of dishwasher use per week'. UNCONFIRMED whether RECS counts dishwasher hot-water energy in KWHDWH or in water heating (KWHWTH); treat this as machine energy (motor + heater + dry). Modelled end-use estimates, not metered.",
+  "retrieved": "2026-10-24"
+ },
+ "washer_kwh_per_load": {
+  "value": 0.32,
+  "units": "kWh per load (washer machine energy only)",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "sum(KWHCW) / sum(WASHLOAD x 52) over CA households with a washer and WASHLOAD>0 (n=936). KWHCW = 'Calibrated electricity usage for clothes washers'; WASHLOAD = 'Frequency of clothes washer use per week'. Hot water for washing is NOT included (RECS assigns it to water heating); for an electric water heater add more per warm/hot load.",
+  "retrieved": "2026-10-24"
+ },
+ "dryer_kwh_per_load": {
+  "value": 3.1,
+  "units": "kWh per load (electric dryer)",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "sum(KWHCDR) / sum(DRYRUSE x 52) over CA households with an electric dryer (DRYRFUEL=5 'Electricity', DRYRUSE>0, n=461). KWHCDR = 'Calibrated electricity usage for clothes dryers'; DRYRUSE = 'Frequency of clothes dryer use per week'. Gas dryers use only a little electricity (not modelled).",
+  "retrieved": "2026-10-24"
+ },
+ "washer_loads_per_week_by_occupants": {
+  "value": {
+   "1": 2.3,
+   "2": 3.3,
+   "3": 4.1,
+   "4": 4.6,
+   "5": 5.2
+  },
+  "units": "loads per week",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Weighted mean WASHLOAD by NHSLDMEM (5 = 5+) among CA households with a clothes washer (CWASHER=1). n by size: {'1': 170, '2': 328, '3': 174, '4': 157, '5': 117}. All CA washer households: 3.71 loads/week.",
+  "retrieved": "2026-10-24"
+ },
+ "dryer_loads_per_week_by_occupants": {
+  "value": {
+   "1": 2.2,
+   "2": 3.3,
+   "3": 4.2,
+   "4": 4.6,
+   "5": 5.2
+  },
+  "units": "loads per week",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Weighted mean DRYRUSE by NHSLDMEM (5 = 5+) among CA households that report dryer use (DRYRUSE>=0, any fuel). n by size: {'1': 169, '2': 327, '3': 170, '4': 157, '5': 117}.",
+  "retrieved": "2026-10-24"
+ },
+ "dishwasher_cycles_per_week_by_occupants": {
+  "value": {
+   "1": 1.5,
+   "2": 2.6,
+   "3": 3.2,
+   "4": 3.2,
+   "5": 3.0
+  },
+  "units": "cycles per week",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Weighted mean DWASHUSE by NHSLDMEM (5 = 5+) among CA households with a dishwasher (DISHWASH=1). n by size: {'1': 170, '2': 307, '3': 168, '4': 140, '5': 95}. All CA dishwasher households: 2.60 cycles/week.",
+  "retrieved": "2026-10-24"
+ },
+ "cooling_annual_kwh_by_climate": {
+  "value": {
+   "coastal": 923,
+   "inland": 1775
+  },
+  "units": "kWh per year for space cooling, per household that uses AC (2020)",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Weighted mean KWHCOL ('Calibrated electricity usage for space cooling (central air conditioning, individual units, and evaporative coolers)') among CA households with AIRCOND=1, by BA_climate: Marine (coastal) 923 kWh (n=133), Hot-Dry (inland) 1774 kWh (n=690); all CA AC households 1645 kWh. Share of households using AC: Marine 44%, Hot-Dry 81%. Mean CDD65 of the records: Marine 687, Hot-Dry 1801. Caveat: RECS 'Hot-Dry' in CA also covers the LA basin and inland SoCal, so hot Central Valley homes (Fresno, Bakersfield) likely use more; 2020 weather.",
+  "retrieved": "2026-10-24",
+  "ac_share": {
+   "coastal": 0.437,
+   "inland": 0.814
+  }
+ },
+ "cooling_monthly_share": {
+  "value": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.028,
+   0.174,
+   0.361,
+   0.207,
+   0.141,
+   0.089,
+   0.0,
+   0.0
+  ],
+  "units": "fraction of annual cooling kWh by month (Jan..Dec)",
+  "kind": "inferred",
+  "source": "PG&E Dynamic Load Profile E1/RES, 2024 (see data/household/load_shapes.json)",
+  "url": "https://www.pge.com/assets/rates/csv/e1_dynamic_2001.xls",
+  "note": "Method: monthly kWh of PG&E's average residential customer in 2024 minus the April daily level (minimum month, 13.44 kWh/day) x days; the positive excess in May-Oct is attributed to cooling and normalised to 1. E1 monthly kWh 2024: [525, 460, 446, 403, 442, 558, 736, 600, 528, 495, 467, 532]. Approximation: same seasonal shape for coastal and inland; the excess also contains other summer loads (pool pumps, fans).",
+  "retrieved": "2026-10-24"
+ },
+ "cooling_monthly_kwh_by_climate": {
+  "value": {
+   "coastal": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    25.8,
+    160.6,
+    333.2,
+    191.1,
+    130.1,
+    82.1,
+    0.0,
+    0.0
+   ],
+   "inland": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    49.7,
+    308.8,
+    640.8,
+    367.4,
+    250.3,
+    158.0,
+    0.0,
+    0.0
+   ]
+  },
+  "units": "kWh per month for space cooling (Jan..Dec), household with AC",
+  "kind": "inferred",
+  "source": "cooling_annual_kwh_by_climate x cooling_monthly_share (RECS 2020 microdata + PG&E E1 2024 profile)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Typical-year estimate; coastal = RECS Marine, inland = RECS Hot-Dry. Scale by the user's AC answer; zero if no AC.",
+  "retrieved": "2026-10-24"
+ },
+ "cooling_pct_change_per_degF": {
+  "value": 2.5,
+  "units": "% change in cooling kWh per 1 °F of thermostat setpoint (raise = less energy)",
+  "kind": "assumption",
+  "source": "SMUD (Sacramento Municipal Utility District), 'Heating & Cooling tips'",
+  "url": "https://www.smud.org/Rebates-and-Savings-Tips/Energy-Savings-Tips/Heating-and-Cooling",
+  "note": "Quoted: 'You'll save around 5-10% on cooling costs for every two degrees you raise the temperature.' and 'In the summer months, set your thermostat to 78° or higher.' 5-10% per 2 °F = 2.5-5% per °F; we use the conservative low end, applied linearly to cooling kWh (cap the total change at about +/-25% for large deltas). Cross-check: PG&E summer tips page, quoted: 'You can save as much as 5-10% a year on cooling by simply adjusting your thermostat 7°-10°F degrees higher for 8 hours a day from its normal setting, health permitting. Source: U.S. Department of Energy' (https://www.pge.com/en/save-energy-and-money/energy-usage-and-tips/residential-energy-savings-tips/summer-energy-savings-tips.html).",
+  "retrieved": "2026-10-24",
+  "range": [
+   2.5,
+   5.0
+  ]
+ },
+ "ac_recommended_setpoint_f": {
+  "value": 78,
+  "units": "°F (summer, when home)",
+  "kind": "observed",
+  "source": "PG&E summer energy-saving tips",
+  "url": "https://www.pge.com/en/save-energy-and-money/energy-usage-and-tips/residential-energy-savings-tips/summer-energy-savings-tips.html",
+  "note": "Quoted: 'Although 78 degrees is the recommended setting (health permitting) to manage energy use and maintain a comfortable home'. SMUD also says 'set your thermostat to 78° or higher' (https://www.smud.org/Rebates-and-Savings-Tips/Energy-Savings-Tips/Heating-and-Cooling).",
+  "retrieved": "2026-10-24"
+ },
+ "electric_heating_annual_kwh_by_climate": {
+  "value": {
+   "coastal": 1007,
+   "inland": 780
+  },
+  "units": "kWh per year for space heating, household whose main heating fuel is electricity (2020)",
+  "kind": "inferred",
+  "source": "U.S. EIA, 2020 Residential Energy Consumption Survey (RECS) public-use microdata, recs2020_public_v7.csv (California records, state_postal = 'CA', n = 1,152, weighted by final weight NWEIGHT)",
+  "url": "https://www.eia.gov/consumption/residential/data/2020/csv/recs2020_public_v7.csv",
+  "note": "Weighted mean KWHSPH ('Calibrated electricity usage for space heating, main and secondary') among CA households with FUELHEAT=5 ('Electricity'), by BA_climate: Marine (coastal) 1007 kWh (n=54), Hot-Dry (inland) 779 kWh (n=155); all CA electric-heat households 843 kWh (n=211). By equipment: heat pump (EQUIPM 4 or 13) 758 kWh (n=48); resistance (EQUIPM 5 or 10) 770 kWh (n=105). Most CA homes heat with gas, so these are small samples; mild 2020 winter.",
+  "retrieved": "2026-10-24",
+  "all_ca": 843
+ },
+ "heating_monthly_share": {
+  "value": [
+   0.281,
+   0.18,
+   0.077,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.164,
+   0.298
+  ],
+  "units": "fraction of annual heating kWh by month (Jan..Dec)",
+  "kind": "inferred",
+  "source": "PG&E Dynamic Load Profile E1/RES, 2024 (see data/household/load_shapes.json)",
+  "url": "https://www.pge.com/assets/rates/csv/e1_dynamic_2001.xls",
+  "note": "Method: as cooling_monthly_share, but the positive excess over the April daily level in Nov-Mar is attributed to heating and normalised to 1. The winter excess also includes longer lighting hours and holiday loads, so this is a rough seasonal shape.",
+  "retrieved": "2026-10-24"
+ },
+ "epa_kg_co2e_per_car_mile": {
+  "value": 0.393,
+  "units": "kg CO2e per mile (average gasoline passenger vehicle)",
+  "kind": "observed",
+  "source": "U.S. EPA, Greenhouse Gas Equivalencies Calculator - Calculations and References (last updated August 4, 2026), 'Miles driven by the average gasoline-powered passenger vehicle'",
+  "url": "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
+  "note": "Quoted: '8.89 × 10-3 metric tons CO2/gallon gasoline × 1/22.8 miles per gallon car/truck average × 1 CO2, CH4, and N2O/0.994 CO2 = 3.93 x 10-4 metric tons CO2e/mile'. 3.93e-4 t = 0.393 kg. Car-mile equivalent = kg CO2e / 0.393.",
+  "retrieved": "2026-10-24"
+ },
+ "epa_kg_co2_per_tree_seedling_10yr": {
+  "value": 60.0,
+  "units": "kg CO2 per urban tree seedling grown for 10 years (EPA factor, per tree per year)",
+  "kind": "observed",
+  "source": "U.S. EPA, Greenhouse Gas Equivalencies Calculator - Calculations and References (last updated August 4, 2026), 'Number of urban tree seedlings grown for 10 years'",
+  "url": "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
+  "note": "Quoted: '36.4 lbs C/tree/year × (44 units CO2/12 units C) × 1 metric ton/2,204.6 lbs = 0.060 metric ton CO2 per urban tree planted per year'. EPA describes 36.4 lbs C as the 'weighted average annual carbon sequestered by a medium growth coniferous or deciduous tree, planted in an urban setting and allowed to grow for 10 years'. Equivalent seedlings = kg CO2e / 60 (EPA's calculator divides by this factor; UNCONFIRMED that the live calculator uses exactly 0.060 rather than an unrounded value).",
+  "retrieved": "2026-10-24"
+ }
+}

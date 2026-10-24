@@ -3,7 +3,9 @@
 // right sidebar (Basic: Summary; Advanced: Simulate · Costs · Stress · Report). Both sidebars fold to a
 // slim rail (remembered in the viewer settings) so the map can use the width; nothing floats over the
 // map except its own controls. Every workstream's panel is mounted here, so feature branches edit
-// their own components, not this file.  OWNER: workstream D.
+// their own components, not this file. The third scale, "Individual / Home" (Griddy Home,
+// components/household), keeps the map, where a click places the house pin, and swaps the sidebars:
+// left Home (profile form) · Layers, right the household dashboard tabs.  OWNER: workstream D.
 import Link from "next/link";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
@@ -24,6 +26,9 @@ import { LayerControl } from "@/components/explore/LayerControl";
 import { LayerStateProvider } from "@/components/explore/layerState";
 import { MapView } from "@/components/explore/MapView";
 import { SitePanel } from "@/components/explore/SitePanel";
+import { selectHomeTab, useHomeTab } from "@/components/household/homePin";
+import { HOME_TABS, HomeDashboard, HomeProfilePanel, HouseholdProvider, type HomeTabId } from "@/components/household/HouseholdView";
+import { setScale, useScale } from "@/components/household/scale";
 import { SettingsButton } from "@/components/settings/SettingsButton";
 import { SimulatePanel } from "@/components/simulate/SimulatePanel";
 import { StressPanel } from "@/components/simulate/StressPanel";
@@ -86,10 +91,47 @@ export function AppShell() {
     [setView],
   );
   const mode: Mode = scenario?.mode ?? "industrial";
-  const compare = view === "compare";
+  // "Individual / Home" keeps the map and swaps both sidebars for Griddy Home (remembered in "griddy:scale").
+  const home = useScale() === "home";
+  const compare = view === "compare" && !home;
   const { settings } = useSettings();
   const leftTab = useSidebarTab("left");
   const rightTab = useSidebarTab("right");
+  const homeLeftTab = useHomeTab("left");
+  const homeRightTab = useHomeTab("right");
+  const layersTab: SidebarTab = {
+    id: "layers",
+    label: "Layers",
+    icon: <LayersIcon className={ICON} />,
+    hint: "Map layers, legend and data sources",
+    content: <PanelGuard name="Layers"><LayerControl /></PanelGuard>,
+  };
+  const homeLeftTabs: SidebarTab[] = [
+    {
+      id: "home",
+      label: "Home",
+      icon: <SiteIcon className={ICON} />,
+      hint: "Your home: location, provider, usage and more",
+      content: <PanelGuard name="Your home"><HomeProfilePanel /></PanelGuard>,
+    },
+    layersTab,
+  ];
+  const HOME_ICONS: Record<HomeTabId, ReactNode> = {
+    usage: <SimulateIcon className={ICON} />,
+    costs: <CostsIcon className={ICON} />,
+    sources: <SummaryIcon className={ICON} />,
+    whatif: <StressIcon className={ICON} />,
+    solar: <BuildIcon className={ICON} />,
+    outlook: <ReportIcon className={ICON} />,
+    tips: <PlanIcon className={ICON} />,
+  };
+  const homeRightTabs: SidebarTab[] = HOME_TABS.map((t) => ({
+    id: t.id,
+    label: t.id === "outlook" ? "Future" : t.label,
+    icon: HOME_ICONS[t.id],
+    hint: t.hint,
+    content: <PanelGuard name={t.label}><HomeDashboard tab={t.id} /></PanelGuard>,
+  }));
 
   const leftTabs: SidebarTab[] = [
     {
@@ -120,13 +162,7 @@ export function AppShell() {
         </>
       ),
     },
-    {
-      id: "layers",
-      label: "Layers",
-      icon: <LayersIcon className={ICON} />,
-      hint: "Map layers, legend and data sources",
-      content: <PanelGuard name="Layers"><LayerControl /></PanelGuard>,
-    },
+    layersTab,
     ...(advanced
       ? [
           {
@@ -204,7 +240,8 @@ export function AppShell() {
   // Column widths in rem, so Settings > Text size widens the sidebars with their text. A folded
   // sidebar keeps a 3.25 rem rail. Compare has no right sidebar: it takes the map's place and width.
   const leftCol = settings.leftCollapsed ? "[--shell-l:3.25rem]" : "[--shell-l:18.75rem] xl:[--shell-l:20rem]";
-  const rightCol = settings.rightCollapsed ? "[--shell-r:3.25rem]" : "[--shell-r:22.5rem] xl:[--shell-r:26.25rem]";
+  // Griddy Home's right sidebar is a little wider: seven dashboard tabs and their charts.
+  const rightCol = settings.rightCollapsed ? "[--shell-r:3.25rem]" : home ? "[--shell-r:24rem] xl:[--shell-r:29.75rem]" : "[--shell-r:22.5rem] xl:[--shell-r:26.25rem]";
   const cols = compare ? "lg:grid-cols-[var(--shell-l)_minmax(0,1fr)]" : "lg:grid-cols-[var(--shell-l)_minmax(0,1fr)_var(--shell-r)]";
   // Stacked (below lg): explicit rows, or the auto rows would stretch to fill the screen and leave
   // empty bands under folded sidebars. The map row takes any spare height (at least 55vh); Compare's
@@ -214,6 +251,7 @@ export function AppShell() {
   return (
     <LayerStateProvider>
       <AreaToolsProvider>
+      <HouseholdProvider active={home}>
       <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
         <header
           data-chrome
@@ -224,29 +262,38 @@ export function AppShell() {
             Griddy
           </h1>
           <span className="hidden text-sm text-zinc-500 xl:inline dark:text-zinc-400">Power plants &amp; grid planning</span>
-          <Toggle label="Detail" value={detailMode} onChange={setDetailMode} options={[{ value: "basic", label: "Basic" }, { value: "advanced", label: "Advanced" }]} />
-          <Toggle<View>
-            label="View"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "single", label: "Single" },
-              { value: "compare", label: "Compare" },
-            ]}
-          />
-          <Toggle<Mode>
+          {!home && (
+            <>
+              <Toggle label="Detail" value={detailMode} onChange={setDetailMode} options={[{ value: "basic", label: "Basic" }, { value: "advanced", label: "Advanced" }]} />
+              <Toggle<View>
+                label="View"
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: "single", label: "Single" },
+                  { value: "compare", label: "Compare" },
+                ]}
+              />
+            </>
+          )}
+          <Toggle<Mode | "home">
             label="Project type"
-            value={mode}
-            onChange={setMode}
+            value={home ? "home" : mode}
+            onChange={(m) => {
+              if (m === "home") return setScale("home");
+              setScale("project");
+              setMode(m);
+            }}
             options={[
               { value: "industrial", label: "Power plants & grid" },
               { value: "community", label: "Community" },
+              { value: "home", label: <><span className="sm:hidden">Home</span><span className="hidden sm:inline">Individual / Home</span></> },
             ]}
           />
           <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs">
-            <RunFeedback />
-            {projectPlanning.busy && <span className="text-zinc-500 dark:text-zinc-400" role="status">Updating project…</span>}
-            {placeholder && (
+            {!home && <RunFeedback />}
+            {!home && projectPlanning.busy && <span className="text-zinc-500 dark:text-zinc-400" role="status">Updating project…</span>}
+            {!home && placeholder && (
               <span
                 className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                 title="Some numbers still come from placeholder data or stub models"
@@ -254,7 +301,7 @@ export function AppShell() {
                 Placeholder data
               </span>
             )}
-            {result && (
+            {!home && result && (
               <Link href="/report" className={headerLink}>
                 Report
               </Link>
@@ -265,7 +312,7 @@ export function AppShell() {
             <SettingsButton />
           </div>
         </header>
-        {error && (
+        {!home && error && (
           <div data-chrome className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             <span className="truncate">{error}</span>
             <button className="ml-auto shrink-0 underline" onClick={retry}>
@@ -273,46 +320,53 @@ export function AppShell() {
             </button>
           </div>
         )}
-        <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-y-auto lg:overflow-hidden ${cols} ${rows} ${leftCol} ${rightCol}`}>
-          <Sidebar
-            side="left"
-            label="Plan and explore"
-            tabs={leftTabs}
-            active={leftTab}
-            onSelect={(id) => selectSidebarTab("left", id)}
-            collapsed={settings.leftCollapsed}
-            onCollapsedChange={(c) => updateSettings({ leftCollapsed: c })}
-          />
-          {compare ? (
-            // Compare is panels, not map: black in the Mixed theme like the sidebars.
-            <main data-chrome className="min-h-0 min-w-0 bg-zinc-50 lg:overflow-y-auto dark:bg-black">
-              <PanelGuard name="Compare">
-                <CompareView />
-              </PanelGuard>
-            </main>
-          ) : (
-            <>
-              {/* The map: nothing but its own controls on top of it. */}
-              <main className="relative min-h-0 min-w-0">
-                <PanelGuard name="Map">
-                  <MapView />
+        {
+          <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-y-auto lg:overflow-hidden ${cols} ${rows} ${leftCol} ${rightCol}`}>
+            {/* Keyed by scale: each scale's sidebars keep their own visited panels. */}
+            <Sidebar
+              key={home ? "home-left" : "project-left"}
+              side="left"
+              label={home ? "Your home" : "Plan and explore"}
+              tabs={home ? homeLeftTabs : leftTabs}
+              active={home ? homeLeftTab : leftTab}
+              onSelect={(id) => (home ? selectHomeTab("left", id) : selectSidebarTab("left", id))}
+              collapsed={settings.leftCollapsed}
+              onCollapsedChange={(c) => updateSettings({ leftCollapsed: c })}
+            />
+            {compare ? (
+              // Compare is panels, not map: black in the Mixed theme like the sidebars.
+              <main data-chrome className="min-h-0 min-w-0 bg-zinc-50 lg:overflow-y-auto dark:bg-black">
+                <PanelGuard name="Compare">
+                  <CompareView />
                 </PanelGuard>
               </main>
-              <Sidebar
-                side="right"
-                label="Results"
-                tabs={rightTabs}
-                active={advanced ? rightTab : "summary"}
-                onSelect={(id) => {
-                  if (advanced) selectSidebarTab("right", id);
-                }}
-                collapsed={settings.rightCollapsed}
-                onCollapsedChange={(c) => updateSettings({ rightCollapsed: c })}
-              />
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                {/* The map: nothing but its own controls on top of it. */}
+                <main className="relative min-h-0 min-w-0">
+                  <PanelGuard name="Map">
+                    <MapView />
+                  </PanelGuard>
+                </main>
+                <Sidebar
+                  key={home ? "home-right" : "project-right"}
+                  side="right"
+                  label={home ? "Home energy" : "Results"}
+                  tabs={home ? homeRightTabs : rightTabs}
+                  active={home ? homeRightTab : advanced ? rightTab : "summary"}
+                  onSelect={(id) => {
+                    if (home) selectHomeTab("right", id);
+                    else if (advanced) selectSidebarTab("right", id);
+                  }}
+                  collapsed={settings.rightCollapsed}
+                  onCollapsedChange={(c) => updateSettings({ rightCollapsed: c })}
+                />
+              </>
+            )}
+          </div>
+        }
       </div>
+      </HouseholdProvider>
       </AreaToolsProvider>
     </LayerStateProvider>
   );

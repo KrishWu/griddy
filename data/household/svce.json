@@ -1,0 +1,501 @@
+{
+ "_meta": {
+  "title": "Silicon Valley Clean Energy (SVCE) generation rates vs PG&E bundled generation, by PG&E rate plan",
+  "retrieved": "2026-10-24",
+  "units": "USD per kWh",
+  "kind": "observed (rate sheet columns) + inferred (adjustment and totals)",
+  "effective": "2026-01-01",
+  "how_to_use": "SVCE customer all-in $/kWh = PG&E bundled total rate (tariffs_pge.json) + greenstart_adjustment_usd_per_kwh (or greenprime_adjustment_usd_per_kwh) for the same plan/season/period. The adjustment = SVCE 'Generation Service' (SVCE generation + PG&E PCIA + franchise fee) - PG&E 'Generation Service' (PG&E generation + bundled PCIA). PG&E delivery charges, the Base Services Charge and baseline credit are the same for both.",
+  "notes": [
+   "SVCE rate sheet footnotes: '1 SVCE Generation Rates, without added PG&E fees, effective 1/1/2026'; '2 SVCE Generation Service reflects our price for Generation, with added PG&E fees (PCIA and Franchise Fees), effective 1/1/2026. SVCE sets its rates based on the 2017 PCIA vintage, which is the most common vintage for our customers ... the all-in discount or premium varies because PG&E applies different fees by vintage.'; '3 PG&E Generation service rate effective 1/1/2026'.",
+   "GreenPrime: '+$0.00740 Same as applicable rate, with 0.0074/kWh adder for 100% Renewable energy'.",
+   "Check: the PG&E 'Generation Service' column equals PG&E Sheet 3 generation (Mar 1, 2026) minus the $0.01011 bundled PCIA (e.g. E-TOU-C summer peak 0.20782 - 0.01011 = 0.19771). PG&E's June 1, 2026 total-rate update (D.26-04-036) is not reflected in SVCE's sheet; if that update changed PG&E generation, the adjustment is off by that change (UNCONFIRMED).",
+   "PG&E 2017-vintage PCIA in current schedules is $0.03661/kWh (effective March 1, 2026, E-TOU-C/E-ELEC PCIA vintage table), vs the $0.03720 PCIA + franchise fee SVCE used on 1/1/2026.",
+   "Totals are rounded to 5 decimals."
+  ],
+  "sources": [
+   {
+    "source": "SVCE Residential Generation Rates and Generation Service Cost Comparison (effective 1/1/2026)",
+    "url": "https://www.svcleanenergy.org/wp-content/uploads/SVCE-Residential-Rate-Sheet-Jan-1-2026.pdf",
+    "raw": "data/household/raw/SVCE-Residential-Rate-Sheet-Jan-1-2026.pdf"
+   },
+   {
+    "source": "PG&E - SVCE Joint Rate Comparisons (PG&E rates current as of March 1, 2026; SVCE rates current as of January 1, 2026)",
+    "url": "https://www.pge.com/assets/pge/docs/account/alternate-energy-providers/svce-rcc.pdf",
+    "raw": "data/household/raw/svce-rcc.pdf"
+   }
+  ]
+ },
+ "greenprime_adder_usd_per_kwh": 0.0074,
+ "pcia_2017_vintage_usd_per_kwh": {
+  "value": 0.03661,
+  "units": "USD/kWh",
+  "kind": "observed",
+  "source": "PG&E Electric Schedule E-ELEC, Vintaged PCIA table (Advice 7846-E, effective March 1, 2026)",
+  "url": "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_E-ELEC.pdf",
+  "note": "Row: '2017 Vintage $0.03661 (I)'.",
+  "retrieved": "2026-10-24"
+ },
+ "plans": {
+  "E-TOU-C": {
+   "svce_generation_usd_per_kwh": {
+    "summer": {
+     "peak": 0.15853,
+     "off_peak": 0.05656
+    },
+    "winter": {
+     "peak": 0.08852,
+     "off_peak": 0.06211
+    }
+   },
+   "svce_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.19573,
+     "off_peak": 0.09376
+    },
+    "winter": {
+     "peak": 0.12572,
+     "off_peak": 0.09931
+    }
+   },
+   "pge_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.19771,
+     "off_peak": 0.09471
+    },
+    "winter": {
+     "peak": 0.12699,
+     "off_peak": 0.10031
+    }
+   },
+   "greenstart_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": -0.00198,
+     "off_peak": -0.00095
+    },
+    "winter": {
+     "peak": -0.00127,
+     "off_peak": -0.001
+    }
+   },
+   "greenprime_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": 0.00542,
+     "off_peak": 0.00645
+    },
+    "winter": {
+     "peak": 0.00613,
+     "off_peak": 0.0064
+    }
+   },
+   "greenstart_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.52042,
+     "off_peak": 0.39845
+    },
+    "winter": {
+     "peak": 0.3963,
+     "off_peak": 0.36657
+    }
+   },
+   "greenprime_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.52782,
+     "off_peak": 0.40585
+    },
+    "winter": {
+     "peak": 0.4037,
+     "off_peak": 0.37397
+    }
+   },
+   "pge_bundled_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.5224,
+     "off_peak": 0.3994
+    },
+    "winter": {
+     "peak": 0.39757,
+     "off_peak": 0.36757
+    }
+   }
+  },
+  "E-TOU-D": {
+   "svce_generation_usd_per_kwh": {
+    "summer": {
+     "peak": 0.15699,
+     "off_peak": 0.05308
+    },
+    "winter": {
+     "peak": 0.11653,
+     "off_peak": 0.0818
+    }
+   },
+   "svce_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.19419,
+     "off_peak": 0.09028
+    },
+    "winter": {
+     "peak": 0.15373,
+     "off_peak": 0.119
+    }
+   },
+   "pge_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.19615,
+     "off_peak": 0.09119
+    },
+    "winter": {
+     "peak": 0.15528,
+     "off_peak": 0.1202
+    }
+   },
+   "greenstart_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": -0.00196,
+     "off_peak": -0.00091
+    },
+    "winter": {
+     "peak": -0.00155,
+     "off_peak": -0.0012
+    }
+   },
+   "greenprime_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": 0.00544,
+     "off_peak": 0.00649
+    },
+    "winter": {
+     "peak": 0.00585,
+     "off_peak": 0.0062
+    }
+   },
+   "greenstart_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.47512,
+     "off_peak": 0.34121
+    },
+    "winter": {
+     "peak": 0.38592,
+     "off_peak": 0.34766
+    }
+   },
+   "greenprime_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.48252,
+     "off_peak": 0.34861
+    },
+    "winter": {
+     "peak": 0.39332,
+     "off_peak": 0.35506
+    }
+   },
+   "pge_bundled_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.47708,
+     "off_peak": 0.34212
+    },
+    "winter": {
+     "peak": 0.38747,
+     "off_peak": 0.34886
+    }
+   }
+  },
+  "EV2-A": {
+   "svce_generation_usd_per_kwh": {
+    "summer": {
+     "peak": 0.13921,
+     "part_peak": 0.09495,
+     "off_peak": 0.05422
+    },
+    "winter": {
+     "peak": 0.08291,
+     "part_peak": 0.07054,
+     "off_peak": 0.0473
+    }
+   },
+   "svce_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.17641,
+     "part_peak": 0.13215,
+     "off_peak": 0.09142
+    },
+    "winter": {
+     "peak": 0.12011,
+     "part_peak": 0.10774,
+     "off_peak": 0.0845
+    }
+   },
+   "pge_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.17819,
+     "part_peak": 0.13348,
+     "off_peak": 0.09234
+    },
+    "winter": {
+     "peak": 0.12132,
+     "part_peak": 0.10883,
+     "off_peak": 0.08535
+    }
+   },
+   "greenstart_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": -0.00178,
+     "part_peak": -0.00133,
+     "off_peak": -0.00092
+    },
+    "winter": {
+     "peak": -0.00121,
+     "part_peak": -0.00109,
+     "off_peak": -0.00085
+    }
+   },
+   "greenprime_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": 0.00562,
+     "part_peak": 0.00607,
+     "off_peak": 0.00648
+    },
+    "winter": {
+     "peak": 0.00619,
+     "part_peak": 0.00631,
+     "off_peak": 0.00655
+    }
+   },
+   "greenstart_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.53631,
+     "part_peak": 0.42627,
+     "off_peak": 0.22466
+    },
+    "winter": {
+     "peak": 0.40978,
+     "part_peak": 0.39319,
+     "off_peak": 0.22473
+    }
+   },
+   "greenprime_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.54371,
+     "part_peak": 0.43367,
+     "off_peak": 0.23206
+    },
+    "winter": {
+     "peak": 0.41718,
+     "part_peak": 0.40059,
+     "off_peak": 0.23213
+    }
+   },
+   "pge_bundled_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.53809,
+     "part_peak": 0.4276,
+     "off_peak": 0.22558
+    },
+    "winter": {
+     "peak": 0.41099,
+     "part_peak": 0.39428,
+     "off_peak": 0.22558
+    }
+   }
+  },
+  "E-ELEC": {
+   "svce_generation_usd_per_kwh": {
+    "summer": {
+     "peak": 0.21315,
+     "part_peak": 0.11503,
+     "off_peak": 0.07038
+    },
+    "winter": {
+     "peak": 0.05264,
+     "part_peak": 0.03287,
+     "off_peak": 0.01966
+    }
+   },
+   "svce_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.25035,
+     "part_peak": 0.15223,
+     "off_peak": 0.10758
+    },
+    "winter": {
+     "peak": 0.08984,
+     "part_peak": 0.07007,
+     "off_peak": 0.05686
+    }
+   },
+   "pge_generation_service_usd_per_kwh": {
+    "summer": {
+     "peak": 0.25288,
+     "part_peak": 0.15377,
+     "off_peak": 0.10867
+    },
+    "winter": {
+     "peak": 0.09075,
+     "part_peak": 0.07078,
+     "off_peak": 0.05743
+    }
+   },
+   "greenstart_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": -0.00253,
+     "part_peak": -0.00154,
+     "off_peak": -0.00109
+    },
+    "winter": {
+     "peak": -0.00091,
+     "part_peak": -0.00071,
+     "off_peak": -0.00057
+    }
+   },
+   "greenprime_adjustment_usd_per_kwh": {
+    "summer": {
+     "peak": 0.00487,
+     "part_peak": 0.00586,
+     "off_peak": 0.00631
+    },
+    "winter": {
+     "peak": 0.00649,
+     "part_peak": 0.00669,
+     "off_peak": 0.00683
+    }
+   },
+   "greenstart_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.54961,
+     "part_peak": 0.38872,
+     "off_peak": 0.33249
+    },
+    "winter": {
+     "peak": 0.31972,
+     "part_peak": 0.29783,
+     "off_peak": 0.28411
+    }
+   },
+   "greenprime_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.55701,
+     "part_peak": 0.39612,
+     "off_peak": 0.33989
+    },
+    "winter": {
+     "peak": 0.32712,
+     "part_peak": 0.30523,
+     "off_peak": 0.29151
+    }
+   },
+   "pge_bundled_total_usd_per_kwh": {
+    "summer": {
+     "peak": 0.55214,
+     "part_peak": 0.39026,
+     "off_peak": 0.33358
+    },
+    "winter": {
+     "peak": 0.32063,
+     "part_peak": 0.29854,
+     "off_peak": 0.28468
+    }
+   }
+  }
+ },
+ "joint_rate_comparison": {
+  "_note": "PG&E-SVCE Joint Rate Comparisons, average residential customer, $/kWh (Generation Rate + PG&E Delivery Rate + PG&E PCIA/FF = Total) and average monthly bill. PG&E rates as of March 1, 2026; SVCE as of January 1, 2026. These are annual averages for a typical customer; use the per-period adjustments above for hourly math.",
+  "E-TOU-C": {
+   "monthly_kwh": 396,
+   "pge": {
+    "generation": 0.12152,
+    "delivery": 0.29105,
+    "pcia_ff": -0.00918,
+    "total": 0.40339,
+    "monthly_bill_usd": 159.76
+   },
+   "greenstart": {
+    "generation": 0.07402,
+    "delivery": 0.29105,
+    "pcia_ff": 0.0372,
+    "total": 0.40227,
+    "monthly_bill_usd": 159.32
+   },
+   "greenprime": {
+    "generation": 0.08142,
+    "delivery": 0.29105,
+    "pcia_ff": 0.0372,
+    "total": 0.40967,
+    "monthly_bill_usd": 162.25
+   }
+  },
+  "E-TOU-D": {
+   "monthly_kwh": 767,
+   "pge": {
+    "generation": 0.12571,
+    "delivery": 0.26908,
+    "pcia_ff": -0.00918,
+    "total": 0.38561,
+    "monthly_bill_usd": 295.65
+   },
+   "greenstart": {
+    "generation": 0.07817,
+    "delivery": 0.26908,
+    "pcia_ff": 0.0372,
+    "total": 0.38445,
+    "monthly_bill_usd": 294.76
+   },
+   "greenprime": {
+    "generation": 0.08557,
+    "delivery": 0.26908,
+    "pcia_ff": 0.0372,
+    "total": 0.39185,
+    "monthly_bill_usd": 300.43
+   }
+  },
+  "EV2-A": {
+   "monthly_kwh": 798,
+   "pge": {
+    "generation": 0.11161,
+    "delivery": 0.22393,
+    "pcia_ff": -0.00918,
+    "total": 0.32636,
+    "monthly_bill_usd": 260.32
+   },
+   "greenstart": {
+    "generation": 0.05813,
+    "delivery": 0.22393,
+    "pcia_ff": 0.0372,
+    "total": 0.31926,
+    "monthly_bill_usd": 254.66
+   },
+   "greenprime": {
+    "generation": 0.06553,
+    "delivery": 0.22393,
+    "pcia_ff": 0.0372,
+    "total": 0.32666,
+    "monthly_bill_usd": 260.56
+   }
+  },
+  "E-ELEC": {
+   "monthly_kwh": null,
+   "monthly_kwh_note": "The PDF prints 'Monthly usage: 1,62 kWh' (digit missing in the source).",
+   "pge": {
+    "generation": 0.10465,
+    "delivery": 0.2565,
+    "pcia_ff": -0.00918,
+    "total": 0.35197,
+    "monthly_bill_usd": 373.64
+   },
+   "greenstart": {
+    "generation": 0.05732,
+    "delivery": 0.2565,
+    "pcia_ff": 0.0372,
+    "total": 0.35102,
+    "monthly_bill_usd": 372.64
+   },
+   "greenprime": {
+    "generation": 0.06472,
+    "delivery": 0.2565,
+    "pcia_ff": 0.0372,
+    "total": 0.35842,
+    "monthly_bill_usd": 380.49
+   }
+  }
+ }
+}

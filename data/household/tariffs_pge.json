@@ -1,0 +1,747 @@
+{
+ "_meta": {
+  "title": "PG&E residential time-of-use tariffs (bundled service), current as retrieved",
+  "retrieved": "2026-10-24",
+  "units": "USD per kWh (energy), USD per day / per month (base services charge)",
+  "period_names": [
+   "peak",
+   "part_peak",
+   "off_peak"
+  ],
+  "periods_by_hour_shape": "24 entries, index = hour-beginning 0..23 local clock time",
+  "season_by_month_shape": "12 entries Jan..Dec; summer = June 1 through September 30 on all four schedules",
+  "default_plan": "E-TOU-C",
+  "kind": "observed",
+  "notes": [
+   "Rates are the 'Total Energy Rates' from Sheet 2 of each schedule, which are all-in bundled $/kWh (generation + delivery). Sheet 2 is effective June 1, 2026 (Advice 7921-E, D.26-04-036); the unbundling sheets (Sheet 3) still show March 1, 2026 components, so generation + delivery components may not add up exactly to these totals.",
+   "Since March 2026 PG&E residential schedules carry a fixed Base Services Charge ($0.79343/day standard, $0.39688 Tier 2, $0.19713 Tier 1 CARE) and the per-kWh rates were lowered to match.",
+   "CARE/FERA per-kWh discounts, medical baseline and the Wildfire Fund exemption are not modelled.",
+   "Holidays are ignored (E-TOU-D treats holidays as off-peak).",
+   "Hours are hour-beginning in local clock time (PG&E TOU periods follow PDT in summer). The Griddy 2024 model runs on fixed UTC-8, so a period could be shifted one hour during DST; this file does not shift anything. Holidays are ignored."
+  ],
+  "raw": [
+   "data/household/raw/ELEC_SCHEDS_E-TOU-C.pdf",
+   "data/household/raw/ELEC_SCHEDS_E-TOU-D.pdf",
+   "data/household/raw/ELEC_SCHEDS_EV2.pdf",
+   "data/household/raw/ELEC_SCHEDS_E-ELEC.pdf"
+  ]
+ },
+ "plans": {
+  "E-TOU-C": {
+   "label": "E-TOU-C: Time-of-Use (peak 4–9 p.m. every day)",
+   "utility": "pge",
+   "effective": "2026-06-01",
+   "source": "PG&E Electric Schedule E-TOU-C: total bundled rates on Sheet 2 (Cal. P.U.C. Sheet No. 61364-E, Advice 7921-E, D.26-04-036, effective June 1, 2026); time periods on Sheet 5 Special Condition 2 (Advice 7846-E, effective March 1, 2026)",
+   "url": "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_E-TOU-C.pdf",
+   "retrieved": "2026-10-24",
+   "season_by_month": [
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "summer",
+    "summer",
+    "summer",
+    "summer",
+    "winter",
+    "winter",
+    "winter"
+   ],
+   "periods_by_hour": {
+    "summer": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ]
+    },
+    "winter": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ]
+    }
+   },
+   "rates_usd_per_kwh": {
+    "summer": {
+     "peak": 0.5224,
+     "off_peak": 0.3994
+    },
+    "winter": {
+     "peak": 0.39757,
+     "off_peak": 0.36757
+    }
+   },
+   "baseline_credit_usd_per_kwh": 0.0814,
+   "baseline_kwh_per_day": {
+    "_note": "E-TOU-C Sheet 5 Special Condition 1, kWh/day eligible for the baseline credit. Code B = basic, Code H = all-electric (permanently installed electric primary heat). The territory for a ZIP is defined in PG&E Preliminary Statement Part A, which is not loaded here (UNCONFIRMED: Griddy does not map ZIP to territory).",
+    "basic": {
+     "P": {
+      "summer": 13.5,
+      "winter": 11.0
+     },
+     "Q": {
+      "summer": 9.8,
+      "winter": 11.0
+     },
+     "R": {
+      "summer": 17.7,
+      "winter": 10.4
+     },
+     "S": {
+      "summer": 15.0,
+      "winter": 10.2
+     },
+     "T": {
+      "summer": 6.5,
+      "winter": 7.5
+     },
+     "V": {
+      "summer": 7.1,
+      "winter": 8.1
+     },
+     "W": {
+      "summer": 19.2,
+      "winter": 9.8
+     },
+     "X": {
+      "summer": 9.8,
+      "winter": 9.7
+     },
+     "Y": {
+      "summer": 10.5,
+      "winter": 11.1
+     },
+     "Z": {
+      "summer": 5.9,
+      "winter": 7.8
+     }
+    },
+    "all_electric": {
+     "P": {
+      "summer": 15.2,
+      "winter": 26.0
+     },
+     "Q": {
+      "summer": 8.5,
+      "winter": 26.0
+     },
+     "R": {
+      "summer": 19.9,
+      "winter": 26.7
+     },
+     "S": {
+      "summer": 17.8,
+      "winter": 23.7
+     },
+     "T": {
+      "summer": 7.1,
+      "winter": 12.9
+     },
+     "V": {
+      "summer": 10.4,
+      "winter": 19.1
+     },
+     "W": {
+      "summer": 22.4,
+      "winter": 19.0
+     },
+     "X": {
+      "summer": 8.5,
+      "winter": 14.6
+     },
+     "Y": {
+      "summer": 12.0,
+      "winter": 24.0
+     },
+     "Z": {
+      "summer": 6.7,
+      "winter": 15.7
+     }
+    }
+   },
+   "fixed_usd_per_month": 24.13,
+   "base_services_charge_usd_per_day": {
+    "tier1_care": 0.19713,
+    "tier2_fera_or_affordable_housing": 0.39688,
+    "tier3_standard": 0.79343
+   },
+   "climate_credit": {
+    "value": 36.18,
+    "units": "USD per household per payment (credit)",
+    "kind": "observed",
+    "note": "Sheet 2: 'California Climate Credit (per household, semi-annual payment occurring in the August and September bill cycles) ($36.18)'. Optional; not part of the per-kWh bill math."
+   },
+   "eligibility": "All residential customers (the schedule says 'voluntary ... on an opt-in basis'; PG&E's standard TOU plan and Griddy's fallback when the plan is unknown).",
+   "note": "Sheet 2 rows: Summer Total Usage $0.52240 peak / $0.39940 off-peak; Winter $0.39757 / $0.36757; Baseline Credit ($0.08140) applied to baseline usage only. Periods: 'Peak: 4:00 p.m. to 9:00 p.m. All days; Off-Peak: All other times' in both seasons. Base Services Charge, $ per customer per day, by income tier (Tier 1 = CARE, Tier 2 = FERA / deed-restricted affordable housing, Tier 3 = everyone else). fixed_usd_per_month = Tier 3 x 365/12. Same amounts on E-TOU-C, E-TOU-D, EV2-A and E-ELEC. The charge is paid on the PG&E delivery side, so PG&E+SVCE customers pay it too. No minimum charge appears in the schedule text. Hours are hour-beginning in local clock time (PG&E TOU periods follow PDT in summer). The Griddy 2024 model runs on fixed UTC-8, so a period could be shifted one hour during DST; this file does not shift anything. Holidays are ignored."
+  },
+  "E-TOU-D": {
+   "label": "E-TOU-D: Time-of-Use (peak 5–8 p.m. weekdays)",
+   "utility": "pge",
+   "effective": "2026-06-01",
+   "source": "PG&E Electric Schedule E-TOU-D: total bundled rates on Sheet 2 (Cal. P.U.C. Sheet No. 61365-E, Advice 7921-E, D.26-04-036, effective June 1, 2026); time periods on Sheet 4 Special Condition 1 (Advice 7846-E, effective March 1, 2026)",
+   "url": "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_E-TOU-D.pdf",
+   "retrieved": "2026-10-24",
+   "season_by_month": [
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "summer",
+    "summer",
+    "summer",
+    "summer",
+    "winter",
+    "winter",
+    "winter"
+   ],
+   "periods_by_hour": {
+    "summer": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "peak",
+      "peak",
+      "peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ]
+    },
+    "winter": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "peak",
+      "peak",
+      "peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak"
+     ]
+    }
+   },
+   "rates_usd_per_kwh": {
+    "summer": {
+     "peak": 0.47708,
+     "off_peak": 0.34212
+    },
+    "winter": {
+     "peak": 0.38747,
+     "off_peak": 0.34886
+    }
+   },
+   "fixed_usd_per_month": 24.13,
+   "base_services_charge_usd_per_day": {
+    "tier1_care": 0.19713,
+    "tier2_fera_or_affordable_housing": 0.39688,
+    "tier3_standard": 0.79343
+   },
+   "climate_credit": {
+    "value": 36.18,
+    "units": "USD per household per payment (credit)",
+    "kind": "observed",
+    "note": "Sheet 2: 'California Climate Credit (per household, semi-annual payment occurring in the August and September bill cycles) ($36.18)'. Optional; not part of the per-kWh bill math."
+   },
+   "eligibility": "All residential customers, opt-in ('This voluntary schedule is available to residential customers on an opt-in basis').",
+   "note": "Sheet 2 rows: Summer (all usage) $0.47708 peak / $0.34212 off-peak; Winter $0.38747 / $0.34886. Periods: 'Peak: 5:00 p.m. to 8:00 p.m. Monday through Friday; Off-Peak: All other times including Holidays' in both seasons. No baseline credit on this schedule. Base Services Charge, $ per customer per day, by income tier (Tier 1 = CARE, Tier 2 = FERA / deed-restricted affordable housing, Tier 3 = everyone else). fixed_usd_per_month = Tier 3 x 365/12. Same amounts on E-TOU-C, E-TOU-D, EV2-A and E-ELEC. The charge is paid on the PG&E delivery side, so PG&E+SVCE customers pay it too. Hours are hour-beginning in local clock time (PG&E TOU periods follow PDT in summer). The Griddy 2024 model runs on fixed UTC-8, so a period could be shifted one hour during DST; this file does not shift anything. Holidays are ignored."
+  },
+  "EV2-A": {
+   "label": "EV2-A: Home Charging EV rate (peak 4–9 p.m., part-peak 3–4 and 9–12 p.m.)",
+   "utility": "pge",
+   "effective": "2026-06-01",
+   "source": "PG&E Electric Schedule EV2: total bundled rates on Sheet 2 (Cal. P.U.C. Sheet No. 61374-E, Advice 7921-E, D.26-04-036, effective June 1, 2026); time periods on Special Condition 1 (Advice 7846-E, effective March 1, 2026)",
+   "url": "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_EV2%20(Sch).pdf",
+   "retrieved": "2026-10-24",
+   "season_by_month": [
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "summer",
+    "summer",
+    "summer",
+    "summer",
+    "winter",
+    "winter",
+    "winter"
+   ],
+   "periods_by_hour": {
+    "summer": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ]
+    },
+    "winter": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ]
+    }
+   },
+   "rates_usd_per_kwh": {
+    "summer": {
+     "peak": 0.53809,
+     "part_peak": 0.4276,
+     "off_peak": 0.22558
+    },
+    "winter": {
+     "peak": 0.41099,
+     "part_peak": 0.39428,
+     "off_peak": 0.22558
+    }
+   },
+   "fixed_usd_per_month": 24.13,
+   "base_services_charge_usd_per_day": {
+    "tier1_care": 0.19713,
+    "tier2_fera_or_affordable_housing": 0.39688,
+    "tier3_standard": 0.79343
+   },
+   "climate_credit": {
+    "value": 36.18,
+    "units": "USD per household per payment (credit)",
+    "kind": "observed",
+    "note": "Sheet 2: 'California Climate Credit (per household, semi-annual payment occurring in the August and September bill cycles) ($36.18)'. Optional; not part of the per-kWh bill math."
+   },
+   "eligibility": "Needs a currently registered BEV or PHEV charged at the home; also offered as a pilot to homes with battery storage (Special Condition 8) and to homes whose primary water or space heating is an electric heat pump (Special Condition 9). Usage over 12 months may not exceed 800% of the annual baseline allowance.",
+   "note": "Sheet 2 rows: Summer Usage $0.53809 peak / $0.42760 part-peak / $0.22558 off-peak; Winter $0.41099 / $0.39428 / $0.22558. Periods, all year: 'Peak: 4:00 p.m. to 9:00 p.m. every day including weekends and holidays. Partial-Peak: 3:00 p.m. to 4:00 p.m. and 9:00 p.m. to 12:00 a.m. every day ... Off-Peak: All other hours.' Bills show it as EV2A. Base Services Charge, $ per customer per day, by income tier (Tier 1 = CARE, Tier 2 = FERA / deed-restricted affordable housing, Tier 3 = everyone else). fixed_usd_per_month = Tier 3 x 365/12. Same amounts on E-TOU-C, E-TOU-D, EV2-A and E-ELEC. The charge is paid on the PG&E delivery side, so PG&E+SVCE customers pay it too. Hours are hour-beginning in local clock time (PG&E TOU periods follow PDT in summer). The Griddy 2024 model runs on fixed UTC-8, so a period could be shifted one hour during DST; this file does not shift anything. Holidays are ignored."
+  },
+  "E-ELEC": {
+   "label": "E-ELEC: Electric Home rate (peak 4–9 p.m., part-peak 3–4 and 9–12 p.m.)",
+   "utility": "pge",
+   "effective": "2026-06-01",
+   "source": "PG&E Electric Schedule E-ELEC: total bundled rates on Sheet 2 (Cal. P.U.C. Sheet No. 61363-E, Advice 7921-E, D.26-04-036, effective June 1, 2026); time periods on Sheet 4 Special Condition 1 (Advice 7846-E, effective March 1, 2026)",
+   "url": "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_E-ELEC.pdf",
+   "retrieved": "2026-10-24",
+   "season_by_month": [
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "winter",
+    "summer",
+    "summer",
+    "summer",
+    "summer",
+    "winter",
+    "winter",
+    "winter"
+   ],
+   "periods_by_hour": {
+    "summer": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ]
+    },
+    "winter": {
+     "weekday": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ],
+     "weekend": [
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "off_peak",
+      "part_peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "peak",
+      "part_peak",
+      "part_peak",
+      "part_peak"
+     ]
+    }
+   },
+   "rates_usd_per_kwh": {
+    "summer": {
+     "peak": 0.55214,
+     "part_peak": 0.39026,
+     "off_peak": 0.33358
+    },
+    "winter": {
+     "peak": 0.32063,
+     "part_peak": 0.29854,
+     "off_peak": 0.28468
+    }
+   },
+   "fixed_usd_per_month": 24.13,
+   "base_services_charge_usd_per_day": {
+    "tier1_care": 0.19713,
+    "tier2_fera_or_affordable_housing": 0.39688,
+    "tier3_standard": 0.79343
+   },
+   "climate_credit": {
+    "value": 36.18,
+    "units": "USD per household per payment (credit)",
+    "kind": "observed",
+    "note": "Sheet 2: 'California Climate Credit (per household, semi-annual payment occurring in the August and September bill cycles) ($36.18)'. Optional; not part of the per-kWh bill math."
+   },
+   "eligibility": "Needs at least one qualifying electric technology: EV charging at home, energy storage (at least 0.05% of annual kWh for homes using over 6,000 kWh/yr, otherwise at least 2 kWh), or an electric heat pump as the primary water or space heating/cooling. Residential Net Billing Tariff (solar) customers must be served on E-ELEC and need no other qualifying technology.",
+   "note": "Sheet 2 rows: Summer Usage $0.55214 peak / $0.39026 part-peak / $0.33358 off-peak; Winter $0.32063 / $0.29854 / $0.28468. Periods, all year: 'Peak: 4:00 p.m. to 9:00 p.m. every day including weekends and holidays. Partial-Peak: 3:00 p.m. to 4:00 p.m. and 9:00 p.m. to 12:00 a.m. every day ... Off-Peak: All other hours.' Sheet 1 (Advice 7975-E, effective Aug 28, 2026): 'Residential customers billed on the Net Billing Tariff must be served under this schedule'. Base Services Charge, $ per customer per day, by income tier (Tier 1 = CARE, Tier 2 = FERA / deed-restricted affordable housing, Tier 3 = everyone else). fixed_usd_per_month = Tier 3 x 365/12. Same amounts on E-TOU-C, E-TOU-D, EV2-A and E-ELEC. The charge is paid on the PG&E delivery side, so PG&E+SVCE customers pay it too. Hours are hour-beginning in local clock time (PG&E TOU periods follow PDT in summer). The Griddy 2024 model runs on fixed UTC-8, so a period could be shifted one hour during DST; this file does not shift anything. Holidays are ignored."
+  }
+ }
+}

@@ -39,7 +39,7 @@ function LayoutSketch() {
         <Zone title="Header">
           <Tab>Basic | Advanced</Tab>
           <Tab>Single | Compare</Tab>
-          <Tab>Industrial | Community</Tab>
+          <Tab>Power plants &amp; grid | Community | Home</Tab>
           <Tab>⚙ Settings</Tab>
           <Tab>About</Tab>
           <Tab>Report</Tab>
@@ -94,8 +94,8 @@ const STEPS: { title: string; body: ReactNode }[] = [
     title: "Plan the project",
     body: (
       <>
-        In <Tab>Plan</Tab>, enter the facility peak demand and load factor, pick a plant type and press <Btn>Size plant for demand</Btn>
-        . Check the proposal (projected peak, cost, carbon, unmet hours) and press <Btn>Use this design</Btn>. Want to know who lives
+        In <Tab>Plan</Tab>, enter the peak demand to serve and load factor, then pick a plant type. The design updates automatically.
+        Check projected demand, cost, operational and upfront carbon, and unmet hours. Want to know who lives
         nearby? <Btn>Highlight area</Btn> on the map lets you draw an area and see its people and household demand.
       </>
     ),
@@ -136,9 +136,13 @@ const STEPS: { title: string; body: ReactNode }[] = [
     body: (
       <>
         <Tab>Single | Compare</Tab> in the header puts the presets side by side: cost, carbon, clean-energy hours and air pollutants.{" "}
-        <Tab>Industrial | Community</Tab> switches between an AI campus and a community microgrid.
+        <Tab>Power plants &amp; grid | Community</Tab> switches between larger infrastructure and a community microgrid. Data-center settings are optional under Build.
       </>
     ),
+  },
+  {
+    title: "Explore a household",
+    body: <>Choose <Tab>Individual / Home</Tab>, then click the map or search to place a house. Enter usage and provider details under Home. In the results, choose a month, weekday/weekend and local clock hour: the daily usage, solar, grid mix and carbon charts follow that selection. Annual bills and what-if savings remain full-year estimates. Solar uses a nearby cached typical-year profile; hourly grid context is historical CAISO 2024.</>,
   },
   {
     title: "Look ahead",
