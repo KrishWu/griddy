@@ -1,0 +1,28 @@
+{
+  "_comment": "Scenario presets (per-year rates compound from the base year). Population follows CA DOF P-2A county projections when use_dof_population is true; population_growth is the fallback. Calibrate the total against the CEC 2025 IEPR by adding \"calibration_csv\" (see scenarios.py). data_center_mw: new data-center peak load by 5-digit county FIPS, flat at peak x data_center_load_factor; data_center_flexible_share of it shifts off the peak (carbon-aware). The website's what-if sliders start from these presets.",
+  "low": {
+    "population_growth": 0.002,
+    "use_dof_population": true,
+    "electrification_growth": 0.008,
+    "efficiency_offset": 0.007,
+    "data_center_mw": {},
+    "note": "Slow electrification, efficiency keeps pace, no new data centers"
+  },
+  "mid": {
+    "population_growth": 0.004,
+    "use_dof_population": true,
+    "electrification_growth": 0.015,
+    "efficiency_offset": 0.007,
+    "data_center_mw": {"06029": 1000, "06085": 500},
+    "data_center_flexible_share": 0.1,
+    "note": "Steady EV/heat-pump adoption; a 1 GW AI campus in Kern (the Griddy demo site) and 500 MW in Santa Clara"
+  },
+  "high": {
+    "population_growth": 0.006,
+    "use_dof_population": true,
+    "electrification_growth": 0.025,
+    "efficiency_offset": 0.005,
+    "data_center_mw": {"06029": 2000, "06085": 1000, "06019": 500, "06025": 500},
+    "note": "Fast electrification and an AI data-center build-out in Kern, Santa Clara, Fresno and Imperial"
+  }
+}
