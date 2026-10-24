@@ -37,17 +37,23 @@ def test_best_cell_is_100_and_worst_is_1(idx):
     best, worst = int(idx.composite.argmax()), int(idx.composite.argmin())
     assert g.score_from_composite(idx, float(idx.composite[best]))[0] == 100.0
     assert g.score_from_composite(idx, float(idx.composite[worst]))[0] == 1.0
-    # A click exactly on the best cell's centre scores 100 too.
-    assert _score(float(idx.lon[best]), float(idx.lat[best]))["score"] == 100.0
+    # A click exactly on the best cell's centre is that cell: score 100, rank 1.
+    top = _score(float(idx.lon[best]), float(idx.lat[best]))
+    assert top["score"] == 100.0 and top["rank"] == 1 and top["percentile"] < 100.0
 
 
 def test_scores_stay_in_1_to_100_with_one_decimal(idx):
     rng = np.random.default_rng(7)
+    scored = 0
     for i in rng.choice(len(idx.composite), 300, replace=False):
         s = _score(float(idx.lon[i]) + rng.uniform(-0.02, 0.02), float(idx.lat[i]) + rng.uniform(-0.02, 0.02))
-        assert s["in_coverage"] and 1.0 <= s["score"] <= 100.0
-        assert s["score"] == round(s["score"], 1)
+        if not s["in_coverage"]:  # jittered off the coast or over the border
+            assert s["score"] is None and s["note"]
+            continue
+        scored += 1
+        assert 1.0 <= s["score"] <= 100.0 and s["score"] == round(s["score"], 1)
         assert 0.0 <= s["percentile"] <= 100.0 and 1 <= s["rank"] <= s["n_cells"]
+    assert scored >= 280
 
 
 def test_score_is_monotonic_in_model_suitability(idx):
@@ -73,6 +79,26 @@ def test_outside_california_has_no_score():
         s = _score(lon, lat)
         assert s["available"] and not s["in_coverage"] and s["score"] is None
         assert "Outside" in s["note"]
+
+
+def test_just_across_the_border_is_outside_california():
+    # Within 10 km of California cells, but not in California: Mexicali, Reno, Lake Havasu City.
+    for lon, lat in ((-115.45, 32.62), (-119.81, 39.53), (-114.32, 34.48)):
+        s = _score(lon, lat)
+        assert not s["in_coverage"] and s["score"] is None and "Outside California" in s["note"]
+
+
+def test_california_county_without_cells_says_so():
+    s = _score(-124.20, 41.756)  # Crescent City, Del Norte County
+    assert not s["in_coverage"] and s["score"] is None
+    assert s["county"] == "Del Norte" and "no cells for Del Norte County" in s["note"]
+
+
+def test_start_site_does_not_skew_statewide_statistics():
+    index = [s for s in service._build_sites()]
+    assert index and all(s["key"] not in service.START_SITE_KEYS for s in index)
+    cf = service.annual_cf()
+    assert abs(cf["solar_pv"] - sum(s["solar_cf"] for s in index) / len(index)) < 1e-9
 
 
 def test_missing_artifact_degrades_gracefully(monkeypatch):
