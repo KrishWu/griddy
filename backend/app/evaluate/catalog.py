@@ -23,8 +23,9 @@ from app import DATA_DIR
 from app.contract import Asset, AssetKind, Catalog, Provenance, TechSpec, TransmissionSpec
 
 _DIR = DATA_DIR / "evaluate"
-KINDS: tuple[AssetKind, ...] = ("solar_pv", "onshore_wind", "gas_cc", "gas_ct", "battery")
+KINDS: tuple[AssetKind, ...] = ("solar_pv", "onshore_wind", "gas_cc", "gas_ct", "battery", "nuclear", "nuclear_smr")
 GAS_KINDS: tuple[AssetKind, ...] = ("gas_cc", "gas_ct")
+NUCLEAR_KINDS: tuple[AssetKind, ...] = ("nuclear", "nuclear_smr")
 COD_YEAR = 2027
 DOLLAR_YEAR = 2024
 BATTERY_REF_HOURS = 4.0  # ATB's reference configuration and the default when duration_h is unset
@@ -36,9 +37,26 @@ def _load(name: str) -> dict[str, Any]:
     return json.loads((_DIR / name).read_text(encoding="utf-8"))
 
 
+def nuclear_data() -> dict[str, Any]:
+    """nuclear_2025.json: cited ATB 2025 nuclear values, kept apart from the generated ATB file (cached: read-only)."""
+    return _load("nuclear_2025.json")
+
+
+@lru_cache(maxsize=None)
 def atb_data() -> dict[str, Any]:
-    """atb_2025_catalog.json (cached: treat as read-only)."""
-    return _load("atb_2025_catalog.json")
+    """atb_2025_catalog.json (from prep_atb.py) plus the nuclear techs from nuclear_2025.json (cached: treat as read-only)."""
+    base = _load("atb_2025_catalog.json")
+    return {**base, "techs": {**base["techs"], **nuclear_data()["techs"]}}
+
+
+# Per-kind constants the simulation needs (stress.py, resilience.py), cited in nuclear_2025.json.
+NUCLEAR_EFOR: dict[str, float] = {k: float(nuclear_data()["techs"][k]["efor"]["value"]) for k in NUCLEAR_KINDS}
+NUCLEAR_UNIT_MW: dict[str, float] = {k: float(nuclear_data()["techs"][k]["unit_mw"]["value"]) for k in NUCLEAR_KINDS}
+
+
+def nuclear_fuel_usd_per_mwh(kind: str) -> float:
+    """ATB nuclear fuel cost in 2024$/MWh (ATB's 'Fuel' parameter x the CPI-U deflator)."""
+    return float(nuclear_data()["techs"][kind]["parameters"]["Fuel"]["value"]) * ref_value("deflator_2023_to_2024")
 
 
 def bom_basis() -> dict[str, Any]:
@@ -57,6 +75,8 @@ def ref(key: str) -> dict[str, Any]:
         d = _load(name)
         if key in d and key != "_meta":
             return d[key]
+    if key in (nuclear_refs := nuclear_data().get("refs", {})):
+        return nuclear_refs[key]
     raise KeyError(f"no reference value {key!r} in data/evaluate/ref_*.json")
 
 
@@ -134,12 +154,22 @@ def _provenance(kind: AssetKind, spec: dict[str, Any]) -> Provenance:
         parts.append(
             f"Heat rate {_num(spec['heat_rate_mmbtu_per_mwh'])} MMBtu/MWh (ATB, full load). CO2 {co2['value']} kg/MMBtu: {co2['source']}."
         )
-    if spec.get("typical_capacity_factor"):
+    if kind in NUCLEAR_KINDS:
+        n = t
+        parts.append(
+            f"ATB capacity factor {spec['typical_capacity_factor']}: the simulation runs the plant at this share of nameplate every "
+            f"hour (must-run baseload). Fuel {_num(float(n['parameters']['Fuel']['value']))} $/MWh (ATB, 2023$). Forced-outage rate "
+            f"{n['efor']['value']}: {n['efor']['source']} ({n['efor']['url']}). Unit size for N-1 {n['unit_mw']['value']:g} MW: "
+            f"{n['unit_mw']['source']} ({n['unit_mw']['url']}). Direct CO2 and NOx: none (no combustion)."
+        )
+    elif spec.get("typical_capacity_factor"):
         parts.append(f"ATB reference CF {spec['typical_capacity_factor']} (display only; the simulation uses hourly weather).")
     if spec.get("round_trip_efficiency"):
         parts.append(f"Round-trip efficiency {spec['round_trip_efficiency']} (ATB 2025 battery page; Cole et al. 2025).")
     if rationale := t.get("class_rationale"):
         parts.append(f"Class choice: {rationale}")
+    if data_note := t.get("data_note"):
+        parts.append(data_note)
     ls = t["lifetime_source"]
     parts.append(f"Lifetime {t['lifetime_years']} years: {ls['source']} ({ls['url']}).")
     land = ref(f"land_acres_per_mw_{kind}")
@@ -151,7 +181,8 @@ def _provenance(kind: AssetKind, spec: dict[str, Any]) -> Provenance:
         f"NLR ATB 2025 v1.0.0: {sel['display_name']}, {sel['scenario']}, {sel['core_metric_case']} case, "
         f"{sel['cod_year']} COD, no tax credits"
     )
-    return Provenance(kind="assumption", source=source, url=atb["source"]["docs_url"], note=" ".join(parts))
+    url = t.get("docs_url") or atb["source"]["docs_url"]
+    return Provenance(kind="assumption", source=source, url=url, note=" ".join(parts))
 
 
 def _tech_spec(kind: AssetKind) -> TechSpec:

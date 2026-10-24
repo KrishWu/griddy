@@ -39,9 +39,11 @@ from app.evaluate.catalog import (
     GAS_KINDS,
     KINDS,
     LB_TO_KG,
+    NUCLEAR_KINDS,
     asset_params,
     atb_data,
     battery_fom_split,
+    nuclear_fuel_usd_per_mwh,
     ref,
     ref_value,
     replacement_cost_ratio,
@@ -321,6 +323,14 @@ def _energy_lines(
             note = f"{mwh:,.0f} MWh x ${vom:.3f}/MWh (ATB Variable O&M x CPI-U 2023->2024)."
             prov = Provenance(kind="assumption", source=spec.provenance.source, url=spec.provenance.url, note=note)
             lines.append(CostLine(category="var_om", item=f"Variable O&M: {LABELS[kind]} ({mwh:,.0f} MWh/yr)", usd=mwh * vom, provenance=prov))
+        if kind in NUCLEAR_KINDS:
+            rate = nuclear_fuel_usd_per_mwh(kind)
+            usd = mwh * rate
+            fuel_usd += usd
+            note = f"{mwh:,.0f} MWh x ${rate:.2f}/MWh (ATB nuclear fuel cost x CPI-U 2023->2024)."
+            prov = Provenance(kind="assumption", source=spec.provenance.source, url=spec.provenance.url, note=note)
+            lines.append(CostLine(category="fuel", item=f"Nuclear fuel: {LABELS[kind]} ({mwh:,.0f} MWh/yr)", usd=usd, provenance=prov))
+            continue
         if kind not in GAS_KINDS:
             continue
         hr = _kind_value(pairs, kind, "heat_rate_mmbtu_per_mwh", spec.heat_rate_mmbtu_per_mwh or 0.0)

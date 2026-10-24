@@ -7,7 +7,8 @@
 
 export const SCHEMA_VERSION = "0.1.0";
 
-export type AssetKind = "solar_pv" | "onshore_wind" | "gas_cc" | "gas_ct" | "battery";
+// nuclear: large light-water reactors (AP1000 class); nuclear_smr: small modular reactors.
+export type AssetKind = "solar_pv" | "onshore_wind" | "gas_cc" | "gas_ct" | "battery" | "nuclear" | "nuclear_smr";
 export type Mode = "industrial" | "community";
 export type Severity = "pass" | "info" | "warn" | "fail";
 export type ProvenanceKind = "observed" | "assumption" | "simulated" | "inferred";

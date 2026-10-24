@@ -1,0 +1,173 @@
+{
+  "_meta": {
+    "description": "Cited nuclear inputs (large reactors and SMRs) merged into the ATB catalog by app/evaluate/catalog.py. Kept apart from atb_2025_catalog.json, which prep_atb.py regenerates from the ATB CSV.",
+    "dollar_year": 2023,
+    "checked": "2026-10-24"
+  },
+  "techs": {
+    "nuclear": {
+      "label": "Nuclear, large light-water reactor (ATB Nuclear - Large)",
+      "docs_url": "https://atb.nlr.gov/electricity/2025/nuclear",
+      "atb": {
+        "technology": "Nuclear",
+        "techdetail": "Large",
+        "techdetail2": "1,000 MWe light-water reactor",
+        "display_name": "Nuclear - Large",
+        "scenario": "Moderate",
+        "core_metric_case": "Market",
+        "crpyears": "30",
+        "cod_year": 2030
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 14141.83,
+          "units": "$/kW"
+        },
+        "OCC": {
+          "value": 10500.0,
+          "units": "$/kW"
+        },
+        "GCC": {
+          "value": 104.0,
+          "units": "$/kW"
+        },
+        "CFC": {
+          "value": 3537.83,
+          "units": "$/kW",
+          "units_note": "CAPEX - OCC - GCC"
+        },
+        "Fixed O&M": {
+          "value": 143.91,
+          "units": "$/kW-yr"
+        },
+        "Variable O&M": {
+          "value": 2.8,
+          "units": "$/MWh"
+        },
+        "Fuel": {
+          "value": 10.182,
+          "units": "$/MWh",
+          "units_note": "0.97 $/MMBtu x heat rate 10.497 MMBtu/MWh (ATB)"
+        },
+        "CF": {
+          "value": 0.93,
+          "units": "",
+          "units_note": "ATB 2025 nuclear page, Table 5: 'Capacity factor 93% 93%'"
+        }
+      },
+      "derived": {
+        "formula": "OCC x CAPEX / (OCC + GCC)",
+        "capex_ex_gcc_usd_per_kw": 14003.13
+      },
+      "lifetime_years": 60,
+      "lifetime_source": {
+        "source": "ATB 2025 Definitions page, 'Technical Lifetimes for Technologies': 'Nuclear: Large and small modular reactor (SMR) 60'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions"
+      },
+      "efor": {
+        "value": 0.022,
+        "source": "NERC 2026 State of Reliability Overview, Table 2: nuclear weighted EFOR 2.2% (2025)",
+        "url": "https://www.nerc.com/globalassets/programs/rapa/pa/nerc_sor_2026_overview.pdf"
+      },
+      "unit_mw": {
+        "value": 1000.0,
+        "source": "ATB 2025 nuclear page, Table 5: 'Power output 1,000 MWe 300 MWe'",
+        "url": "https://atb.nlr.gov/electricity/2025/nuclear"
+      },
+      "data_note": "ATB 2025 shows nuclear costs only as charts; values are from NLR's ATB-calc repository, 'a CSV copy of the ATB data workbook XLSX data' (tests/data/Nuclear, updated 2025-04-25, https://github.com/NatLabRockies/ATB-calc/tree/main/tests/data/Nuclear): Moderate scenario, Market case, 30-year cost recovery, 2030 online date (a reactor can't be online by the other technologies' 2027: Moderate construction 82 months). All 2023 USD (ATB 2025 Definitions). Life-cycle emissions ~13 g CO2e/kWh (NREL/FS-6A50-80580, 2021); direct CO2 and NOx are zero."
+    },
+    "nuclear_smr": {
+      "label": "Nuclear, small modular reactor (ATB Nuclear - Small)",
+      "docs_url": "https://atb.nlr.gov/electricity/2025/nuclear",
+      "atb": {
+        "technology": "Nuclear",
+        "techdetail": "Small",
+        "techdetail2": "300 MWe small modular reactor",
+        "display_name": "Nuclear - Small",
+        "scenario": "Moderate",
+        "core_metric_case": "Market",
+        "crpyears": "30",
+        "cod_year": 2030
+      },
+      "parameters": {
+        "CAPEX": {
+          "value": 9220.19,
+          "units": "$/kW"
+        },
+        "OCC": {
+          "value": 7750.0,
+          "units": "$/kW"
+        },
+        "GCC": {
+          "value": 104.0,
+          "units": "$/kW",
+          "units_note": "Assumed equal to the Large row's 104 $/kW (ATB's generic grid-connection cost); only removed from CAPEX"
+        },
+        "CFC": {
+          "value": 1366.19,
+          "units": "$/kW",
+          "units_note": "CAPEX - OCC - GCC"
+        },
+        "Fixed O&M": {
+          "value": 136.0,
+          "units": "$/kW-yr"
+        },
+        "Variable O&M": {
+          "value": 2.6,
+          "units": "$/MWh"
+        },
+        "Fuel": {
+          "value": 11.016,
+          "units": "$/MWh",
+          "units_note": "1.2 $/MMBtu x heat rate 9.18 MMBtu/MWh (ATB)"
+        },
+        "CF": {
+          "value": 0.93,
+          "units": "",
+          "units_note": "ATB 2025 nuclear page, Table 5: 'Capacity factor 93% 93%'"
+        }
+      },
+      "derived": {
+        "formula": "OCC x CAPEX / (OCC + GCC)",
+        "capex_ex_gcc_usd_per_kw": 9098.1
+      },
+      "lifetime_years": 60,
+      "lifetime_source": {
+        "source": "ATB 2025 Definitions page, 'Technical Lifetimes for Technologies': 'Nuclear: Large and small modular reactor (SMR) 60'",
+        "url": "https://atb.nlr.gov/electricity/2025/definitions"
+      },
+      "efor": {
+        "value": 0.022,
+        "source": "NERC 2026 State of Reliability Overview, Table 2: nuclear weighted EFOR 2.2% (2025); no SMR fleet operates yet, so the nuclear fleet value stands in",
+        "url": "https://www.nerc.com/globalassets/programs/rapa/pa/nerc_sor_2026_overview.pdf"
+      },
+      "unit_mw": {
+        "value": 300.0,
+        "source": "ATB 2025 nuclear page, Table 5: 'Power output 1,000 MWe 300 MWe'",
+        "url": "https://atb.nlr.gov/electricity/2025/nuclear"
+      },
+      "data_note": "ATB 2025 shows nuclear costs only as charts; values are from NLR's ATB-calc repository, 'a CSV copy of the ATB data workbook XLSX data' (tests/data/Nuclear, updated 2025-04-25, https://github.com/NatLabRockies/ATB-calc/tree/main/tests/data/Nuclear): Moderate scenario, Market case, 30-year cost recovery, 2030 online date (a reactor can't be online by the other technologies' 2027: Moderate construction 55 months). All 2023 USD (ATB 2025 Definitions). Life-cycle emissions ~13 g CO2e/kWh (NREL/FS-6A50-80580, 2021); direct CO2 and NOx are zero."
+    }
+  },
+  "refs": {
+    "land_acres_per_mw_nuclear": {
+      "value": 0.64,
+      "units": "acres/MW",
+      "source": "DOE Office of Nuclear Energy: 'A typical 1,000-megawatt nuclear facility ... needs a little more than 1 square mile' (640 acres); Sandia SAND2020-12368C gives ~0.83 acres/MW for a 600 MW plant",
+      "url": "https://www.energy.gov/ne/articles/3-reasons-why-nuclear-clean-and-sustainable"
+    },
+    "land_acres_per_mw_nuclear_smr": {
+      "value": 0.14,
+      "units": "acres/MW",
+      "source": "ORNL/TM-2014/300 (DOE SMR siting report): 'most SMR base design packages can be accommodated on a 50 acre footprint' at 360 MW(e); Sandia gives ~0.06 acres/MW for a 600 MW NuScale plant",
+      "url": "https://www.energy.gov/sites/prod/files/2016/01/f28/SITINGTask3Report20140912.pdf"
+    }
+  },
+  "california_policy": {
+    "severity": "fail",
+    "title": "California law bars new nuclear power plants",
+    "detail": "Public Resources Code §25524.2 bars a new nuclear plant until the Energy Commission finds a federally approved, demonstrated means of disposing of high-level nuclear waste, and §25524.1 until fuel reprocessing is approved. AB 2647 (Chapter 830, Statutes of 2026) only orders a Commission nuclear assessment by 2028; it doesn't lift the moratorium. A reactor here, large or SMR, would need a change in state law.",
+    "source": "Cal. Public Resources Code §25524.2 (also §25524.1; AB 2647 status: calmatters.digitaldemocracy.org/bills/ca_202520260ab2647)",
+    "url": "https://codes.findlaw.com/ca/public-resources-code/prc-sect-25524-2/"
+  }
+}

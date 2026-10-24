@@ -164,9 +164,13 @@ export const KIND_LABEL: Record<AssetKind, string> = {
   battery: "Battery",
   gas_cc: "Gas combined cycle",
   gas_ct: "Gas peaker",
+  nuclear: "Nuclear (large reactor)",
+  nuclear_smr: "Nuclear (small modular reactor)",
 };
-const KIND_SHORT: Record<AssetKind, string> = { solar_pv: "Solar", onshore_wind: "Wind", battery: "Battery", gas_cc: "Gas CC", gas_ct: "Gas CT" };
-export const KIND_ORDER: AssetKind[] = ["solar_pv", "onshore_wind", "battery", "gas_cc", "gas_ct"];
+const KIND_SHORT: Record<AssetKind, string> = {
+  solar_pv: "Solar", onshore_wind: "Wind", battery: "Battery", gas_cc: "Gas CC", gas_ct: "Gas CT", nuclear: "Nuclear", nuclear_smr: "SMR",
+};
+export const KIND_ORDER: AssetKind[] = ["solar_pv", "onshore_wind", "battery", "nuclear", "nuclear_smr", "gas_cc", "gas_ct"];
 
 const int = (v: number) => Math.round(v).toLocaleString("en-US");
 

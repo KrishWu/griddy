@@ -13,7 +13,9 @@
             "onshore_wind",
             "gas_cc",
             "gas_ct",
-            "battery"
+            "battery",
+            "nuclear",
+            "nuclear_smr"
           ],
           "title": "Kind",
           "type": "string"

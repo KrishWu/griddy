@@ -18,12 +18,14 @@ import numpy as np
 
 from app.contract import Finding, Scenario, SimulationResult
 from app.simulate.demand import pue_hourly
+from app.evaluate.catalog import NUCLEAR_EFOR, NUCLEAR_UNIT_MW
 from app.simulate.dispatch import LOOKAHEAD_H, Dispatch, dispatch
 
 log = logging.getLogger(__name__)
 
 # Firm-capacity derates (screening values, not a resource-adequacy / ELCC study).
 EFOR = {"gas_cc": 0.05, "gas_ct": 0.08}  # equivalent forced-outage rates, NERC GADS fleet averages (approx.)
+EFOR.update(NUCLEAR_EFOR)  # nuclear: data/evaluate/nuclear_2025.json (cited there)
 RESERVE_MARGIN_TARGET = 0.15  # CPUC planning reserve margin is ~15-17%
 # Solar/wind credit = their average output in the top net-load hours (a capacity-value proxy).
 CAPACITY_VALUE_HOURS = 100
@@ -51,7 +53,9 @@ TRANSMISSION_MIN_KV = 60.0  # below this a POI is a distribution voltage (12-35 
 DISTRIBUTION_MAX_MW = 50.0
 
 # Gas units: how an asset's capacity splits into units for N-1 (assumption).
-UNIT_SIZE_MW = {"gas_cc": 400.0, "gas_ct": 100.0}
+UNIT_SIZE_MW = {"gas_cc": 400.0, "gas_ct": 100.0, **NUCLEAR_UNIT_MW}  # nuclear: one reactor / SMR module (cited in the JSON)
+UNIT_LABEL = {"gas_cc": "CC block", "gas_ct": "CT unit", "nuclear": "reactor", "nuclear_smr": "SMR module"}
+N1_KINDS = ("gas_cc", "gas_ct", "nuclear", "nuclear_smr")
 # Ambient-temperature derate of gas turbine output above ISO 15 C (per deg C, typical OEM curves).
 GAS_DERATE_PER_C = {"gas_cc": 0.004, "gas_ct": 0.006}
 HEAT_WAVE_EXTRA_C = 2.0  # stress on top of the observed July 2024 heat wave
@@ -111,7 +115,7 @@ def _storage_duration(scenario: Scenario, sim: SimulationResult, prep) -> Findin
     f, d = prep.fleet, prep.drivers
     n = len(d.demand_mw)
     renew = f.solar_mw * np.clip(d.solar_cf, 0, 1) + f.wind_mw * np.clip(d.wind_cf, 0, 1)
-    firm = _hourly_cap(f.gas_cc_mw, n) + _hourly_cap(f.gas_ct_mw, n) + f.import_limit_mw
+    firm = _hourly_cap(f.gas_cc_mw, n) + _hourly_cap(f.gas_ct_mw, n) + _hourly_cap(f.nuclear_mw, n) + _hourly_cap(f.nuclear_smr_mw, n) + f.import_limit_mw
     residual = np.clip(d.demand_mw - renew - firm, 0, None)
     unmet_h = sim.summary.hours_unmet
     on_paper = (
@@ -215,6 +219,8 @@ def _firm_capacity(scenario: Scenario, sim: SimulationResult, prep) -> Finding:
     parts = {
         "gas CC": cap["gas_cc"] * (1 - EFOR["gas_cc"]),
         "gas CT": cap["gas_ct"] * (1 - EFOR["gas_ct"]),
+        "nuclear": cap.get("nuclear", 0.0) * (1 - EFOR["nuclear"]),
+        "SMR": cap.get("nuclear_smr", 0.0) * (1 - EFOR["nuclear_smr"]),
         "battery": f.batt_mw * batt_credit,
         "solar": cap["solar_pv"] * solar_credit,
         "wind": cap["onshore_wind"] * wind_credit,
@@ -228,6 +234,9 @@ def _firm_capacity(scenario: Scenario, sim: SimulationResult, prep) -> Finding:
     efor = [f"{EFOR[k]:.0%} ({label})" for k, label in (("gas_cc", "CC"), ("gas_ct", "CT")) if cap[k] > 0]
     if efor:
         credits.append(f"gas derated by forced-outage rate {' / '.join(efor)}")
+    nuc_efor = [f"{EFOR[k]:.1%} ({label})" for k, label in (("nuclear", "large"), ("nuclear_smr", "SMR")) if cap.get(k, 0.0) > 0]
+    if nuc_efor:
+        credits.append(f"nuclear derated by forced-outage rate {' / '.join(nuc_efor)}")
     if f.batt_mw:
         credits.append(f"{duration:g} h battery credited {batt_credit:.0%} against a typical {deficit_h:.0f} h daily deficit")
     if cap["solar_pv"] or cap["onshore_wind"]:
@@ -514,7 +523,8 @@ def _head(d: Dispatch, k: int) -> Dispatch:
     return dataclasses.replace(d, **update)
 
 
-def _rerun(prep, sim: SimulationResult, w: slice, *, demand: np.ndarray | None = None, gas_cc=None, gas_ct=None) -> Dispatch:
+def _rerun(prep, sim: SimulationResult, w: slice, *, demand: np.ndarray | None = None, gas_cc=None, gas_ct=None,
+           nuclear=None, nuclear_smr=None) -> Dispatch:
     """Dispatch hours w under stressed inputs, from the base run's state of charge at w.start.
 
     Every other Fleet/Drivers field carries over (grid_charging included), so the rerun uses
@@ -524,7 +534,7 @@ def _rerun(prep, sim: SimulationResult, w: slice, *, demand: np.ndarray | None =
     """
     n = prep.n
     ext = slice(w.start, min(w.stop + LOOKAHEAD_H, n))
-    fleet = _cut(prep.fleet, ext, n, gas_cc_mw=gas_cc, gas_ct_mw=gas_ct)
+    fleet = _cut(prep.fleet, ext, n, gas_cc_mw=gas_cc, gas_ct_mw=gas_ct, nuclear_mw=nuclear, nuclear_smr_mw=nuclear_smr)
     # Follow the policy the base year kept (dispatch's safety net may have dropped rule 6).
     fleet.grid_charging = bool(sim.extras.get("grid_charging", fleet.grid_charging)) and fleet.grid_charging
     drivers = _cut(prep.drivers, ext, n, demand_mw=demand)
@@ -561,12 +571,12 @@ def _days_window(daily: np.ndarray, days: int, first_day: int = 0, last_day: int
 
 
 def _n1_window(sim: SimulationResult, prep) -> slice:
-    """The tightest N1_OUTAGE_DAYS: most gas + imports (incl. grid charging, whose energy later
-    displaces gas and imports) + unmet."""
+    """The tightest N1_OUTAGE_DAYS: most firm supply (gas, nuclear) + imports (incl. grid charging,
+    whose energy later displaces gas and imports) + unmet."""
     h = sim.hourly
     n_days = prep.n // 24
     firm = np.zeros(prep.n)
-    for k in ("gas_cc", "gas_ct"):
+    for k in N1_KINDS:
         if k in h.generation_mw:
             firm += np.asarray(h.generation_mw[k])
     firm += np.asarray(h.imports_mw) + np.asarray(h.unmet_mw)
@@ -587,40 +597,44 @@ def _heat_window(scenario: Scenario, prep) -> slice:
 def _n_minus_1(scenario: Scenario, sim: SimulationResult, prep) -> Finding | None:
     cap = prep.capacity_mw
     # Units per asset: two separate plants never merge into one notional unit (that would be N-2).
-    plants = {k: [a for a in scenario.assets if a.kind == k and a.capacity_mw > 0] for k in ("gas_cc", "gas_ct")}
+    plants = {k: [a for a in scenario.assets if a.kind == k and a.capacity_mw > 0] for k in N1_KINDS}
     units = [(k, u) for k, assets in plants.items() for a in assets for u in _units(a.capacity_mw, UNIT_SIZE_MW[k])]
     if not units:
         return None
     kind, size = max(units, key=lambda x: x[1])
     w = _n1_window(sim, prep)
     out = _hourly_cap(getattr(prep.fleet, f"{kind}_mw"), prep.n)[w]
-    out = np.maximum(out - size, 0.0)
+    if kind in ("nuclear", "nuclear_smr"):  # the fleet holds available output, so a reactor takes out its share
+        out = out * max(0.0, 1 - size / cap[kind])
+    else:
+        out = np.maximum(out - size, 0.0)
     hours, extra, base_h, base_mwh = _added(sim, w, _rerun(prep, sim, w, **{kind: out}))
-    label = "CC block" if kind == "gas_cc" else "CT unit"
+    label = UNIT_LABEL[kind]
+    noun = "gas unit" if kind in ("gas_cc", "gas_ct") else ("reactor" if kind == "nuclear" else "SMR module")
     n_units = sum(1 for k, _ in units if k == kind)
     n_plants = len(plants[kind])
     year = scenario.assumptions.weather_year
     basis = (
-        f"Largest gas unit: a {size:,.0f} MW {label} ({n_units} assumed for {cap[kind]:,.0f} MW"
+        f"Largest {noun}: a {size:,.0f} MW {label} ({n_units} assumed for {cap[kind]:,.0f} MW"
         + (f" in {n_plants} plants" if n_plants > 1 else "")
         + f", <= {UNIT_SIZE_MW[kind]:,.0f} MW each), forced out for the tightest {N1_OUTAGE_DAYS} days "
-        f"(from {_date(w.start, year)}, most gas + imports)."
+        f"(from {_date(w.start, year)}, most {'gas + nuclear' if any(plants[k] for k in ('nuclear', 'nuclear_smr')) and any(plants[k] for k in ('gas_cc', 'gas_ct')) else 'nuclear' if kind in ('nuclear', 'nuclear_smr') else 'gas'} + imports)."
     )
     if hours <= 0 and extra <= RERUN_TOL_MWH:
         if base_h:
             return _f(
                 "n_minus_1",
                 "info",
-                "Losing the largest gas unit adds no shortfall (N-1)",
+                f"Losing the largest {noun} adds no shortfall (N-1)",
                 basis + f" No unserved energy beyond the {base_h:,} h ({base_mwh:,.0f} MWh) already unmet that week in the base year.",
                 metric=0,
                 threshold=0,
             )
-        return _f("n_minus_1", "pass", "Survives loss of the largest gas unit (N-1)", basis + " No additional unserved energy.", metric=0, threshold=0)
+        return _f("n_minus_1", "pass", f"Survives loss of the largest {noun} (N-1)", basis + " No additional unserved energy.", metric=0, threshold=0)
     return _f(
         "n_minus_1",
         "warn",
-        f"N-1: losing the largest gas unit adds {hours:,} unmet hours" if hours else f"N-1: losing the largest gas unit adds {extra:,.0f} MWh of shortfall",
+        f"N-1: losing the largest {noun} adds {hours:,} unmet hours" if hours else f"N-1: losing the largest {noun} adds {extra:,.0f} MWh of shortfall",
         basis + f" {extra:,.0f} MWh more unserved that week (beyond the base case)." + _base_note(base_h, base_mwh)
         + " A data center usually needs N+1 firm supply (a spare unit or more import capacity).",
         metric=hours,
@@ -693,6 +707,16 @@ def _heat_wave(scenario: Scenario, sim: SimulationResult, prep) -> Finding | Non
     return _f("heat_wave", "pass", "Rides through a July heat wave", basis + " Demand met every hour.", metric=0, threshold=0)
 
 
+def _nuclear_policy(scenario: Scenario, sim: SimulationResult) -> Finding | None:
+    """California's law on new nuclear plants, for any design with a reactor (text and source in nuclear_2025.json)."""
+    from app.evaluate.catalog import nuclear_data
+
+    if not any(a.kind in ("nuclear", "nuclear_smr") and a.capacity_mw > 0 for a in scenario.assets):
+        return None
+    p = nuclear_data()["california_policy"]
+    return _f("nuclear_policy_ca", p["severity"], p["title"], f"{p['detail']} Source: {p['source']} ({p['url']}).")
+
+
 def stress_test(scenario: Scenario, sim: SimulationResult) -> list[Finding]:
     from app.evaluate.catalog import get_catalog
     from app.simulate.engine import prepare
@@ -706,7 +730,7 @@ def stress_test(scenario: Scenario, sim: SimulationResult) -> list[Finding]:
         except Exception as exc:  # noqa: BLE001 - one broken check must not hide the others
             log.exception("stress check %s failed", check.__name__)
             findings.append(_f(f"{check.__name__.strip('_')}_error", "info", "Stress check unavailable", f"{check.__name__}: {exc}"[:200]))
-    for check in (_import_headroom, _poi_voltage):
+    for check in (_import_headroom, _poi_voltage, _nuclear_policy):
         if (f := check(scenario, sim)) is not None:
             findings.append(f)
     if scenario.grid.connected:

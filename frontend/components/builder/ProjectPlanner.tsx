@@ -42,6 +42,8 @@ export function ProjectPlanner() {
           <option value="wind_storage">Wind + storage</option>
           <option value="gas_cc">Combined-cycle gas</option>
           <option value="gas_ct">Gas peaker</option>
+          <option value="nuclear">Nuclear (large reactor)</option>
+          <option value="nuclear_smr">Nuclear (small modular reactors)</option>
         </select>
       </label>
       <p className="text-[11px] text-zinc-500">This design serves the entered load with generation, storage and grid imports. Solar or wind + storage adds no gas plant; the hybrid option includes gas backup. Data-center profiles are optional under Build.</p>

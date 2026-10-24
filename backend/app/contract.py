@@ -25,7 +25,8 @@ from pydantic import BaseModel, Field
 
 SCHEMA_VERSION = "0.1.0"
 
-AssetKind = Literal["solar_pv", "onshore_wind", "gas_cc", "gas_ct", "battery"]
+# nuclear: large light-water reactors (AP1000 class); nuclear_smr: small modular reactors.
+AssetKind = Literal["solar_pv", "onshore_wind", "gas_cc", "gas_ct", "battery", "nuclear", "nuclear_smr"]
 Mode = Literal["industrial", "community"]
 Severity = Literal["pass", "info", "warn", "fail"]
 ProvenanceKind = Literal["observed", "assumption", "simulated", "inferred"]

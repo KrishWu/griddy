@@ -39,6 +39,7 @@ const THEME = [
   "[--gf-wind:#1baf7a] dark:[--gf-wind:#199e70]",
   "[--gf-battery:#6250d6] dark:[--gf-battery:#9085e9]",
   "[--gf-gascc:#eb6834] dark:[--gf-gascc:#e46a35]",
+  "[--gf-nuclear:#c2408f] dark:[--gf-nuclear:#e05fae]",  // pink: wind is already green here
   "[--gf-gasct:#a04a1c] dark:[--gf-gasct:#a3461c]",
   "[--gf-grid:#2a78d6] dark:[--gf-grid:#3987e5]",
   "[--gf-unmet:#e34948] dark:[--gf-unmet:#e66767]",

@@ -35,6 +35,7 @@ from app.simulate.dispatch import GRID_SPREAD_USD_PER_MWH, LOOKAHEAD_H, Dispatch
 
 RENEWABLE = ("solar_pv", "onshore_wind")
 THERMAL = ("gas_cc", "gas_ct")
+NUCLEAR = ("nuclear", "nuclear_smr")  # must-run baseload at nameplate x availability (dispatch rule 0)
 DEFAULT_BATTERY_H = 4.0
 
 
@@ -110,7 +111,10 @@ def prepare(scenario: Scenario, catalog: Catalog) -> Prepared:
         notes.append(fit.note)
     prov.append(_demand_provenance(scenario, community is not None))
 
-    cap = {k: sum(a.capacity_mw for a in _of_kind(scenario, k)) for k in (*RENEWABLE, *THERMAL)}
+    cap = {k: sum(a.capacity_mw for a in _of_kind(scenario, k)) for k in (*RENEWABLE, *THERMAL, *NUCLEAR)}
+    # Nuclear availability = the catalog's capacity factor (ATB), spread evenly over the year:
+    # refueling and forced outages lower every hour a little rather than taking whole weeks out.
+    avail = {k: _tech(catalog, _of_kind(scenario, k), k, "typical_capacity_factor", 0.93) for k in NUCLEAR}
     batts = _of_kind(scenario, "battery")
     batt_mw = sum(a.capacity_mw for a in batts)
     batt_mwh = sum(a.capacity_mw * (DEFAULT_BATTERY_H if a.duration_h is None else a.duration_h) for a in batts)
@@ -129,7 +133,22 @@ def prepare(scenario: Scenario, catalog: Catalog) -> Prepared:
         export_limit_mw=g.export_limit_mw if g.connected else 0.0,
         # Price-aware grid charging (dispatch rule 6); scenario.options["grid_charging"] = False turns it off.
         grid_charging=g.connected and bool(scenario.options.get("grid_charging", True)),
+        nuclear_mw=cap["nuclear"] * avail["nuclear"],
+        nuclear_smr_mw=cap["nuclear_smr"] * avail["nuclear_smr"],
     )
+    for k in NUCLEAR:
+        if cap[k] > 0:
+            prov.append(
+                Provenance(
+                    kind="assumption",
+                    source=f"{catalog.spec(k).label}: must-run baseload at {avail[k]:.0%} of nameplate every hour",
+                    note=(
+                        "Availability = the catalog's capacity factor (NLR ATB 2025), spread evenly over the year, so refueling "
+                        "and forced outages lower every hour slightly instead of taking whole weeks out. Nuclear serves load "
+                        "before solar and wind and never exports or charges the battery (dispatch rule 0)."
+                    ),
+                )
+            )
     drivers = Drivers(
         demand_mw=demand,
         solar_cf=_renewable_cf(scenario, "solar_pv", site_w, year, prov),
@@ -199,16 +218,17 @@ def summarize(prep: Prepared, d: Dispatch) -> SimulationSummary:
 
     demand = prep.drivers.demand_mw
     ren = total(d.generation_mw["solar_pv"]) + total(d.generation_mw["onshore_wind"])
+    nuc = sum(total(d.generation_mw[k]) for k in NUCLEAR)  # carbon-free and all of it served (rule 0)
     # On-site clean energy served: renewables used directly plus the renewable share of
     # what the battery returned (it also charges from cheap imports when grid charging is on).
     grid_charge = total(d.grid_charge_mw) if d.grid_charge_mw is not None else 0.0
     ren_charge = total(d.charge_mw) - grid_charge
     ren_share = ren_charge / (ren_charge + grid_charge) if ren_charge + grid_charge > 0 else 1.0
-    clean = ren - total(d.curtailed_mw) - total(d.exports_mw) - ren_charge + ren_share * total(d.discharge_mw)
+    clean = nuc + ren - total(d.curtailed_mw) - total(d.exports_mw) - ren_charge + ren_share * total(d.discharge_mw)
     batt_mwh = prep.fleet.batt_mwh
     return SimulationSummary(
         demand_mwh=total(demand),
-        generation_mwh={k: total(d.generation_mw[k]) for k in (*RENEWABLE, *THERMAL) if prep.capacity_mw[k] > 0},
+        generation_mwh={k: total(d.generation_mw[k]) for k in (*RENEWABLE, *THERMAL, *NUCLEAR) if prep.capacity_mw.get(k, 0.0) > 0},
         imports_mwh=total(d.imports_mw),
         exports_mwh=total(d.exports_mw),
         unmet_mwh=total(d.unmet_mw),
@@ -229,8 +249,9 @@ def _rounded(x: np.ndarray, nd: int = 3, cap: float | np.ndarray | None = None) 
 
 def to_result(prep: Prepared, d: Dispatch, started: float | None = None) -> SimulationResult:
     s, f = prep.scenario, prep.fleet
-    kinds = [k for k in (*RENEWABLE, *THERMAL) if prep.capacity_mw[k] > 0]
-    gen_cap = {"solar_pv": f.solar_mw, "onshore_wind": f.wind_mw, "gas_cc": f.gas_cc_mw, "gas_ct": f.gas_ct_mw}
+    kinds = [k for k in (*RENEWABLE, *THERMAL, *NUCLEAR) if prep.capacity_mw.get(k, 0.0) > 0]  # callers may omit kinds they don't use
+    gen_cap = {"solar_pv": f.solar_mw, "onshore_wind": f.wind_mw, "gas_cc": f.gas_cc_mw, "gas_ct": f.gas_ct_mw,
+               "nuclear": f.nuclear_mw, "nuclear_smr": f.nuclear_smr_mw}
 
     def r(x: np.ndarray, nd: int = 3, cap: float | np.ndarray | None = None) -> list[float]:
         return _rounded(x, nd, cap).tolist()

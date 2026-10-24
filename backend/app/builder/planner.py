@@ -1,12 +1,13 @@
 """Demand-led plant sizing with a projected-demand hourly feasibility check."""
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 from pydantic import Field
 
 from app.contract import Asset, Model, Scenario
-from app.evaluate.catalog import get_catalog
+from app.evaluate.catalog import NUCLEAR_UNIT_MW, get_catalog
 from app.evaluate.economics import evaluate
 from app.evaluate.project import ProjectOptions
 from app.simulate.engine import prepare, simulate
@@ -15,7 +16,7 @@ from app.simulate.stress import stress_test
 
 class PlanRequest(Model):
     scenario: Scenario
-    plant_type: Literal["solar_storage", "wind_storage", "hybrid", "gas_cc", "gas_ct"] = "hybrid"
+    plant_type: Literal["solar_storage", "wind_storage", "hybrid", "gas_cc", "gas_ct", "nuclear", "nuclear_smr"] = "hybrid"
     renewable_energy_share: float = Field(default=0.7, ge=0, le=1)
     storage_hours: float = Field(default=4, ge=0.5, le=48)
     reserve_margin: float = Field(default=0.15, ge=0, le=1)
@@ -30,7 +31,8 @@ def plan_project(req: PlanRequest) -> dict:
     if sc.demand.peak_mw * factor > 50000:
         raise ValueError("Projected peak exceeds the 50,000 MW planning limit.")
     sc.preset = None
-    sc.name = f"{req.plant_type.replace('_', ' ').title()} project"
+    names = {"nuclear": "Nuclear project", "nuclear_smr": "Small modular reactor project"}
+    sc.name = names.get(req.plant_type, f"{req.plant_type.replace('_', ' ').title()} project")
     sc.options["project"] = req.project.model_dump()
     projected = sc.model_copy(deep=True)
     projected.demand.peak_mw *= factor
@@ -60,6 +62,15 @@ def plan_project(req: PlanRequest) -> dict:
         cap = max(0, firm_target - grid) / (0.92 if kind == "gas_ct" else 0.95)
         if cap:
             assets.append(Asset(id=f"planned-{kind}", kind=kind, capacity_mw=cap))
+    if req.plant_type in ("nuclear", "nuclear_smr"):
+        # Baseload sized so nameplate x availability covers the firm target the grid tie doesn't,
+        # rounded up to whole reactors / SMR modules.
+        kind = req.plant_type
+        grid = sc.grid.import_limit_mw if sc.grid.connected else 0
+        need = max(0.0, firm_target - grid) / (catalog.spec(kind).typical_capacity_factor or 0.93)
+        unit = NUCLEAR_UNIT_MW[kind]
+        if need:
+            assets.append(Asset(id=f"planned-{kind}", kind=kind, capacity_mw=math.ceil(need / unit - 1e-9) * unit))
     sc.assets = assets
     projected.assets = [a.model_copy(deep=True) for a in assets]
     sim = simulate(projected, catalog)

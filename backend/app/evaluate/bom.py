@@ -13,7 +13,18 @@ import math
 from dataclasses import dataclass, field
 
 from app.contract import BomItem, Catalog, Scenario
-from app.evaluate.catalog import BATTERY_REF_HOURS, KINDS, asset_params, atb_data, bom_basis, ref_value, transmission_tier
+from app.evaluate.catalog import (
+    BATTERY_REF_HOURS,
+    KINDS,
+    NUCLEAR_KINDS,
+    NUCLEAR_UNIT_MW,
+    asset_params,
+    atb_data,
+    bom_basis,
+    ref,
+    ref_value,
+    transmission_tier,
+)
 
 LABELS = {
     "solar_pv": "Solar PV",
@@ -21,6 +32,8 @@ LABELS = {
     "gas_cc": "Gas combined cycle",
     "gas_ct": "Gas combustion turbine",
     "battery": "Battery storage",
+    "nuclear": "Nuclear (large reactor)",
+    "nuclear_smr": "Nuclear (small modular reactor)",
 }
 
 
@@ -151,6 +164,14 @@ def build_bom(scenario: Scenario, catalog: Catalog, fl: Fleet) -> list[BomItem]:
             f"ceil({_f(ct)} MW / {ct_mw} MW-net ATB F-class unit) = ceil({_f(ct / ct_mw, 2)})",
         )
 
+    # Nuclear ---------------------------------------------------------------
+    for k in NUCLEAR_KINDS:
+        mw = fl.mw.get(k, 0.0)
+        if mw > 0:
+            unit = NUCLEAR_UNIT_MW[k]
+            what = "reactors" if k == "nuclear" else "SMR modules"
+            add(f"Nuclear: {what}", math.ceil(mw / unit - 1e-9), "units", f"ceil({_f(mw)} MW / {unit:g} MW per unit) (ATB reference unit; see the catalog source)")
+
     # Land ------------------------------------------------------------------
     for k in KINDS:
         if k not in fl.land:
@@ -172,6 +193,10 @@ def build_bom(scenario: Scenario, catalog: Catalog, fl: Fleet) -> list[BomItem]:
                 f"{_f(fl.battery_mwh)} MWh x {per_mwh:.3f} acres/MWh ({ref_value('land_acres_per_mw_battery')} acres/MW for a "
                 f"{BATTERY_REF_HOURS:.0f} h system, scaled by energy; EIA/Sargent & Lundy 2024)"
             )
+        elif k in NUCLEAR_KINDS:
+            land = ref(f"land_acres_per_mw_{k}")
+            name = f"Land: {LABELS[k]}"
+            basis = f"{_f(fl.mw[k])} MW x {rate} acres/MW ({land['source']})"
         else:
             name = f"Land: {LABELS[k]}"
             basis = f"{_f(fl.mw[k])} MW x {rate} acres/MW (EIA/Sargent & Lundy 2024 cost study)"
