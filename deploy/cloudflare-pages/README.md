@@ -3,7 +3,9 @@
 The frontend ships as static files to the Cloudflare Pages project `griddy`, served at
 https://getgriddy.app. `build.sh` runs `STATIC_EXPORT=1 next build` and copies `frontend/out/`
 into `out/` here, because Pages only accepts an output folder inside its root directory.
-`functions/api/[[path]].js` forwards `/api/*` to `BACKEND_ORIGIN` from `wrangler.toml`.
+`worker.js` (copied to `out/_worker.js`, Pages "advanced mode") forwards `/api/*` to
+`BACKEND_ORIGIN` from `wrangler.toml`; `routes.json` (`out/_routes.json`) limits it to `/api`.
+GitHub builds skipped a `functions/` directory, which is why this isn't a Pages Function.
 
 Pages builds every push to `main` from GitHub (`KrishWu/griddy`) with root directory
 `deploy/cloudflare-pages` and build command `bash build.sh`. `scripts/deploy-frontend.sh`

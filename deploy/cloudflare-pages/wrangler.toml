@@ -4,6 +4,6 @@ pages_build_output_dir = "out" # filled by build.sh
 compatibility_date = "2026-10-01"
 
 [vars]
-# Where functions/api/[[path]].js forwards /api/*: the backend on Render (render.yaml).
+# Where worker.js (out/_worker.js) forwards /api/*: the backend on Render (render.yaml).
 # To run it from a laptop instead, use https://api.getgriddy.app (see README.md).
 BACKEND_ORIGIN = "https://griddy-api.onrender.com"
