@@ -4,6 +4,8 @@
 // everything else in local component state. Panels read/write through useGridForge().
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { allowSitePlacement } from "@/components/site_intel/regionGuard";
+
 import { api } from "./api";
 import { SCHEMA_VERSION, type LngLat, type MapOverlay, type Mode, type Scenario, type ScenarioResult, type SiteIntel, type SiteSummary } from "./contract";
 
@@ -74,6 +76,25 @@ function readSavedScenario(): Scenario | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The website always opens at the default site (Stanford): a saved design keeps its assets,
+ * demand and assumptions, but its site and that site's grid context come from the preset.
+ * /report keeps the saved site, since it reports that exact design.
+ */
+function startAtDefaultSite(saved: Scenario, preset: Scenario | undefined): Scenario {
+  if (!preset || typeof window === "undefined" || window.location.pathname.startsWith("/report")) return saved;
+  return {
+    ...saved,
+    site: preset.site,
+    grid: {
+      ...saved.grid,
+      poi_voltage_kv: preset.grid.poi_voltage_kv ?? null,
+      interconnection_km: preset.grid.interconnection_km,
+      substation_id: preset.grid.substation_id ?? null,
+    },
+  };
 }
 
 /** Multiply every asset and the grid limits by `factor` (no rounding, so repeated slider moves don't drift). */
@@ -198,7 +219,9 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     api
       .presets()
       .then((ps) => {
-        const initial = readSavedScenario() ?? ps.find((p) => p.id === DEFAULT_PRESET.industrial) ?? ps[0] ?? null;
+        const saved = readSavedScenario();
+        const preset = ps.find((p) => p.id === DEFAULT_PRESET[saved?.mode ?? "industrial"]) ?? ps[0];
+        const initial = saved ? startAtDefaultSite(saved, preset) : (preset ?? null);
         setPresets(ps);
         setError(null);
         setErrorSource(null);
@@ -356,6 +379,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   }, [presets.length, errorSource, loadPresets, runCompare, run]);
 
   const selectSite = useCallback(async (p: LngLat) => {
+    if (!allowSitePlacement(p)) return; // Griddy is California-only for now (E's guard shows why)
     // A clicked point is a new site: fresh id/name, never the preset's Kern labels.
     // Modules that cache per site should key on location rounded to 0.01 deg, not id.
     const id = `site-${p.lon.toFixed(3)}-${p.lat.toFixed(3)}`;

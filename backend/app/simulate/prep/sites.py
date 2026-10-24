@@ -42,6 +42,7 @@ DEMO_SITES: list[dict[str, Any]] = [
     {"name": "Tracy / Tesla 500 kV substation area", "lat": 37.71, "lon": -121.55},
     {"name": "Westside San Joaquin Valley near Los Banos", "lat": 37.00, "lon": -120.80},
     {"name": "Tehachapi wind area", "lat": 35.05, "lon": -118.30},
+    {"name": "Stanford (default start site)", "lat": 37.43, "lon": -122.17},
 ]
 
 

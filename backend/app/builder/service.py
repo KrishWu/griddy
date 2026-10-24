@@ -23,15 +23,17 @@ import json
 from app.contract import Asset, DemandSpec, GridConnection, LngLat, Scenario, ScenarioResult, Site
 from app.builder.project_report import project_report_rows
 
-# Team's demo site: Buttonwillow, Kern County, about a mile from PG&E's Midway 500 kV
-# substation (the PG&E/SCE junction at the south end of Path 15).
+# Where the website starts: Stanford University, Santa Clara County (PG&E territory). The nearest
+# 220 kV+ facility is the SLAC 230 kV substation/line, 3.4 km away (A's site summary).
 DEFAULT_SITE = Site(
-    id="kern-buttonwillow",
-    name="Buttonwillow, Kern County (by Midway 500 kV)",
-    location=LngLat(lon=-119.47, lat=35.40),
-    county="Kern",
+    id="stanford",
+    name="Stanford University",
+    location=LngLat(lon=-122.1697, lat=37.4275),
+    county="Santa Clara",
     utility_territory="PG&E",
 )
+DEFAULT_POI_KV = 230.0
+DEFAULT_INTERCONNECTION_KM = 3.4
 
 
 def _base(
@@ -52,8 +54,9 @@ def _base(
         site=site,
         demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.2, profile="flat"),
         assets=assets,
-        # Starts at the demo site's Midway 500 kV hub; A's nearest-line data replaces these after a map click.
-        grid=grid or GridConnection(import_limit_mw=import_limit_mw, export_limit_mw=0, interconnection_km=2, poi_voltage_kv=500),
+        # Starts at the default site's nearest 230 kV tie; A's nearest-line data replaces these after a map click.
+        grid=grid
+        or GridConnection(import_limit_mw=import_limit_mw, export_limit_mw=0, interconnection_km=DEFAULT_INTERCONNECTION_KM, poi_voltage_kv=DEFAULT_POI_KV),
     )
 
 

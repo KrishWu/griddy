@@ -78,6 +78,32 @@
     "baked_utc": "2026-10-24T05:46:04Z"
   },
   {
+    "key": "37.43_-122.17",
+    "name": "Stanford (default start site)",
+    "lat": 37.43,
+    "lon": -122.17,
+    "year": 2024,
+    "file": "37.43_-122.17_2024.csv",
+    "solar_cf": 0.2652,
+    "solar_cf_dc": 0.221,
+    "wind_cf": 0.0333,
+    "mean_wind100_ms": 3.06,
+    "grid_lat": 37.434093,
+    "grid_lon": -122.19415,
+    "elevation_m": 27.0,
+    "pvwatts": {
+      "pvwatts_cf_dc": 0.2276,
+      "pvwatts_cf_ac": 0.2731,
+      "ours_cf_dc": 0.221,
+      "ours_cf_ac": 0.2652,
+      "diff_cf_points_dc": -0.66,
+      "ac_annual_kwh": 2392.25,
+      "array_type": 2,
+      "weather_data_source": "NSRDB PSM V3 GOES tmy-2020 3.2.0"
+    },
+    "baked_utc": "2026-10-24T17:02:35Z"
+  },
+  {
     "key": "37.71_-121.55",
     "name": "Tracy / Tesla 500 kV substation area",
     "lat": 37.71,
