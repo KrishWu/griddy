@@ -13,8 +13,15 @@ python -m pytest ml                                   # unit + contract tests, n
 git pull                                              # get A's latest artifact under ml/artifacts/demand_forecast/
 python -m ml.site_location.train --dry-run            # features + labels from data/explore, no training
 python -m ml.site_location.train                      # GPU (XGBoost CUDA); --device cpu also works
-python -m ml.site_location.recommend --run ml/site_location/runs/<run_id> --scenario mid --year 2035
+python -m ml.site_location.export_sites --run ml/site_location/runs/<run_id>   # what the website reads
 ```
+
+`export_sites` writes `ml/artifacts/site_location/<id>/` plus a `LATEST` pointer: every 5 km cell
+with its features and each technology's suitability. Commit it. The website
+(`backend/app/sites`) then sizes and places capacity live for whatever demand scenario the user
+picks; the model itself never runs in the website. Until the models are trained,
+`export_sites --heuristic` writes the same artifact from a fixed, documented blend of the features,
+so the site picker works from day one. `recommend.py` remains for offline experiments.
 
 - **Which artifact.** `train` uses `LATEST_BASELINE`, falling back to `LATEST_FORECAST`, or
   `--demand <dir>`. Only the base year is used, so you can train before A's model exists.
@@ -31,12 +38,12 @@ python -m ml.site_location.recommend --run ml/site_location/runs/<run_id> --scen
 | Step | What |
 |---|---|
 | Candidates | 5 km grid over California: 16,393 cells |
-| Features | Distance to the nearest network substation ≥ 220 kV and ≥ 60 kV; distance to the nearest operational AC line ≥ 220 kV and ≥ 69 kV; highest substation voltage within 10 km; population within 10 and 50 km; **nearby demand** (A's county demand spread to block groups by population, summed within 50 and 150 km); latitude as a stand-in for solar resource |
+| Features | Grid access (A's layers): distance to the nearest network substation ≥ 220 kV and ≥ 60 kV, distance to the nearest operational AC line ≥ 220 kV and ≥ 69 kV, highest substation voltage within 10 km. People (Census): population within 10 and 50 km. **Nearby demand** (A's demand artifact, spread to block groups, summed within 50 and 150 km). Resource (ERA5 via Open-Meteo, `fetch_resource.py`, committed as `data/resource_grid.csv`): mean solar irradiance and 100 m wind speed. Air quality (E's EPA nonattainment layer) |
 | Labels | Operating EIA-860 plants ≥ 5 MW online since 2000: about 347 solar, 66 wind, 74 battery, 114 gas. Negatives are 10 random cells per positive, at least 3 km from any plant of that type |
 | Model | One XGBoost classifier per technology, `device=cuda`; class weights balance the 1:10 sampling |
 | Validation | 5-fold GroupKFold over 50 km blocks (spatial CV, so neighbours never straddle train and test). Reports ROC-AUC, PR-AUC and precision in the top 10% |
-| Need | Per region: forecast P90 peak (target year) minus the base year, from A's artifact. The portfolio converts each MW of new peak to nameplate MW per technology (default solar 1.4, battery 0.8, wind 0.2, gas 0.3; an assumption) |
-| Selection | HiGHS linear program: place the need on cells in the same region, minimizing (1 − suitability) + gen-tie distance + county queue congestion (LBNL) + distance from demand growth. Weights are editable. Need it can't place is reported as unmet |
+| Need (website) | From A's forecast: solar + wind cover a clean share (default 80%) of the **new energy** at B's 2024 capacity factors. Batteries + gas cover the **new P90 peak** left after the renewables' capacity credit, measured from B's 2024 profiles at CAISO's 100 highest net-load hours (solar ≈ 5%, wind ≈ 14%). All shares can be edited in the website |
+| Selection (website) | HiGHS linear program over the artifact's cells: minimize (1 − suitability) + gen-tie distance + county queue congestion (LBNL) + distance from demand growth + nonattainment (gas only). Cell capacity comes from C's land use per MW, and CAPEX and gen-tie dollars from C's ATB 2025 catalog. Need it can't place is reported as unmet |
 
 ## Read the results honestly
 
@@ -49,5 +56,5 @@ python -m ml.site_location.recommend --run ml/site_location/runs/<run_id> --scen
   Solar shows no such spike (5%).
 - **Random-land negatives make the task easier** than choosing between two good sites, so
   AUCs will look high. Compare the technologies with each other, not with an absolute bar.
-- **Latitude is a crude resource proxy.** Adding NSRDB irradiance or ERA5 wind as features is
-  the first upgrade.
+- **Resource is annual-mean ERA5 on a 0.5° grid** (about 50 km). It is fine for screening, too coarse for wind
+  micro-siting (ridges, hub-height shear).

@@ -1,7 +1,8 @@
 """Site features: grid access, people, and nearby demand from A's demand artifact.  OWNER: workstream B.
 
 Every candidate point (a 5 km grid cell over California, or a plant location for training)
-gets the same features. "Nearby demand" is where the demand forecast feeds in: county annual
+gets the same features: grid access (A's layers), people (Census), solar and wind resource (ERA5),
+air-quality nonattainment (E's EPA layer), and nearby demand. "Nearby demand" is where the demand forecast feeds in: county annual
 energy from the artifact, spread to 2020 Census block groups by population, summed within
 50 km and 150 km. Training uses the artifact's base year (demand when plants were sited);
 recommendations use a forecast year.
@@ -16,6 +17,7 @@ from shapely import STRtree, contains_xy, points, prepare
 
 from ml.contract.demand_artifact import DemandArtifact
 from ml.site_location.config import DEMAND_RADII_KM, GRID_SPACING_KM, HV_KV
+from ml.site_location.fetch_resource import interpolate, load_resource
 from ml.site_location.geodata import GeoData, county_of, to_lonlat
 
 FEATURES = [
@@ -28,7 +30,9 @@ FEATURES = [
     "log_pop_50km",
     "log_demand_50km_gwh",
     "log_demand_150km_gwh",
-    "lat",  # stands in for solar resource and climate (no irradiance raster here)
+    "ghi_kwh_m2_day",  # solar resource, ERA5 annual mean (fetch_resource.py)
+    "wind100_ms",  # wind resource at hub height, ERA5 annual mean
+    "in_nonattainment",  # inside an EPA ozone/PM nonattainment area (air permits for combustion)
 ]
 
 
@@ -101,5 +105,12 @@ def compute_features(x: np.ndarray, y: np.ndarray, geo: GeoData, demand: pd.Data
     for r in DEMAND_RADII_KM:
         s = radius_sum(x, y, demand["x"].to_numpy(), demand["y"].to_numpy(), demand["gwh"].to_numpy(), r)
         out[f"log_demand_{int(r)}km_gwh"] = np.log1p(s)
-    out["lat"] = to_lonlat(x, y)[1]
+    res = interpolate(load_resource(), x, y)
+    out["ghi_kwh_m2_day"] = res["ghi_kwh_m2_day"].to_numpy()
+    out["wind100_ms"] = res["wind100_ms"].to_numpy()
+    if geo.nonattainment is not None:
+        prepare(geo.nonattainment)
+        out["in_nonattainment"] = contains_xy(geo.nonattainment, x, y).astype(float)
+    else:
+        out["in_nonattainment"] = 0.0
     return out[FEATURES]

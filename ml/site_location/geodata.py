@@ -1,8 +1,8 @@
 """California grid + people layers, projected once to California Albers (metres).  OWNER: workstream B.
 
-Reads the committed Explore layers in data/explore/ (EIA-860 plants, CEC transmission lines,
-OSM substations, Census counties + block-group population, LBNL queue by county), so a
-training machine needs nothing but a repo checkout.
+Reads committed layers only, so a training machine needs nothing but a repo checkout: data/explore/
+(EIA-860 plants, CEC transmission lines, OSM substations, Census counties + block-group population,
+LBNL queue by county, from workstream A) and data/site_intel/ (EPA nonattainment areas, from E).
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from pyproj import Transformer
-from shapely import STRtree, points, transform, union_all
+from shapely import STRtree, make_valid, points, transform, union_all
 from shapely.geometry import shape
 
-from ml.site_location.config import CA_ALBERS, EXPLORE_DIR, HV_KV
+from ml.site_location.config import CA_ALBERS, EXPLORE_DIR, HV_KV, SITE_INTEL_DIR
 
 _FWD = Transformer.from_crs("EPSG:4326", CA_ALBERS, always_xy=True)
 _INV = Transformer.from_crs(CA_ALBERS, "EPSG:4326", always_xy=True)
@@ -46,6 +46,7 @@ class GeoData:
     counties: pd.DataFrame  # geoid, name, geometry (projected polygon)
     land: object  # union of counties, projected
     queue_mw: dict[str, float]  # county geoid -> active interconnection requests, MW
+    nonattainment: object | None  # union of EPA nonattainment areas (ozone, PM), projected (workstream E's layer)
 
 
 def _features(directory: Path, name: str) -> list[dict]:
@@ -93,7 +94,13 @@ def load_geodata(directory: Path = EXPLORE_DIR) -> GeoData:
         by_name = dict(zip(counties["name"], counties["geoid"]))
         queue_mw = {by_name[n]: float(v.get("active_mw", 0.0)) for n, v in q.items() if n in by_name}
 
-    return GeoData(plants, subs, hv, anyv, pop, counties, land, queue_mw)
+    nonattainment = None
+    npath = SITE_INTEL_DIR / "nonattainment_ca.geojson"
+    if npath.is_file():
+        polys = [make_valid(project(shape(f["geometry"]))) for f in _features(SITE_INTEL_DIR, "nonattainment_ca.geojson") if f.get("geometry")]
+        nonattainment = union_all(polys) if polys else None
+
+    return GeoData(plants, subs, hv, anyv, pop, counties, land, queue_mw, nonattainment)
 
 
 def county_of(x: np.ndarray, y: np.ndarray, counties: pd.DataFrame) -> np.ndarray:

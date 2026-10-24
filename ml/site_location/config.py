@@ -9,6 +9,7 @@ REPO_DIR = PKG_DIR.parents[1]
 RUNS_DIR = PKG_DIR / "runs"  # git-ignored: trained models + metrics
 CACHE_DIR = PKG_DIR / "cache"  # git-ignored: feature grids
 EXPLORE_DIR = REPO_DIR / "data" / "explore"  # grid, plants, population, counties, queue (workstream A's layers)
+SITE_INTEL_DIR = REPO_DIR / "data" / "site_intel"  # EPA nonattainment areas (workstream E)
 DEMAND_ARTIFACTS_DIR = REPO_DIR / "ml" / "artifacts" / "demand_forecast"  # written by ml/demand_forecast
 ARTIFACTS_DIR = REPO_DIR / "ml" / "artifacts" / "site_location"  # our outputs (committed)
 
@@ -19,6 +20,8 @@ HV_KV = 220.0  # "220 kV+" = the 230 kV class incl. SCE's 220 kV system (same ru
 # Technologies we learn siting for: EIA-860 fuel category -> label. Positives are plants of that fuel
 # (>= MIN_PLANT_MW, online since MIN_FIRST_YEAR so they reflect today's siting logic).
 TECHS = ("solar", "wind", "battery", "gas")
+TECH_TO_KIND = {"solar": "solar_pv", "wind": "onshore_wind", "battery": "battery", "gas": "gas_cc"}  # backend AssetKind
+SITE_ARTIFACTS_DIR = REPO_DIR / "ml" / "artifacts" / "site_location"
 MIN_PLANT_MW = 5.0
 MIN_FIRST_YEAR = 2000
 NEGATIVES_PER_POSITIVE = 10

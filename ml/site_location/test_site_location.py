@@ -40,7 +40,7 @@ def _toy_geo() -> GeoData:
     pop = pd.DataFrame({"x": [20 * KM, 180 * KM], "y": [20 * KM, 80 * KM], "population": [10_000, 50_000], "geoid": ["06001", "06003"]})
     line = LineString([(0, 50 * KM), (100 * KM, 50 * KM)])
     land = box(0, 0, 200 * KM, 100 * KM)
-    return GeoData(plants, subs, [line], [line], pop, counties, land, {"06001": 5000.0, "06003": 0.0})
+    return GeoData(plants, subs, [line], [line], pop, counties, land, {"06001": 5000.0, "06003": 0.0}, box(140 * KM, 0, 200 * KM, 100 * KM))
 
 
 def _toy_artifact(tmp_path, geoids=("06001", "06003")):
@@ -73,6 +73,8 @@ def test_compute_features_distances(tmp_path):
     assert X.loc[0, "d_line_hv_km"] == pytest.approx(10.0) and X.loc[0, "d_sub_hv_km"] == pytest.approx(10.0)
     assert X.loc[1, "d_sub_any_km"] == pytest.approx(0.0) and X.loc[1, "sub_kv_max_10km"] == 69.0
     assert X.loc[1, "log_demand_50km_gwh"] > 0  # East county's demand sits within 50 km
+    assert X.loc[0, "in_nonattainment"] == 0 and X.loc[1, "in_nonattainment"] == 1
+    assert 3.5 < X["ghi_kwh_m2_day"].min() and X["ghi_kwh_m2_day"].max() < 7.0  # ERA5 resource interpolated in
 
 
 def test_training_set_negatives_stay_away_from_plants(tmp_path):
@@ -118,3 +120,16 @@ def test_recommend_on_real_layers_with_stub_scorers(tmp_path):
     feats = res["geojson"]["features"]
     assert feats and all(f["properties"]["reason"] and f["properties"]["provenance"] == "ranked" for f in feats)
     assert np.median([f["properties"]["d_line_hv_km"] for f in feats]) < 20
+
+
+def test_heuristic_scores_are_bounded_and_sensible(tmp_path):
+    from ml.site_location.export_sites import heuristic_scores
+
+    geo = _toy_geo()
+    demand = demand_points(geo, _toy_artifact(tmp_path), "base", 2024)
+    X = compute_features(np.array([10 * KM, 150 * KM, 190 * KM]), np.array([50 * KM, 95 * KM, 95 * KM]), geo, demand)
+    s = heuristic_scores(X)
+    for p in s.values():
+        assert ((p >= 0) & (p <= 1)).all()
+    assert s["solar"][0] > s["solar"][1]  # on the 230 kV line beats 45 km away
+    assert s["gas"][0] > s["gas"][2]  # clean air + grid beats nonattainment + far
