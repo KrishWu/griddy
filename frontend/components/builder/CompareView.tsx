@@ -7,7 +7,7 @@ import { Area, ComposedChart, Line, ResponsiveContainer, YAxis } from "recharts"
 import { ComparisonTable } from "@/components/evaluate/ComparisonTable";
 import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
-import type { ScenarioResult } from "@/lib/contract";
+import type { Scenario, ScenarioResult } from "@/lib/contract";
 import type { GlossaryKey } from "@/lib/glossary";
 import { pct, tons, usd } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
@@ -113,35 +113,34 @@ function ScenarioCard({ r, onLoad, yMax, explain }: { r: ScenarioResult; onLoad?
 }
 
 export function CompareView() {
-  const { compareResults, comparing, compareStale, runCompare, loadCompared, scenario } = useGridForge();
-  const started = useRef(false);
+  const { compareResults, comparing, compareStale, runCompare, loadCompared, scenario, presets } = useGridForge();
+  const tried = useRef<Scenario | null>(null);
   const yMax = compareResults ? sharedMax(compareResults) : null;
 
-  // Compute the comparison once per visit; after that the user re-runs explicitly, so
-  // edits never fire a burst of /api/compare requests.
+  // Keep the comparison current while this view is open: run on arrival, and again shortly after an
+  // edit (debounced, so typing doesn't fire a burst of /api/compare requests). Each scenario is tried
+  // once, so a failed comparison waits for Retry or the next edit instead of looping.
   useEffect(() => {
-    if (started.current || compareResults || !scenario) return;
-    started.current = true;
-    void runCompare();
-  }, [compareResults, scenario, runCompare]);
+    if (!scenario || !presets.length || comparing || tried.current === scenario) return;
+    if (compareResults && !compareStale) return;
+    const t = setTimeout(() => {
+      tried.current = scenario;
+      void runCompare();
+    }, compareResults ? 800 : 0);
+    return () => clearTimeout(t);
+  }, [scenario, presets.length, comparing, compareResults, compareStale, runCompare]);
 
   return (
     <div className="space-y-3 p-3">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-base font-semibold">Compare scenarios</h2>
         <span className="text-xs text-zinc-500">Same site and demand · illustrative configurations</span>
+        {comparing && compareResults && <span role="status" className="text-xs text-zinc-500">Updating comparison...</span>}
         {compareStale && !comparing && <span className="text-xs text-amber-600">Your scenario changed since this comparison</span>}
-        <button
-          className="ml-auto rounded bg-emerald-600 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50"
-          onClick={() => void runCompare()}
-          disabled={comparing}
-        >
-          {comparing ? "Comparing..." : compareResults ? "Re-run comparison" : "Run comparison"}
-        </button>
       </div>
 
       {!compareResults || yMax === null ? (
-        <p className="text-sm text-zinc-500">{comparing ? "Simulating every scenario..." : "Run the comparison to see the presets side by side."}</p>
+        <p className="text-sm text-zinc-500">{comparing ? "Simulating every scenario..." : "The comparison runs once your scenario is ready."}</p>
       ) : (
         <>
           <div className={`grid gap-3 ${compareResults.length > 3 ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
