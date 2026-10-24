@@ -1,0 +1,367 @@
+{
+  "description": "CAISO 2024 hourly DA DLAP LMPs, fuel mix and average grid CO2 / CFE share.",
+  "owner": "workstream B (Simulate + Stress Test)",
+  "generated_at": "2026-10-24T05:36:01+00:00",
+  "generator": "backend/app/simulate/prep/caiso.py",
+  "time_convention": "row i = hour beginning 2024-01-01T00:00-08:00 + i h; fixed UTC-8 (Etc/GMT+8), no DST; 8784 rows (leap year). gridstatus 'Interval Start' (US/Pacific) converted with tz_convert('Etc/GMT+8').",
+  "units": {
+    "lmp_dlap_*": "USD/MWh (day-ahead hourly LMP)",
+    "grid_co2_kg_per_mwh": "kg CO2/MWh, average (not marginal) intensity of CAISO supply",
+    "grid_cfe_share": "0-1 fraction of positive supply that is carbon-free",
+    "*_mw": "hourly mean MW of the 5-minute fuel mix (net; negative = charging/parasitic/export)"
+  },
+  "provenance": "observed (prices, fuel mix); inferred (CO2 via assumed emission factors)",
+  "sources": {
+    "gridstatus_version": "0.37.0",
+    "lmp": {
+      "name": "CAISO OASIS PRC_LMP, market_run_id=DAM (day-ahead hourly), LMP component",
+      "nodes": [
+        "DLAP_PGAE-APND",
+        "DLAP_SCE-APND",
+        "DLAP_SDGE-APND"
+      ],
+      "url": "https://oasis.caiso.com/oasisapi/SingleZip?resultformat=6&queryname=PRC_LMP&version=12&market_run_id=DAM&node=DLAP_PGAE-APND,DLAP_SCE-APND,DLAP_SDGE-APND",
+      "gridstatus_call": "CAISO().get_oasis_dataset('lmp_day_ahead_hourly', params={'node': ...})"
+    },
+    "fuel_mix": {
+      "name": "CAISO Today's Outlook fuel source history (5-minute MW by fuel)",
+      "url": "https://www.caiso.com/outlook/history/{yyyymmdd}/fuelsource.csv",
+      "gridstatus_call": "CAISO().get_fuel_mix(date)"
+    }
+  },
+  "method": {
+    "hourly_aggregation": "mean of the 5-minute intervals starting in each PST hour",
+    "negatives": "clipped to 0 and excluded from the denominator (battery charging, solar night parasitics, net exports)",
+    "denominator": "all positive supply including Imports and Batteries",
+    "grid_co2": "sum(MW_fuel x EF_fuel) / sum(positive supply)",
+    "grid_cfe_share": "(Solar + Wind + Geothermal + Nuclear + Large Hydro + Small Hydro) / sum(positive supply)",
+    "gap_fill": "gaps <= 3 h: linear interpolation; gaps <= 12 h: mean of the same PST hour on the nearest days with observed data (keeps the diurnal shape); fail if a gap is longer or > 2% of a column is missing. Fuel-mix gaps are hours missing from CAISO's published day files (e.g. 2024-01-11 ends at 14:30 PST; the DST fall-back file has only one 01:xx block), not fetch failures."
+  },
+  "emission_factors_kg_per_mwh": {
+    "Natural Gas": 400.0,
+    "Imports": 428.0,
+    "Coal": 1000.0,
+    "Other": 400.0,
+    "Biomass": 0.0,
+    "Biogas": 0.0,
+    "Solar": 0.0,
+    "Wind": 0.0,
+    "Geothermal": 0.0,
+    "Nuclear": 0.0,
+    "Large Hydro": 0.0,
+    "Small Hydro": 0.0,
+    "Batteries": 0.0
+  },
+  "emission_factor_sources": {
+    "Natural Gas": "Assumption: California gas fleet average ~0.40 t CO2/MWh (mix of CCGT and peakers; ~7,500 Btu/kWh x EPA natural-gas factor 53.06 kg CO2/MMBtu). Cross-check against EPA eGRID CAMX gas plants.",
+    "Imports": "CARB Mandatory Reporting Regulation default emission factor for unspecified electricity imports, 0.428 t CO2e/MWh (17 CCR 95111(b)(1)).",
+    "Coal": "Assumption: typical coal unit ~1.0 t CO2/MWh (CAISO in-state coal is ~0 MW in 2024).",
+    "Other": "Assumption: treated as gas-like (0.40 t/MWh); CAISO 'Other' is near zero most hours.",
+    "Biomass": "Biogenic CO2 counted as 0, following the CARB convention for biomass combustion.",
+    "Biogas": "Biogenic CO2 counted as 0, following the CARB convention for biogas combustion.",
+    "Solar, Wind, Geothermal, Nuclear, Large Hydro, Small Hydro, Batteries": "Zero operational CO2 (battery discharge is re-timed energy; charging is clipped to 0 and excluded)."
+  },
+  "clean_fuels": [
+    "Solar",
+    "Wind",
+    "Geothermal",
+    "Nuclear",
+    "Large Hydro",
+    "Small Hydro"
+  ],
+  "filled_hours": {
+    "lmp_dlap_pgae": 0,
+    "lmp_dlap_sce": 0,
+    "lmp_dlap_sdge": 0,
+    "solar_mw": 16,
+    "wind_mw": 16,
+    "geothermal_mw": 16,
+    "biomass_mw": 16,
+    "biogas_mw": 16,
+    "small_hydro_mw": 16,
+    "coal_mw": 16,
+    "nuclear_mw": 16,
+    "natural_gas_mw": 16,
+    "large_hydro_mw": 16,
+    "batteries_mw": 16,
+    "imports_mw": 16,
+    "other_mw": 16
+  },
+  "filled_hours_by_method": {
+    "lmp_dlap_pgae": {
+      "interpolated": 0,
+      "neighbor_day_same_hour": 0
+    },
+    "lmp_dlap_sce": {
+      "interpolated": 0,
+      "neighbor_day_same_hour": 0
+    },
+    "lmp_dlap_sdge": {
+      "interpolated": 0,
+      "neighbor_day_same_hour": 0
+    },
+    "solar_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "wind_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "geothermal_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "biomass_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "biogas_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "small_hydro_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "coal_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "nuclear_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "natural_gas_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "large_hydro_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "batteries_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "imports_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    },
+    "other_mw": {
+      "interpolated": 7,
+      "neighbor_day_same_hour": 9
+    }
+  },
+  "gaps": {
+    "lmp": [],
+    "fuel_mix": [
+      {
+        "start": "2024-01-11T15:00:00-08:00",
+        "hours": 9,
+        "method": "neighbor_day_same_hour"
+      },
+      {
+        "start": "2024-06-27T21:00:00-08:00",
+        "hours": 2,
+        "method": "interpolated"
+      },
+      {
+        "start": "2024-08-29T21:00:00-08:00",
+        "hours": 2,
+        "method": "interpolated"
+      },
+      {
+        "start": "2024-09-24T21:00:00-08:00",
+        "hours": 2,
+        "method": "interpolated"
+      },
+      {
+        "start": "2024-11-03T01:00:00-08:00",
+        "hours": 1,
+        "method": "interpolated"
+      }
+    ]
+  },
+  "fuel_mix_intervals_per_hour": {
+    "min": 0,
+    "hours_with_12": 8764,
+    "hours_with_fewer": 4,
+    "hours_with_none": 16
+  },
+  "annual_stats": {
+    "lmp": {
+      "lmp_dlap_pgae": {
+        "node": "DLAP_PGAE-APND",
+        "mean": 42.99,
+        "min": -33.09,
+        "max": 648.77,
+        "share_hours_negative": 0.0216,
+        "spring_midday_share_negative": 0.2065
+      },
+      "lmp_dlap_sce": {
+        "node": "DLAP_SCE-APND",
+        "mean": 34.02,
+        "min": -66.6,
+        "max": 627.63,
+        "share_hours_negative": 0.1288,
+        "spring_midday_share_negative": 0.9457
+      },
+      "lmp_dlap_sdge": {
+        "node": "DLAP_SDGE-APND",
+        "mean": 36.21,
+        "min": -63.09,
+        "max": 637.02,
+        "share_hours_negative": 0.1126,
+        "spring_midday_share_negative": 0.8623
+      }
+    },
+    "grid_co2_kg_per_mwh": {
+      "mean": 171.6,
+      "min": 11.5,
+      "max": 334.5
+    },
+    "grid_cfe_share": {
+      "mean": 0.5295,
+      "min": 0.1626,
+      "max": 0.9579
+    },
+    "mean_supply_share_by_fuel": {
+      "solar_mw": 0.2231,
+      "wind_mw": 0.0979,
+      "geothermal_mw": 0.0293,
+      "biomass_mw": 0.0102,
+      "biogas_mw": 0.0067,
+      "small_hydro_mw": 0.0097,
+      "coal_mw": 0.0,
+      "nuclear_mw": 0.0807,
+      "natural_gas_mw": 0.2871,
+      "large_hydro_mw": 0.0903,
+      "batteries_mw": 0.0361,
+      "imports_mw": 0.1289,
+      "other_mw": 0.0
+    },
+    "co2_by_hour_of_day": [
+      245.0,
+      245.0,
+      244.7,
+      244.2,
+      243.4,
+      229.2,
+      188.3,
+      139.6,
+      103.2,
+      87.2,
+      81.2,
+      78.9,
+      79.3,
+      82.3,
+      90.0,
+      110.0,
+      142.7,
+      172.2,
+      191.7,
+      201.7,
+      210.3,
+      225.2,
+      239.4,
+      243.9
+    ],
+    "cfe_by_hour_of_day": [
+      0.3803,
+      0.3829,
+      0.3845,
+      0.3842,
+      0.3729,
+      0.3855,
+      0.4884,
+      0.6303,
+      0.7289,
+      0.7685,
+      0.7827,
+      0.7882,
+      0.787,
+      0.7792,
+      0.7594,
+      0.7069,
+      0.5834,
+      0.447,
+      0.3571,
+      0.3464,
+      0.3519,
+      0.3617,
+      0.3734,
+      0.3778
+    ],
+    "lmp_pgae_by_hour_of_day": [
+      41.82,
+      40.59,
+      39.97,
+      40.51,
+      43.35,
+      45.91,
+      43.48,
+      38.13,
+      34.36,
+      31.74,
+      29.93,
+      28.75,
+      28.6,
+      29.92,
+      33.41,
+      39.37,
+      51.18,
+      63.93,
+      71.87,
+      61.31,
+      54.13,
+      49.6,
+      46.12,
+      43.85
+    ],
+    "monthly_mean": {
+      "lmp_dlap_pgae": [
+        79.54,
+        42.89,
+        32.44,
+        29.28,
+        22.04,
+        29.33,
+        54.97,
+        41.13,
+        39.13,
+        51.44,
+        45.46,
+        47.34
+      ],
+      "grid_co2_kg_per_mwh": [
+        216.5,
+        187.4,
+        139.6,
+        126.4,
+        102.9,
+        126.8,
+        183.7,
+        174.3,
+        179.0,
+        201.0,
+        200.7,
+        220.3
+      ],
+      "grid_cfe_share": [
+        0.4203,
+        0.4942,
+        0.6099,
+        0.6417,
+        0.6951,
+        0.6428,
+        0.5055,
+        0.5265,
+        0.5114,
+        0.4529,
+        0.451,
+        0.4048
+      ]
+    }
+  }
+}
