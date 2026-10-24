@@ -83,9 +83,16 @@ def test_flat_grid_price_option_reaches_every_hour_and_the_bill():
 
 
 def test_report_csv_shows_it_load_as_peak_over_pue():
-    sc = PRESETS["hybrid"]
+    sc = PRESETS["hybrid"].model_copy(deep=True)
+    sc.options["demand_use"] = "data_center"
     rows = {(r[0], r[1]): r for r in csv.reader(io.StringIO(report_csv(run_scenario(sc))))}
     assert float(rows[("design", "it_load")][2]) == pytest.approx(sc.demand.peak_mw / sc.demand.pue, abs=0.1)
+
+
+def test_grid_project_report_does_not_present_demand_as_it_load():
+    rows = {(r[0], r[1]): r for r in csv.reader(io.StringIO(report_csv(run_scenario(PRESETS["hybrid"]))))}
+    assert ("design", "it_load") not in rows
+    assert "Peak demand to serve" in rows[("design", "peak_demand")][4]
 
 
 def test_better_pue_at_the_same_it_load_cuts_energy_and_co2():

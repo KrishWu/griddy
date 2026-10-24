@@ -53,7 +53,7 @@ from app.evaluate.emissions import compute_emissions
 from app.evaluate.finance import CapitalItem, NpcResult, OpexItem, annuity_factor, net_present_cost
 
 FINANCIAL_BOUNDARY = (
-    "Campus owner: builds and owns every on-site asset and the new interconnection, pays O&M and fuel, and buys grid "
+    "Project owner: builds and owns every modeled on-site asset and the new interconnection, pays O&M and fuel, and buys grid "
     "imports at the hourly price + delivery adder. Owned generation is never also counted as purchased power. Exports "
     "earn nothing by default. No tax credits. Real 2024 USD."
 )

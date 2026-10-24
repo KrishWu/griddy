@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Griddy",
-  description: "Interactive energy infrastructure planning",
+  description: "Plan power plants, energy storage and grid connections for growing demand. Compare costs, carbon and resilience.",
 };
 
 // Applies the saved theme, text size and reduced motion before first paint, so Dark / Mixed / Large

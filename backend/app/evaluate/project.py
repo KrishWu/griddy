@@ -8,6 +8,7 @@ from __future__ import annotations
 from pydantic import Field, ValidationError
 
 from app.contract import Catalog, Economics, Emissions, Model, Provenance, Scenario, SimulationResult
+from app.evaluate.carbon import carbon_ledger, upfront_factors
 
 
 class ProjectOptions(Model):
@@ -24,6 +25,10 @@ class ProjectOptions(Model):
     contract_price_usd_per_mwh: float = Field(default=80, ge=0, le=1000)
     contract_years: int = Field(default=10, ge=1, le=40)
     contracted_share: float = Field(default=0, ge=0, le=1)
+    solar_upfront_kg_per_kwdc: float = Field(default=upfront_factors()["solar_pv"]["factor"], ge=0, le=100000)
+    wind_upfront_kg_per_kw: float = Field(default=upfront_factors()["onshore_wind"]["factor"], ge=0, le=100000)
+    battery_upfront_kg_per_kwh: float = Field(default=upfront_factors()["battery"]["factor"], ge=0, le=100000)
+    other_upfront_t_co2e: float = Field(default=0, ge=0, le=1e10)
 
 
 def project_options(scenario: Scenario) -> tuple[ProjectOptions, list[str]]:
@@ -45,7 +50,6 @@ def project_metrics(scenario: Scenario, sim: SimulationResult, catalog: Catalog,
     om = sum(max(0, line.usd) for line in economics.lines if line.category in ("fixed_om", "var_om"))
     construction = economics.capex_total_usd * p.construction_labor_share / p.annual_compensation_usd
     operations = om * p.operations_labor_share / p.annual_compensation_usd
-    carbon_booked = sum(line.usd for line in economics.lines if line.category == "carbon")
     gross = sum(v for k, v in s.generation_mwh.items() if k != "battery")
     usable = max(0, gross - s.curtailed_mwh)  # battery discharge is transferred energy, not new generation
     contracted = usable * p.contracted_share
@@ -79,9 +83,7 @@ def project_metrics(scenario: Scenario, sim: SimulationResult, catalog: Catalog,
             "imports_mwh": s.imports_mwh, "exports_mwh": s.exports_mwh, "curtailed_mwh": s.curtailed_mwh,
             "by_kind_mwh": s.generation_mwh,
             "basis": "Hourly dispatch; gross generation includes curtailed renewables. Usable generation subtracts curtailment but precedes storage losses. Storage discharge excluded from generation totals."},
-        "carbon": {"booked_annual_cost_usd": carbon_booked,
-            "all_emissions_exposure_usd": emissions.annual_t_co2e * max(0, scenario.assumptions.carbon_price_usd_per_t),
-            "basis": "Booked cost follows the financial model's carbon boundary. Exposure = all annual project CO2e × entered price; a sensitivity, not an additional charge or a compliance determination."},
+        "carbon": carbon_ledger(scenario, catalog, economics, emissions, p),
         "contracts": {"status": "Illustrative offtake assumption; no executed contracts",
             "price_usd_per_mwh": p.contract_price_usd_per_mwh, "term_years": p.contract_years,
             "contracted_share": p.contracted_share, "annual_volume_mwh": contracted,

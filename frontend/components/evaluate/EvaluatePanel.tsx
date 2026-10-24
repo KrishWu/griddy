@@ -114,7 +114,7 @@ function EvaluateBody({ result }: { result: ScenarioResult }) {
             }
           />
           <StatTip label="Annual OPEX" term="opex" value={opex !== undefined ? usd(opex) : DASH} provenance={prov.annual_opex_usd} sub="year 1" />
-          <StatTip label="CO2e / yr" term="co2e" value={co2 !== undefined ? tons(co2) : DASH} provenance={prov.annual_t_co2e} sub="CAISO hourly imports" />
+          <StatTip label="Operational CO2e / yr" term="co2e" value={co2 !== undefined ? tons(co2) : DASH} provenance={prov.annual_t_co2e} sub="on-site combustion + grid imports" />
           <StatTip
             label="CO2 intensity"
             term="co2_intensity"

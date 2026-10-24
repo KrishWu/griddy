@@ -11,10 +11,14 @@
 // Settings (lib/settings.tsx) pick the basemap (follow theme / light / dark; Mixed keeps it light),
 // filter the canvas (contrast, brightness) and turn camera animations off under reduced motion.
 // A locate button under the zoom controls (like Google Maps) flies to the viewer's own location.
+// Griddy Home ("Individual / Home" scale): a click on empty map, a search or locate-me places the
+// house pin (components/household/homePin.ts), drawn as a marker; the project site layers are hidden.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Popup } from "maplibre-gl";
+import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Marker, Popup } from "maplibre-gl";
 
 import { countyByGeoid, scenarioLabel } from "@/components/forecast/forecastData";
+import { setHomePin, useHomePin } from "@/components/household/homePin";
+import { useScale } from "@/components/household/scale";
 import { ForecastView } from "@/components/forecast/ForecastView";
 import { forecastAdjusted, getPhase2State, usePhase2 } from "@/components/forecast/usePhase2";
 import { PanelGuard } from "@/components/shell/PanelGuard";
@@ -234,6 +238,13 @@ export function MapView() {
   const areaClick = useRef<((p: LngLat) => void) | null>(null);
   const { scenario, selectSite, selectRecommendedSite, overlays } = useGridForge();
   const { summary } = useSiteSummary();
+  // Griddy Home: clicks place the house pin instead of moving the project site.
+  const home = useScale() === "home";
+  const homeRef = useRef(home);
+  const homePin = useHomePin();
+  const maplibre = useRef<typeof import("maplibre-gl") | null>(null);
+  const homeMarker = useRef<Marker | null>(null);
+  const searchPin = useRef(false); // a search in Home mode: pin the place the map lands on
   // Phase 2: the forecast and site recommendation for the drawer's current what-if (shared state).
   const forecast = usePhase2((s) => s.forecast);
   const forecastStatus = usePhase2((s) => s.forecastStatus);
@@ -301,6 +312,9 @@ export function MapView() {
     selectRecommendedRef.current = selectRecommendedSite;
   }, [selectSite, selectRecommendedSite]);
   useEffect(() => {
+    homeRef.current = home;
+  }, [home]);
+  useEffect(() => {
     forecastRef.current = forecast;
   }, [forecast]);
   useEffect(() => {
@@ -346,6 +360,7 @@ export function MapView() {
     (async () => {
       const maplibregl = await import("maplibre-gl");
       if (cancelled || !el.current || map.current) return;
+      maplibre.current = maplibregl;
       maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs"); // copied to public/ by npm postinstall
       const m = new maplibregl.Map({
         container: el.current,
@@ -370,7 +385,10 @@ export function MapView() {
         }
       }
       const locate = new LocateControl({ positionOptions: { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 } });
-      locate.on("geolocate", () => setLocating(false));
+      locate.on("geolocate", (pos) => {
+        setLocating(false);
+        if (homeRef.current) setHomePin({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      });
       locate.on("error", (e) => {
         setLocating(false);
         setLocateError(locateMessage(e.code));
@@ -497,6 +515,13 @@ export function MapView() {
           areaClick.current({ lon: ll.lng, lat: ll.lat });
           return;
         }
+        if (homeRef.current) {
+          // Griddy Home: every single click places the house (no plant popups); the project site stays put.
+          if (e.originalEvent.detail > 1) return; // 2nd click of a double-click: the map zooms instead
+          const ll = e.lngLat.wrap();
+          selectTimer = setTimeout(() => setHomePin({ lat: ll.lat, lon: ll.lng }), SELECT_DELAY_MS);
+          return;
+        }
         const hits = hitsAt(e.point, CLICKABLE_LAYER_IDS); // topmost first
         const feature = hits.find((f) => !AREA_LAYER_IDS.includes(f.layer.id));
         if (feature) {
@@ -519,6 +544,13 @@ export function MapView() {
         }, SELECT_DELAY_MS);
       });
       m.on("dblclick", () => clearTimeout(selectTimer));
+      m.on("moveend", () => {
+        if (!searchPin.current) return;
+        searchPin.current = false;
+        if (!homeRef.current) return;
+        const c = m.getCenter().wrap();
+        setHomePin({ lat: c.lat, lon: c.lng });
+      });
 
       let hoverPt = { x: 0, y: 0 };
       m.on("mousemove", (e) => {
@@ -529,7 +561,7 @@ export function MapView() {
           if (map.current !== m) return;
           // ProjectMapTools sets data-area-cursor while the Highlight area box is being drawn or edited.
           const canvas = m.getCanvas();
-          canvas.style.cursor = canvas.dataset.areaCursor || (areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "");
+          canvas.style.cursor = canvas.dataset.areaCursor || (areaClick.current || homeRef.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "");
         });
       });
       m.on("mouseout", () => {
@@ -548,6 +580,7 @@ export function MapView() {
       clearTimeout(selectTimer);
       if (raf) cancelAnimationFrame(raf);
       popup?.remove();
+      homeMarker.current = null;
       map.current?.remove();
       map.current = null;
       overlaysOnMap.clear();
@@ -559,11 +592,41 @@ export function MapView() {
 
   // Client-side sources: selected site, placed assets, site context (ring + links), asset footprints
   // (live with the scenario's capacities, e.g. D's sliders).
-  const site = useMemo(() => siteFC(center, siteName), [center, siteName]);
-  const placed = useMemo(() => assetsFC(assets), [assets]);
-  const context = useMemo(() => contextFC(center, summary), [center, summary]);
-  const footprints = useMemo(() => (catalog && catalog !== "error" ? footprintsFC(assets, center, catalog) : EMPTY_FC), [assets, center, catalog]);
-  const recSites = useMemo(() => recSitesFC(recommendation), [recommendation]);
+  // Griddy Home hides the project's site, assets and recommended sites (the house pin is a marker).
+  const site = useMemo(() => (home ? EMPTY_FC : siteFC(center, siteName)), [home, center, siteName]);
+  const placed = useMemo(() => (home ? EMPTY_FC : assetsFC(assets)), [home, assets]);
+  const context = useMemo(() => (home ? EMPTY_FC : contextFC(center, summary)), [home, center, summary]);
+  const footprints = useMemo(() => (!home && catalog && catalog !== "error" ? footprintsFC(assets, center, catalog) : EMPTY_FC), [home, assets, center, catalog]);
+  const recSites = useMemo(() => (home ? EMPTY_FC : recSitesFC(recommendation)), [home, recommendation]);
+
+  // The house pin: a DOM marker (survives basemap swaps). Shown only in Home mode.
+  useEffect(() => {
+    const m = map.current;
+    const ml = maplibre.current;
+    if (!m || !ml || !ready) return;
+    if (!home || !homePin) {
+      homeMarker.current?.remove();
+      return;
+    }
+    if (!homeMarker.current) {
+      const node = document.createElement("div");
+      node.setAttribute("role", "img");
+      node.setAttribute("aria-label", "Your home");
+      node.title = "Your home (click the map to move it)";
+      node.innerHTML =
+        '<svg viewBox="0 0 32 40" width="32" height="40" aria-hidden="true"><path d="M16 39s13-12.4 13-23A13 13 0 1 0 3 16c0 10.6 13 23 13 23Z" fill="#047857" stroke="#fff" stroke-width="2"/><path d="M9.5 17.5 16 11.5l6.5 6v6.5h-4.25v-4h-4.5v4H9.5Z" fill="#fff"/></svg>';
+      homeMarker.current = new ml.Marker({ element: node, anchor: "bottom" });
+    }
+    homeMarker.current.setLngLat([homePin.lon, homePin.lat]).addTo(m);
+  }, [home, homePin, ready]);
+  // Entering Home mode with a remembered pin: show it (once), unless the viewer already moved the map.
+  const easedToHome = useRef(false);
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready || !home || !homePin || easedToHome.current) return;
+    easedToHome.current = true;
+    if (!m.getBounds().contains([homePin.lon, homePin.lat])) m.easeTo({ center: [homePin.lon, homePin.lat], zoom: Math.max(m.getZoom(), 10), duration: 900, ...motion() });
+  }, [home, homePin, ready]);
   useEffect(() => {
     localData.current = { site, assets: placed, "site-context": context, footprints, "rec-sites": recSites };
     const m = map.current;
@@ -631,7 +694,7 @@ export function MapView() {
   // later, follow it only if it changed without a map click and is off-screen (e.g. a preset switch).
   useEffect(() => {
     const m = map.current;
-    if (!m || !ready || !center) return;
+    if (!m || !ready || !center || homeRef.current) return; // Griddy Home: the camera follows the house pin instead
     const key = locKey(center);
     if (key === lastCenterKey.current) return;
     lastCenterKey.current = key;
@@ -757,11 +820,12 @@ export function MapView() {
     }, REFRAME_DELAY_MS);
     return () => clearTimeout(t);
   }, [visible.footprints, footprintKey, tiltForFootprints]);
+  const target = home ? homePin : center;
   const flyToSite = useCallback(() => {
-    if (!center) return;
+    if (!target) return;
     userMoved.current = true;
-    map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, offset: [-shiftRef.current / 2, 0], duration: 1200, ...motion() });
-  }, [center]);
+    map.current?.flyTo({ center: [target.lon, target.lat], zoom: home ? 14 : SITE_ZOOM, offset: [-shiftRef.current / 2, 0], duration: 1200, ...motion() });
+  }, [target, home]);
 
   const pending = DATA_KEYS.filter((k) => status[k] === undefined).length;
   const groupStatus: LayerStatus = {
@@ -791,14 +855,22 @@ export function MapView() {
         className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5"
         style={{ maxWidth: `calc(100% - ${shift}px - 3.5rem)` }}
       >
-        <MapSearch mapRef={map} ready={ready} onNavigate={() => { userMoved.current = true; }} />
+        <MapSearch
+          mapRef={map}
+          ready={ready}
+          onNavigate={() => {
+            userMoved.current = true;
+            searchPin.current = homeRef.current;
+          }}
+        />
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
             California
           </button>
-          <button type="button" className={button} onClick={flyToSite} disabled={!ready || !center} title="Fly to the selected site">
-            Site
+          <button type="button" className={button} onClick={flyToSite} disabled={!ready || !target} title={home ? "Fly to your home" : "Fly to the selected site"}>
+            {home ? "Home" : "Site"}
           </button>
+          {!home && (
           <button
             type="button"
             className={drawerOpen ? "bg-zinc-900 px-2.5 py-1 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300" : button}
@@ -808,8 +880,14 @@ export function MapView() {
           >
             Forecast
           </button>
+          )}
         </div>
-        <ProjectMapTools mapRef={map} styleGen={styleGen} clickHandlerRef={areaClick} />
+        {!home && <ProjectMapTools mapRef={map} styleGen={styleGen} clickHandlerRef={areaClick} />}
+        {home && !homePin && (
+          <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900 shadow ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-800">
+            Click the map to place your home
+          </span>
+        )}
         {fallback && (
           <span className="pointer-events-auto rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 shadow ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800">
             Basemap offline: showing grid layers on a plain background ·{" "}

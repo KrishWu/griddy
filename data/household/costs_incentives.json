@@ -1,0 +1,115 @@
+{
+ "_meta": {
+  "title": "Household solar + battery cost, performance and finance assumptions (California, 2026)",
+  "retrieved": "2026-10-24",
+  "notes": [
+   "kind 'assumption' marks a Griddy choice, with the reason in note.",
+   "All $ are nominal unless noted. NPV discounts nominal cash flows at discount_rate_pct."
+  ]
+ },
+ "pv_installed_usd_per_w": {
+  "value": 4.0,
+  "units": "USD per W_DC (2024$), before incentives",
+  "kind": "observed",
+  "source": "LBNL, U.S. Distributed Solar and Storage: 2025 Data Update (Oct 2025), slide 38 'State-Level Differences in Installed Prices'",
+  "url": "https://emp.lbl.gov/sites/default/files/2025-10/Distributed%20Solar%20&%20Storage-2025%20Data%20Update.pdf",
+  "note": "Slide 38 bar chart, 'Residential Systems Installed in 2024, Median Installed Price and 20th/80th Percentiles (2024$/W_DC)', host-owned stand-alone residential PV: CA = $4.0. Slide 8: 'loan-financed systems were considerably higher priced than cash-purchase systems in 2024 (median prices of $4.7/W vs. $3.5/W)' (national). Prices are 'the gross price paid by the system owner, before any incentives or tax credits'.",
+  "retrieved": "2026-10-24"
+ },
+ "pv_plus_storage_premium_usd_per_w": {
+  "value": 1.7,
+  "units": "USD per W of PV capacity (2024$), cash purchase",
+  "kind": "observed",
+  "source": "LBNL, U.S. Distributed Solar and Storage: 2025 Data Update, slide 9",
+  "url": "https://emp.lbl.gov/sites/default/files/2025-10/Distributed%20Solar%20&%20Storage-2025%20Data%20Update.pdf",
+  "note": "'The median cash price of paired residential systems in 2024 was $1.7/W higher than for stand-alone systems' ($5.3/W vs $3.5/W cash; ~90% of the paired residential pricing data is from California). Slide 7: 'Residential battery storage systems had a median size of 13.5 kWh in 2024'. Cross-check only.",
+  "retrieved": "2026-10-24"
+ },
+ "battery_installed_usd_per_kwh": {
+  "value": 1037,
+  "units": "USD per kWh of storage capacity, installed, before incentives",
+  "kind": "observed",
+  "source": "EnergySage, Cost of Energy Storage in California (marketplace quote data, updated Oct 18, 2026)",
+  "url": "https://www.energysage.com/local-data/energy-storage-cost/ca/",
+  "note": "'As of October 2026, the average storage system cost in California is $1,037/kWh'; 'an average storage installation in California ranges in cost from $11,460 to $15,504' for a 13 kWh system. Marketplace quotes, not a government survey. Cross-check (inferred): LBNL's $1.7/W paired premium x 5.7 kW (slide 4: CA 'had a relatively small median size of 5.7 kW') / 13.5 kWh is about $718/kWh, which is lower because it is a premium added to a solar install.",
+  "retrieved": "2026-10-24"
+ },
+ "federal_residential_clean_energy_credit_pct": {
+  "value": 0,
+  "units": "percent of eligible cost, for systems installed in 2026",
+  "kind": "observed",
+  "source": "IRS, Residential Clean Energy Credit (26 U.S.C. 25D) page, last reviewed or updated 04-Jul-2026",
+  "url": "https://www.irs.gov/credits-deductions/residential-clean-energy-credit",
+  "note": "IRS: 'The credit is not available for any property placed in service after December 31, 2025.' Before that it 'equals 30% of the costs of new, qualified clean energy property' (2022-2025), including 'Battery storage technology (beginning in 2023)' of at least 3 kWh. Griddy applies 0% to 2026 homeowner-owned installs. Leases/PPAs (third-party owned) fall under business credits and are not modelled (UNCONFIRMED).",
+  "retrieved": "2026-10-24"
+ },
+ "battery_round_trip_efficiency": {
+  "value": 0.85,
+  "units": "fraction (AC-to-AC)",
+  "kind": "observed",
+  "source": "NREL/NLR Annual Technology Baseline 2025, Residential Battery Storage",
+  "url": "https://atb.nlr.gov/electricity/2025/residential_battery_storage",
+  "note": "ATB 2025: Cole et al. 'identified 85% as a representative roundtrip efficiency' and the 2025 ATB 'adopts this value'. Representative system 'a 5-kilowatt (kW)/12.5-kilowatt hour (kWh; 2.5-hour) system'.",
+  "retrieved": "2026-10-24"
+ },
+ "battery_life_years": {
+  "value": 15,
+  "units": "years",
+  "kind": "observed",
+  "source": "NREL/NLR Annual Technology Baseline 2025, Residential Battery Storage",
+  "url": "https://atb.nlr.gov/electricity/2025/residential_battery_storage",
+  "note": "ATB 2025 O&M section: the system is operated 'throughout its 15-year lifetime'. Griddy does not add a replacement inside a 25-year NPV (assumption; say so).",
+  "retrieved": "2026-10-24"
+ },
+ "pv_degradation_pct_per_yr": {
+  "value": 0.5,
+  "units": "% of output lost per year",
+  "kind": "observed",
+  "source": "Jordan & Kurtz, 'Photovoltaic Degradation Rates: An Analytical Review', NREL/JA-5200-51664 (2012)",
+  "url": "https://docs.nlr.gov/docs/fy12osti/51664.pdf",
+  "note": "Abstract: 'Nearly 2000 degradation rates, measured on individual modules or entire systems, have been assembled from the literature, showing a median value of 0.5%/year.' The ATB 2025 residential PV page uses 'an assumed degradation rate of 0.7%/yr' (https://atb.nlr.gov/electricity/2025/residential_pv) for a more conservative case.",
+  "retrieved": "2026-10-24"
+ },
+ "pv_system_life_years": {
+  "value": 25,
+  "units": "years",
+  "kind": "assumption",
+  "source": "Griddy assumption (Griddy Home spec: NPV over 25 years)",
+  "url": "https://atb.nlr.gov/electricity/2025/residential_pv",
+  "note": "Griddy runs NPV over 25 years. The ATB 2025 residential PV page models capacity factors 'over the 30-year lifetime of the system', so 25 is the conservative choice. Inverter replacement is not modelled.",
+  "retrieved": "2026-10-24"
+ },
+ "rate_escalation_pct_per_yr": {
+  "value": 4.93,
+  "units": "% per year, nominal",
+  "kind": "assumption",
+  "source": "EIA State Electricity Profile, California, Table 8 (Form EIA-861), residential average price 1990-2024",
+  "url": "https://www.eia.gov/electricity/state/xls/SEP%20Tables%20for%20CA.xlsx",
+  "note": "Default = 20-year compound growth of the CA residential average price, 12.20 cents/kWh (2004) -> 31.97 cents/kWh (2024): (31.97/12.20)^(1/20)-1 = 4.93%/yr. The more recent windows run hotter: 10-yr 16.25 (2014) -> 31.97 = 7.00%/yr; 5-yr 19.15 (2019) -> 31.97 = 10.79%/yr. PG&E residential rates were cut in March and June 2026 (tariff sheets marked (R)), so Griddy defaults to the long-run figure. The user can change it.",
+  "alternatives_pct_per_yr": {
+   "cagr_2019_2024": 10.79,
+   "cagr_2014_2024": 7.0,
+   "cagr_2004_2024": 4.93
+  },
+  "ca_residential_avg_price_cents_per_kwh": {
+   "2004": 12.2,
+   "2014": 16.25,
+   "2019": 19.15,
+   "2020": 20.45,
+   "2021": 22.82,
+   "2022": 25.84,
+   "2023": 29.51,
+   "2024": 31.97
+  },
+  "retrieved": "2026-10-24"
+ },
+ "discount_rate_pct": {
+  "value": 5.0,
+  "units": "% per year, nominal",
+  "kind": "assumption",
+  "source": "Griddy assumption",
+  "url": null,
+  "note": "Nominal rate for discounting household cash flows. Bills are escalated in nominal terms, so the rate is nominal too. Roughly a homeowner's opportunity cost of cash or a home-equity loan rate; not taken from a published source. User-visible and adjustable.",
+  "retrieved": "2026-10-24"
+ }
+}

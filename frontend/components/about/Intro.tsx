@@ -8,7 +8,7 @@ const FEATURES: { title: string; body: string }[] = [
   },
   {
     title: "Plan and build a power supply",
-    body: "Enter the campus's peak demand and let Griddy size a hybrid, solar + storage, wind + storage, combined-cycle or peaker plant for it, or build your own mix of solar, wind, gas, batteries and a grid connection.",
+    body: "Enter the demand to serve and let Griddy size a hybrid, solar + storage, wind + storage, combined-cycle or peaker plant, or build your own mix of generation, batteries and a grid connection. Data-center load profiles are an optional customer use case.",
   },
   {
     title: "Simulate every hour of a year",
@@ -20,7 +20,7 @@ const FEATURES: { title: string; body: string }[] = [
   },
   {
     title: "Count the carbon and the air",
-    body: "Tonnes of CO₂e using the grid's hour-by-hour carbon intensity (and California's regulatory factor as an alternative), NOx and PM2.5 from on-site gas, and a 24/7 carbon-free energy score that checks every hour, not just the yearly total.",
+    body: "Annual operational CO₂e from on-site combustion and hourly grid imports, separately from a partial estimate of construction carbon. Show cumulative modeled carbon and carbon-price sensitivity, with editable reference footprints. NOx and PM2.5 come from on-site gas; the 24/7 carbon-free energy score checks every hour.",
   },
   {
     title: "Stress-test it",
@@ -45,16 +45,17 @@ export function Mission() {
     <Section id="mission" title="Mission">
       <div className="space-y-3 text-[0.95rem] leading-relaxed text-zinc-700 dark:text-zinc-300">
         <p>
-          AI campuses and growing communities are asking California&apos;s grid for gigawatts. Before anyone files an interconnection
+          Growing communities, electrification and new industry need more grid infrastructure. Before anyone files an interconnection
           request, the first questions are simple to ask and slow to answer: <em>where could this go, what would power it, what would it
           cost, how much carbon would it emit, and what could go wrong?</em>
         </p>
         <p>
-          Griddy answers them in minutes, in the open. Put a campus on a real map of the grid, design its power supply, run every hour
+          Griddy helps plan power plants, energy storage and grid connections. Choose a site on a real map of the grid, design infrastructure to serve demand, run every hour
           of a real year, and read the cost, the carbon and the risks, with a source behind every number and the caveats said out loud.
           It is a <strong>screening tool</strong> for planners, communities, developers and students, built at the Stanford Cleantech
           Hackathon 2026.
         </p>
+        <p>Data centers are one optional demand profile. The primary workflow plans electricity infrastructure for an area&apos;s needs; it does not replace a utility interconnection study or detailed power-system design.</p>
       </div>
     </Section>
   );

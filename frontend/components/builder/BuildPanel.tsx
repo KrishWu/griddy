@@ -10,7 +10,7 @@ import { ASSET_META, ASSET_ORDER } from "./assetMeta";
 import { SliderField } from "./SliderField";
 
 const INDUSTRIAL_PROFILES: { value: NonNullable<DemandSpec["profile"]>; label: string }[] = [
-  { value: "flat", label: "Flat (24/7 campus)" },
+  { value: "flat", label: "Flat demand" },
   { value: "ai_training", label: "AI training" },
   { value: "ai_inference", label: "AI inference (diurnal)" },
 ];
@@ -46,6 +46,7 @@ export function BuildPanel() {
 
   const mode = scenario.mode ?? "industrial";
   const community = mode === "community";
+  const dataCenter = scenario.options?.demand_use === "data_center" || ["ai_training", "ai_inference"].includes(scenario.demand.profile ?? "flat");
   const peak = scenario.demand.peak_mw;
   const modePresets = presets.filter((p) => (p.mode ?? "industrial") === mode);
 
@@ -94,20 +95,27 @@ export function BuildPanel() {
           <p className="text-[11px] text-zinc-500">Illustrative configurations, not engineered designs.</p>
         </Section>
 
-        <Section title={community ? "Community demand" : "Data center demand"}>
-          {community ? (
+        <Section title={community ? "Community demand" : "Demand to serve"}>
             <SliderField
               label={<Term k="peak_demand">Peak demand</Term>}
               unit={<Term k="mw">MW</Term>}
               value={peak}
               onChange={setPeakMw}
               min={1}
-              max={100}
-              inputMax={10000}
+              max={community ? 100 : 2500}
+              inputMax={20000}
               step={1}
             />
-          ) : (
-            <>
+          {!community && <details className="text-xs">
+            <summary className="cursor-pointer font-medium">Optional data-center demand</summary>
+            <p className="mt-2 text-zinc-500">Model a data center as one possible customer for this infrastructure.</p>
+            <label className="mt-2 flex items-center gap-2">
+              <input type="checkbox" checked={dataCenter} onChange={e => updateScenario(s => ({ ...s,
+                demand: { ...s.demand, profile: "flat", pue: e.target.checked ? 1.2 : 1 },
+                options: { ...s.options, demand_use: e.target.checked ? "data_center" : "grid" } }))} />
+              Use IT load and cooling assumptions
+            </label>
+            {dataCenter && <div className="mt-2 space-y-2">
               {/* Facility peak = IT x PUE (the contract's peak_mw), so better cooling means
                   less grid energy for the same compute. */}
               <SliderField
@@ -142,8 +150,14 @@ export function BuildPanel() {
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
                 Facility <Term k="peak_demand">peak</Term> at the meter: <span className="font-medium tabular-nums">{Math.round(peak).toLocaleString()} MW</span> (IT × PUE)
               </p>
-            </>
-          )}
+              <label className="block text-xs text-zinc-600 dark:text-zinc-400">Data-center load profile
+                <select className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1 text-sm dark:border-zinc-700"
+                  value={scenario.demand.profile ?? "flat"} onChange={e => setDemand({ profile: e.target.value as DemandSpec["profile"] })}>
+                  {INDUSTRIAL_PROFILES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </label>
+            </div>}
+          </details>}
           <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
             <input type="checkbox" checked={scaleWithDemand} onChange={(e) => setScaleWithDemand(e.target.checked)} />
             Scale portfolio with demand
@@ -161,27 +175,9 @@ export function BuildPanel() {
             inputMax={1}
             step={0.01}
           />
-          {!community && (
-            <>
-              <label className="block text-xs text-zinc-600 dark:text-zinc-400">
-                Load profile
-                <select
-                  className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1 text-sm dark:border-zinc-700"
-                  value={scenario.demand.profile ?? "flat"}
-                  onChange={(e) => setDemand({ profile: e.target.value as DemandSpec["profile"] })}
-                >
-                  {INDUSTRIAL_PROFILES.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          )}
         </Section>
 
-        <Section title="On-site portfolio">
+        <Section title="Power plants & storage">
           {assets.length === 0 && <p className="text-xs text-zinc-500">No on-site assets: all power comes from the grid.</p>}
           {assets.map((a) => {
             const meta = ASSET_META[a.kind];

@@ -20,6 +20,12 @@ UNITS = {
     "critical_load_share": "fraction", "critical_energy_served_share": "fraction",
     "reserve_margin": "fraction", "n_minus_1_coverage": "fraction",
     "current_demand_mwh": "MWh/yr", "projected_demand_mwh": "MWh/yr",
+    "annual_operational_t_co2e": "t CO2e/yr", "annual_direct_t_co2e": "t CO2e/yr",
+    "annual_imports_t_co2e": "t CO2e/yr", "annual_upstream_t_co2e": "t CO2e/yr",
+    "upfront_t_co2e": "t CO2e", "other_upfront_t_co2e": "t CO2e", "replacement_t_co2e": "t CO2e",
+    "modeled_total_t_co2e": "t CO2e", "analysis_years": "years", "carbon_price_usd_per_t": "USD/t CO2e",
+    "solar_upfront_kg_per_kwdc": "kg CO2e/kWdc", "wind_upfront_kg_per_kw": "kg CO2e/kW",
+    "battery_upfront_kg_per_kwh": "kg CO2e/kWh capacity",
 }
 
 
@@ -44,6 +50,15 @@ def project_report_rows(result: ScenarioResult):
         if section == "production":
             for kind, value in block.get("by_kind_mwh", {}).items():
                 yield ["production_by_kind", kind, value, "MWh/yr", block.get("basis", source)]
+        if section == "carbon":
+            for asset in block.get("assets", []):
+                prov = asset["provenance"]
+                asset_source = " | ".join(str(v) for v in (prov["kind"], prov["source"], prov.get("url"), prov.get("note")) if v)
+                for key in ("quantity", "factor", "upfront_t_co2e", "replacement_count", "replacement_t_co2e"):
+                    unit = asset["quantity_unit"] if key == "quantity" else asset["factor_unit"] if key == "factor" else _unit(key)
+                    yield ["carbon_asset", f"{asset['asset_id']}.{key}", asset[key], unit, asset_source]
+            if block.get("unmodeled_asset_ids"):
+                yield ["carbon", "unmodeled_asset_ids", ", ".join(block["unmodeled_asset_ids"]), "", block.get("basis", source)]
     for key, value in p.get("assumptions", {}).items():
         yield ["project_assumption", key, value if value is not None else "", _unit(key), "Editable screening assumption"]
     demo = p.get("area", {}).get("demographics") or {}

@@ -10,6 +10,7 @@ import { pct, tons, usd } from "@/lib/format";
 import type { ScenarioResult } from "@/lib/contract";
 import type { GlossaryKey } from "@/lib/glossary";
 import { projectOf, resilienceOf } from "./project";
+import { CarbonLedger } from "./CarbonLedger";
 
 /** CO2e if this campus bought every MWh from the grid instead: each hour's demand x that hour's average
  *  CAISO intensity, the same factor the evaluation applies to grid imports. Null without the hourly series. */
@@ -52,12 +53,13 @@ export function ProjectSummary() {
         ["Power delivered, average", `${(p?.production.average_power_served_mw ?? served / result.simulation.hourly.demand_mw.length).toFixed(1)} MW`],
         ["Demand supplied", s.demand_mwh ? pct(served / s.demand_mwh) : "—"],
         ["Upfront capital", usd(e.capex_total_usd), "capex"], ["Operating cost / year", usd(e.annual_opex_usd), "opex"],
-        ["Lifetime energy cost", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`, "lcoe"], ["Emissions / year", `${tons(em.annual_t_co2e)} CO₂e`, "co2e", gridNote],
+        ["Lifetime energy cost", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`, "lcoe"], ["Operational emissions / year", `${tons(em.annual_t_co2e)} CO₂e`, "co2e", gridNote],
       ] as [string, string, GlossaryKey?, ReactNode?][]).map(([label, value, term, note]) => <div key={label} className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
         <p className="text-[11px] text-zinc-500">{term ? <Term k={term}>{label}</Term> : label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>{note}
       </div>)}
     </div>
     <p className="mt-3 text-xs text-zinc-500">{em.intensity_kg_per_mwh.toFixed(0)} <Term k="co2_intensity">kg CO₂e/MWh</Term>{gridIntensity !== null && <> vs {gridIntensity.toFixed(0)} all-grid</>} · {pct(s.onsite_clean_share)} <Term k="onsite_clean_share">on-site clean energy</Term></p>
+    <div className="mt-3"><CarbonLedger result={result} compact /></div>
     <div className={`mt-3 rounded border p-2 text-xs ${tone}`}>
       <p className="font-semibold">{s.hours_unmet ? <>{s.hours_unmet.toLocaleString()} hours with <Term k="unmet">unmet demand</Term></> : "Demand met every hour in the simulated year"}</p>
       <p className="mt-1">{issues.length} feasibility check{issues.length === 1 ? " is" : "s are"} flagged for review{studies ? <>, {studies} need{studies === 1 ? "s" : ""} a utility study</> : null}.</p>
@@ -105,6 +107,7 @@ export function ProjectDetails({ result, expanded = false }: { result: ScenarioR
   return <details open={expanded} className="rounded border border-zinc-200 p-3 text-xs dark:border-zinc-800 print:break-inside-avoid">
     <summary className="cursor-pointer font-semibold">Project impact, production &amp; contracts</summary>
     <dl className="mt-3 space-y-2">{rows.map(([label, value, term]) => <div key={label} className="flex justify-between gap-3"><dt className="text-zinc-500">{term ? <Term k={term}>{label}</Term> : label}</dt><dd className="max-w-[60%] text-right tabular-nums">{value}</dd></div>)}</dl>
+    <div className="mt-3"><CarbonLedger result={result} /></div>
     {p.area.demographics && <div className="mt-3 rounded bg-zinc-50 p-2 dark:bg-zinc-900">
       <p>Selected-zone residents: {p.area.demographics.population?.toLocaleString() ?? "unavailable"}; estimated households: {p.area.demographics.estimated_households?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? "unavailable"}.</p>
       <p>Estimated residential demand: {p.area.demographics.residential_demand_mwh_per_year?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? "unavailable"} MWh/yr.</p>

@@ -39,7 +39,7 @@ const ROWS: Row[] = [
   { label: "CAPEX", term: "capex", get: (r) => finite(r.evaluation.economics.capex_total_usd), fmt: usd, better: "low" },
   { label: "NPC", term: "npc", get: (r) => finite(r.evaluation.economics.npc_usd), fmt: usd, better: "low" },
   { label: "LCOE", term: "lcoe", get: (r) => finite(r.evaluation.economics.lcoe_usd_per_mwh), fmt: perMwh, better: "low" },
-  { label: "CO2e / yr", term: "co2e", get: (r) => finite(r.evaluation.emissions.annual_t_co2e), fmt: co2Row, better: "low" },
+  { label: "Operational CO2e / yr", term: "co2e", get: (r) => finite(r.evaluation.emissions.annual_t_co2e), fmt: co2Row, better: "low" },
   { label: "CO2 intensity", term: "co2_intensity", unit: "kg/MWh", get: (r) => finite(r.evaluation.emissions.intensity_kg_per_mwh), fmt: int, better: "low" },
   { label: "Unmet hours", term: "unmet", get: (r) => finite(r.simulation.summary.hours_unmet), fmt: int, better: "low" },
   {

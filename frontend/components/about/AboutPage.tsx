@@ -99,10 +99,9 @@ export function AboutPage() {
         <main className="min-w-0 max-w-3xl space-y-12">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-cyan-300">About Griddy</p>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Plan the power for a gigawatt, hour by hour, with the receipts.</h1>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Plan the grid infrastructure growing demand needs.</h1>
             <p className="text-[0.95rem] leading-relaxed text-zinc-600 dark:text-zinc-300">
-              Griddy puts a new AI campus or community on a real map of California&apos;s grid, designs its power supply, simulates every
-              hour of 2024, and shows the cost, carbon and risks with a source behind every number.
+              Choose sites for power plants, storage and grid connections, simulate every hour of 2024, and compare cost, carbon and resilience with a source behind every number. Home mode keeps the map and explores one household&apos;s electricity use, bills and solar options.
             </p>
           </div>
           <Mission />

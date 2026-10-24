@@ -160,7 +160,7 @@ export function ReportView() {
                 ["Annual OPEX", usd(e.annual_opex_usd), "opex"],
                 ["Net present cost", usd(e.npc_usd), "npc"],
                 ["LCOE", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`, "lcoe"],
-                ["CO2e per year", tons(em.annual_t_co2e), "co2e"],
+                ["Operational CO2e per year", tons(em.annual_t_co2e), "co2e"],
                 ["Carbon intensity", `${Math.round(em.intensity_kg_per_mwh)} kg/MWh`, "co2_intensity"],
                 ["On-site clean share", pct(s.onsite_clean_share), "onsite_clean_share"],
                 ["Unmet demand", `${s.hours_unmet} h (${mwh(s.unmet_mwh)})`, "unmet"],
@@ -208,8 +208,8 @@ export function ReportView() {
             <Table
               head={["", "Value"]}
               rows={[
-                ...(sc.mode === "community"
-                  ? [["Peak demand", mw(sc.demand.peak_mw)]]
+                ...(!(sc.options?.demand_use === "data_center" || ["ai_training", "ai_inference"].includes(sc.demand.profile ?? "flat"))
+                  ? [["Peak demand to serve", mw(sc.demand.peak_mw)]]
                   : [
                       ["IT load (compute)", mw(sc.demand.peak_mw / (sc.demand.pue ?? 1.2))],
                       [<Term key="t" k="pue">PUE</Term>, (sc.demand.pue ?? 1.2).toFixed(2)],
@@ -270,7 +270,7 @@ export function ReportView() {
           </Section>
         )}
 
-        <Section title="Emissions">
+        <Section title="Annual operational emissions (construction shown separately above)">
           <Table
             head={["Source", "t CO2e / yr"]}
             rows={Object.entries(em.by_source_t_co2e).map(([k, v]) => [k === "grid_imports" ? "Grid imports" : (ASSET_META[k as keyof typeof ASSET_META]?.label ?? k), tons(v)])}
