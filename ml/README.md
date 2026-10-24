@@ -28,6 +28,21 @@ cost and carbon scenarios (C), the what-if sliders and forecast/recommendation v
 and the resilience stress test (B's simulate module, or E). Those live in each owner's
 existing paths, not under `ml/`.
 
+## In the website
+
+The models train offline. The website only *uses* their exported artifacts, and nothing about
+training shows in the UI.
+
+| Endpoint | Owner | What it does |
+|---|---|---|
+| `GET /api/forecast`, `POST /api/forecast/whatif` | A, `backend/app/forecast` | Recomputes any scenario (population, electrification, efficiency, data centers, flexible load) from the demand artifact in milliseconds |
+| `GET /api/sites`, `POST /api/sites/whatif` | B, `backend/app/sites` | Sizes new solar/wind/battery/gas for that forecast and places it on the site artifact's cells with a linear program (C's costs, B's capacity factors, LBNL queue, EPA air quality) |
+
+`backend/app/ml_bridge.py` points the API at `ml/artifacts/`; set `GRIDDY_ML_ARTIFACTS` to use
+another export without committing it. The map's "Forecast" drawer (A) shows the forecast, its
+what-if sliders and B's `SitesPanel`. "Use this site" hands a recommended site to the normal
+build → simulate → evaluate flow.
+
 ## Training on separate machines
 
 The two models never import each other. The only thing they exchange is a **demand

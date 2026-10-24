@@ -395,7 +395,9 @@ class SiteRequest(Model):
 
     forecast: ForecastRequest = Field(default_factory=ForecastRequest)
     mix: dict[str, float] | None = Field(
-        default=None, description="Share of the new firm peak each AssetKind covers, e.g. {solar_pv: 0.4, battery: 0.4, gas_cc: 0.2}"
+        default=None,
+        description="How to cover the growth: clean_energy_share (0-1) of new energy from solar_pv : onshore_wind (relative weights); "
+        "the peak left after their capacity credit from battery : gas_cc (relative weights). Unset keys keep their defaults",
     )
     weights: dict[str, float] | None = Field(default=None, description="Ranking weights: suitability, grid, queue, growth, air")
 
