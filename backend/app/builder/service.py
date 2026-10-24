@@ -96,21 +96,54 @@ def list_presets(site: Site | None = None) -> list[Scenario]:
 
 
 def report_csv(result: ScenarioResult) -> str:
-    """Flat CSV of headline metrics, cost lines and BOM. STUB - extend as needed."""
+    """Flat CSV mirroring the /report page: headline metrics, site, design, assumptions,
+    cost lines with sources, BOM, emissions by source and findings."""
     buf = io.StringIO()
     w = csv.writer(buf)
-    e, em, s = result.evaluation.economics, result.evaluation.emissions, result.simulation.summary
+    sc, sim = result.scenario, result.simulation
+    e, em, s = result.evaluation.economics, result.evaluation.emissions, sim.summary
+    a = sc.assumptions
+
     w.writerow(["section", "item", "value", "unit", "source"])
-    w.writerow(["summary", "scenario", result.scenario.name, "", ""])
+    w.writerow(["summary", "scenario", sc.name, "", ""])
     w.writerow(["summary", "capex_total", round(e.capex_total_usd), "USD", ""])
     w.writerow(["summary", "annual_opex", round(e.annual_opex_usd), "USD/yr", ""])
+    w.writerow(["summary", "npc", round(e.npc_usd), "USD", ""])
     w.writerow(["summary", "lcoe", round(e.lcoe_usd_per_mwh, 2), "USD/MWh", ""])
     w.writerow(["summary", "emissions", round(em.annual_t_co2e), "t CO2e/yr", ""])
+    w.writerow(["summary", "carbon_intensity", round(em.intensity_kg_per_mwh, 1), "kg CO2e/MWh", ""])
+    w.writerow(["summary", "onsite_clean_share", round(s.onsite_clean_share, 4), "fraction", ""])
     w.writerow(["summary", "unmet_hours", s.hours_unmet, "h", ""])
+    w.writerow(["summary", "financial_boundary", e.financial_boundary, "", ""])
+
+    w.writerow(["site", "name", sc.site.name, "", ""])
+    w.writerow(["site", "location", f"{sc.site.location.lat:.4f},{sc.site.location.lon:.4f}", "lat,lon", ""])
+    w.writerow(["site", "county", sc.site.county or "", "", ""])
+    w.writerow(["site", "utility_territory", sc.site.utility_territory or "", "", ""])
+
+    w.writerow(["design", "mode", sc.mode, "", ""])
+    w.writerow(["design", "peak_demand", sc.demand.peak_mw, "MW", ""])
+    w.writerow(["design", "load_factor", sc.demand.load_factor, "", ""])
+    w.writerow(["design", "pue", sc.demand.pue, "", ""])
+    w.writerow(["design", "load_profile", sc.demand.profile, "", ""])
+    for asset in sc.assets:
+        w.writerow(["design", f"{asset.kind} ({asset.id})", round(asset.capacity_mw, 1), "MW", ""])
+        if asset.kind == "battery":
+            w.writerow(["design", f"{asset.kind} ({asset.id}) duration", asset.duration_h, "h", ""])
+    w.writerow(["design", "grid_import_limit", round(sc.grid.import_limit_mw, 1), "MW", ""])
+    w.writerow(["design", "grid_export_limit", round(sc.grid.export_limit_mw, 1), "MW", ""])
+    w.writerow(["design", "interconnection_km", sc.grid.interconnection_km, "km", ""])
+    w.writerow(["design", "poi_voltage", sc.grid.poi_voltage_kv or "", "kV", ""])
+
+    for name, value in a.model_dump().items():
+        w.writerow(["assumption", name, value, "", ""])
+
     for line in e.lines:
         w.writerow([line.category, line.item, round(line.usd), "USD" if line.category == "capex" else "USD/yr", line.provenance.source])
     for b in e.bom:
         w.writerow(["bom", b.item, b.quantity, b.unit, b.basis])
+    for source, t in em.by_source_t_co2e.items():
+        w.writerow(["emissions", source, round(t), "t CO2e/yr", ""])
     for f in result.findings:
         w.writerow(["finding", f.title, f.severity, "", f.detail])
     return buf.getvalue()
