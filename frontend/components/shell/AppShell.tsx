@@ -8,6 +8,8 @@ import Link from "next/link";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { RecommendedSites } from "@/components/sites/RecommendedSites";
+import { RunFeedback } from "@/components/builder/RunFeedback";
+import { AreaToolsProvider } from "@/components/explore/areaTools";
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
 import { OptimizePanel, type RevealTarget } from "@/components/builder/OptimizePanel";
@@ -68,7 +70,7 @@ const headerLink =
 export function AppShell() {
   // Panels are keyed on panelEpoch (deliberate actions only), never on every auto-run,
   // so panel-local state like B's selected day survives edits.
-  const { error, result, panelEpoch: v, running, view, setView, scenario, setMode, retry } = useGridForge();
+  const { error, result, panelEpoch: v, running, projectPlanning, view, setView, scenario, setMode, retry } = useGridForge();
   const placeholder = useMemo(() => usesPlaceholderData(result), [result]);
   const [detailMode, setDetailMode] = useState<"basic" | "advanced">("basic");
   const advanced = detailMode === "advanced";
@@ -211,6 +213,7 @@ export function AppShell() {
 
   return (
     <LayerStateProvider>
+      <AreaToolsProvider>
       <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
         <header
           data-chrome
@@ -241,7 +244,7 @@ export function AppShell() {
             ]}
           />
           <div className="ml-auto flex items-center gap-2 text-xs">
-            {running && <span className="text-zinc-500 dark:text-zinc-400" role="status">Simulating...</span>}
+            {(running || projectPlanning.busy) && <span className="text-zinc-500 dark:text-zinc-400" role="status">{projectPlanning.busy ? "Updating project…" : "Simulating..."}</span>}
             {placeholder && (
               <span
                 className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
@@ -261,6 +264,7 @@ export function AppShell() {
             <SettingsButton />
           </div>
         </header>
+        <RunFeedback />
         {error && (
           <div data-chrome className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             <span className="truncate">{error}</span>
@@ -309,6 +313,7 @@ export function AppShell() {
           )}
         </div>
       </div>
+      </AreaToolsProvider>
     </LayerStateProvider>
   );
 }

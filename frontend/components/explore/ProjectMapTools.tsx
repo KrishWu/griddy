@@ -1,12 +1,14 @@
 "use client";
 // "Highlight area" map tool: drag on the map to outline a rectangle (or click two corners), then drag
 // the box to move it or its corner and edge handles to resize it. The Plan tab's area panel then
-// estimates people and demand in it, and zoning can be loaded for it. Compact on the map: one button,
-// with its help text and the zoning controls behind a disclosure. That opens when you press Done, since
-// loading zoning is the next step; it stays shut while drawing and editing, as it would cover the box.
+// estimates people and demand in it, and zoning can be loaded for it. The controls render inside that
+// panel (a portal into its slot, see areaTools.tsx) while drawing and the layers stay on the map; the help
+// text and zoning controls sit behind a disclosure that opens when you press Done, zoning being next.
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent, MapTouchEvent } from "maplibre-gl";
 import { showLeftTabFromMap } from "@/components/shell/sidebarTabs";
+import { useAreaTools } from "./areaTools";
 import { SelectedZoning } from "./SelectedZoning";
 import type { LngLat } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
@@ -80,6 +82,7 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
   mapRef: RefObject<MLMap | null>; styleGen: number; clickHandlerRef: RefObject<ClickHandler>;
 }) {
   const { scenario, updateScenario, selectSite } = useGridForge();
+  const { host } = useAreaTools();
   const [drawing, setDrawing] = useState(false);
   const [editing, setEditingState] = useState(false);
   const [first, setFirst] = useState<LngLat | null>(null);
@@ -181,7 +184,7 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (drawing) { setDrawing(false); setFirst(null); } else setEditingState(false);
+      if (drawing) { setDrawing(false); setFirst(null); setError(null); } else setEditingState(false);
     };
     if (drawing) setCursor("crosshair");
     m.on("mousedown", onDown); m.on("touchstart", onDown);
@@ -222,16 +225,23 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
     m.getSource<GeoJSONSource>("area-corner")?.setData(first ? { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [first.lon, first.lat] }, properties: {} }] } : EMPTY);
   }, [footprint, box, first, edit, mapRef, styleGen]);
 
+  // The buttons sit in the sidebar: starting a selection brings the map into view and gives it keyboard
+  // focus, so Escape cancels without another click.
+  const focusMap = () => {
+    mapRef.current?.getContainer().scrollIntoView({ block: "center" });
+    mapRef.current?.getCanvas().focus({ preventScroll: true });
+  };
   const label = drawing ? "Cancel" : edit ? "Done" : box ? "Edit area" : "Highlight area";
   const onMain = () => {
     setError(null); setFirst(null);
     if (drawing) setDrawing(false);
     else if (edit) { setEditingState(false); setExpanded(true); } // show "Load zoning for area", the next step
-    else if (box) setEditingState(true);
-    else setDrawing(true);
+    else if (box) { focusMap(); setEditingState(true); }
+    else { focusMap(); setDrawing(true); }
   };
-  const chip = "pointer-events-auto rounded-md bg-white/95 text-xs text-zinc-800 shadow ring-1 ring-black/10 dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/10";
-  return <div className="flex flex-col items-start gap-1">
+  if (!host) return null;
+  const chip = "rounded-md border border-zinc-200 text-xs text-zinc-800 dark:border-zinc-700 dark:text-zinc-100";
+  return createPortal(<div className="flex flex-col items-start gap-1">
     <div className={`${chip} flex overflow-hidden`}>
       <button type="button" disabled={!styleGen} aria-pressed={drawing || edit}
         className={`px-2.5 py-1 font-medium disabled:opacity-40 ${drawing || edit ? "bg-emerald-700 text-white dark:bg-cyan-300 dark:text-slate-950" : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"}`}
@@ -249,17 +259,17 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
     {drawing && <p role="status" className={`${chip} px-2 py-1 text-emerald-800 dark:text-emerald-300`}>{first ? "Click the opposite corner." : "Drag on the map to outline an area, or click two corners."}</p>}
     {edit && <p role="status" className={`${chip} max-w-72 px-2 py-1 text-emerald-800 dark:text-emerald-300`}>
       Drag the box to move it, or a corner or edge to resize it.{" "}
-      <button type="button" className="font-medium underline" onClick={() => { setEditingState(false); setFirst(null); setDrawing(true); }}>Redraw</button>
+      <button type="button" className="font-medium underline" onClick={() => { setEditingState(false); setFirst(null); focusMap(); setDrawing(true); }}>Redraw</button>
     </p>}
     {error && <p role="alert" className={`${chip} max-w-72 px-2 py-1 text-red-700 dark:text-red-400`}>{error}</p>}
     {/* Always mounted (hidden when folded): SelectedZoning owns the zoning layer and its loaded zones. */}
     <div id={detailsId} hidden={!expanded} className={`${chip} w-72 max-w-full p-2`}>
       <p className="text-[11px] leading-snug text-zinc-600 dark:text-zinc-300">
-        Drag on the map to outline a rectangle (or click two opposite corners). Then drag the box to move it, or its corners and edges to resize it. The Plan tab estimates the residents, households and electricity demand inside it.
+        Drag on the map to outline an area (or click two opposite corners), then drag the box or its handles to adjust it.
       </p>
       <SelectedZoning mapRef={mapRef} styleGen={styleGen} footprint={footprint} />
     </div>
-  </div>;
+  </div>, host);
 }
 
 function handlePoints(b: Box): GeoJSON.FeatureCollection {
