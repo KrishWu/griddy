@@ -79,3 +79,20 @@ def test_flat_grid_price_option_reaches_every_hour_and_the_bill():
         return sum(line.usd for line in r.evaluation.economics.lines if line.category == "purchased_power")
 
     assert purchased(r_flat) > purchased(r_base)
+
+
+
+def test_report_csv_shows_it_load_as_peak_over_pue():
+    sc = PRESETS["hybrid"]
+    rows = {(r[0], r[1]): r for r in csv.reader(io.StringIO(report_csv(run_scenario(sc))))}
+    assert float(rows[("design", "it_load")][2]) == pytest.approx(sc.demand.peak_mw / sc.demand.pue, abs=0.1)
+
+
+def test_better_pue_at_the_same_it_load_cuts_energy_and_co2():
+    """The builder holds IT load fixed when PUE moves (facility peak = IT x PUE)."""
+    base = PRESETS["hybrid"]
+    it = base.demand.peak_mw / base.demand.pue
+    better = base.model_copy(update={"demand": base.demand.model_copy(update={"pue": 1.1, "peak_mw": it * 1.1})})
+    r0, r1 = run_scenario(base), run_scenario(better)
+    assert r1.simulation.summary.demand_mwh < r0.simulation.summary.demand_mwh
+    assert r1.evaluation.emissions.annual_t_co2e < r0.evaluation.emissions.annual_t_co2e
