@@ -3,29 +3,30 @@
 //
 // Pure and deterministic: no React, no fetching and only `import type`, so Node runs this file
 // as-is in the tests (feasibility.test.mjs). feasibilityInput.ts builds the input from A's site
-// summary and E's site intel; the app shows the result as the GriddyGrade (GriddyGradeCard.tsx
-// for the headline number, GriddyGradeBreakdown.tsx for the components).
+// summary and E's site intel; the app shows the result as the GriddyGrade (GriddyGradeCard.tsx,
+// with GriddyGradeDetails.tsx when expanded).
 //
-//   S = 0.30 G + 0.20 P + 0.15 C + 0.15 A + 0.10 L + 0.10 I      (each component 0-100)
+//   GriddyGrade = 0.33 G + 0.22 P + 0.17 C + 0.17 A + 0.11 I      (each component 0-100)
 //
-// The weights and thresholds are initial product heuristics, not validated predictions of
-// interconnection approval, cost or permitting. Missing data is never read as 0 km, 0 people or
-// 0 MW: a metric without data drops out of its component (the others are reweighted), and a
-// component with no data at all scores a neutral 50 and lowers data completeness.
+// Land suitability is not part of the grade (it had 10%; the other weights grew in proportion,
+// rounded to whole percents). The weights and thresholds are initial product heuristics, not
+// validated predictions of interconnection approval, cost or permitting. Missing data is never
+// read as 0 km, 0 people or 0 MW: a metric without data drops out of its component (the others
+// are reweighted), and a component with no data at all scores a neutral 50 and lowers data
+// completeness.
 
-export type ComponentKey = "grid" | "generation" | "community" | "air" | "land" | "infrastructure";
+export type ComponentKey = "grid" | "generation" | "community" | "air" | "infrastructure";
 export type ComponentStatus = "observed" | "partial" | "unavailable";
 export type CompletenessLabel = "High" | "Moderate" | "Low";
 
-export const COMPONENT_KEYS: ComponentKey[] = ["grid", "generation", "community", "air", "land", "infrastructure"];
+export const COMPONENT_KEYS: ComponentKey[] = ["grid", "generation", "community", "air", "infrastructure"];
 
 export const WEIGHTS: Record<ComponentKey, number> = {
-  grid: 0.3,
-  generation: 0.2,
-  community: 0.15,
-  air: 0.15,
-  land: 0.1,
-  infrastructure: 0.1,
+  grid: 0.33,
+  generation: 0.22,
+  community: 0.17,
+  air: 0.17,
+  infrastructure: 0.11,
 };
 
 export const COMPONENT_LABEL: Record<ComponentKey, string> = {
@@ -33,9 +34,12 @@ export const COMPONENT_LABEL: Record<ComponentKey, string> = {
   generation: "Nearby generation",
   community: "Community impact",
   air: "Air quality and permitting",
-  land: "Land suitability",
   infrastructure: "Local infrastructure support",
 };
+
+const SYMBOL: Record<ComponentKey, string> = { grid: "G", generation: "P", community: "C", air: "A", infrastructure: "I" };
+/** "0.33 G + 0.22 P + ...", built from WEIGHTS so the displayed formula always matches the math. */
+export const FORMULA = COMPONENT_KEYS.map((k) => `${WEIGHTS[k].toFixed(2)} ${SYMBOL[k]}`).join(" + ");
 
 export const DEFAULT_LOAD_MW = 100; // product assumption for an average data center, not a typical value
 export const NEUTRAL_SCORE = 50;
@@ -55,13 +59,6 @@ export const NONATTAINMENT_SCORE = new Map<string, number>([
   ["severe", 10],
   ["extreme", 10],
 ]);
-/** Mean slope bands, upper bound inclusive. */
-export const SLOPE_BANDS: { maxDeg: number; score: number }[] = [
-  { maxDeg: 3, score: 100 },
-  { maxDeg: 5, score: 80 },
-  { maxDeg: 10, score: 50 },
-  { maxDeg: Infinity, score: 20 },
-];
 export const IDENTIFIED_SCORE = 100;
 export const NOT_IDENTIFIED_SCORE = 20; // both 100 -> 100, one -> 60, neither -> 20
 export const CATEGORIES: { min: number; label: string }[] = [
@@ -105,12 +102,6 @@ export interface AqiContext {
   pollutant: string | null;
 }
 
-/** An existing land-screening finding (protected land, surface water, built-up, farmland). Shown, not scored. */
-export interface LandFlag {
-  severity: "fail" | "warn";
-  title: string;
-}
-
 /** A territory lookup: found by name, looked and found none, or could not look (data missing). */
 export type Lookup = { status: "identified"; name: string } | { status: "none" } | { status: "unknown" };
 
@@ -127,8 +118,6 @@ export interface FeasibilityInput {
   designations: Designation[] | null;
   /** Current AQI: context only, never scored. */
   aqi: AqiContext | null;
-  meanSlopeDeg: number | null;
-  landFlags: LandFlag[];
   utility: Lookup;
   balancingAuthority: Lookup;
   /** True only when the site is confirmed outside the supported (California) coverage. */
@@ -250,10 +239,6 @@ export function communityScore(population: number): number {
 export function designationScore(classification: string | null): number | null {
   const word = (classification ?? "").trim().toLowerCase().match(/^[a-z]+/)?.[0];
   return word ? (NONATTAINMENT_SCORE.get(word) ?? null) : null;
-}
-
-export function slopeScore(deg: number): number {
-  return (SLOPE_BANDS.find((b) => deg <= b.maxDeg) ?? SLOPE_BANDS[SLOPE_BANDS.length - 1]).score;
 }
 
 export function categoryFor(score: number): string {
@@ -513,29 +498,6 @@ export function scoreAirPermitting(designations: Designation[] | null, aqi: AqiC
   });
 }
 
-/** L from the mean slope of the 2 km screening buffer. */
-export function scoreLand(meanSlopeDeg: number | null, flags: LandFlag[] = [], reason?: string): ComponentResult {
-  const deg = validNonNegative(meanSlopeDeg);
-  const invalid = meanSlopeDeg !== null && deg === null;
-  const missingFields = deg === null ? [withReason("Mean slope", invalid ? "invalid value" : reason)] : [];
-  const context: Fact[] = flags.map((f) => ({ label: `Screening flag (${f.severity === "fail" ? "fail" : "warning"}, not scored)`, value: f.title }));
-  const metrics = [metric("slope", "Mean slope (2 km buffer)", 1, deg === null ? null : slopeScore(deg), deg === null ? "Not available" : `${deg.toFixed(1)}°`)];
-  return component("land", {
-    metrics,
-    missingFields,
-    context,
-    explain: (score, status) =>
-      status === "unavailable"
-        ? withReason("No land screening for this site, so this component uses a neutral 50", invalid ? "invalid value" : reason) + "."
-        : `Mean slope ${(deg as number).toFixed(1)}° across the 2 km buffer (→ ${fmtScore(score)}).`,
-    method: "L by mean slope: 0–3° 100, over 3–5° 80, over 5–10° 50, over 10° 20 (USGS 3DEP via Earth Engine, or the precomputed demo-area grid).",
-    notes: [
-      "Slope is only a preliminary constructability proxy.",
-      "Zoning, parcel availability, ownership, geotechnical conditions, flood risk, water access and permitting eligibility are not assessed.",
-    ],
-  });
-}
-
 /** I from the utility territory and balancing authority: both 100, one 60, neither 20. */
 export function scoreInfrastructure(utility: Lookup, balancingAuthority: Lookup, outsideCoverage: boolean, reason?: string): ComponentResult {
   const missingFields: string[] = [];
@@ -577,7 +539,6 @@ export function calculateFeasibilityScore(input: FeasibilityInput, targetLoadMW:
     scoreGeneration(input.generation, load, why.generation),
     scoreCommunity(input.population, why.community),
     scoreAirPermitting(input.designations, input.aqi, why.air),
-    scoreLand(input.meanSlopeDeg, input.landFlags, why.land),
     scoreInfrastructure(input.utility, input.balancingAuthority, input.outsideCoverage, why.infrastructure),
   ];
   const byKey = <T>(f: (c: ComponentResult) => T) => Object.fromEntries(components.map((c) => [c.key, f(c)])) as Record<ComponentKey, T>;
@@ -599,6 +560,7 @@ export function calculateFeasibilityScore(input: FeasibilityInput, targetLoadMW:
   const explanatoryNotes = [
     "Preliminary screening heuristic: the weights and thresholds are initial product assumptions, not validated predictions of interconnection approval, cost, permitting, construction feasibility or economic viability.",
     `Assumed average data center load: ${fmtMw(load)}${loadValid ? "" : ` (the configured load was invalid, so the ${DEFAULT_LOAD_MW} MW default is used)`}. Only the nearby-generation capacity term depends on it.`,
+    "Land is not scored: slope, land cover, zoning, parcels and flood risk need their own review (see Site intelligence for land screening).",
     "Missing inputs never count as 0 km, 0 people or 0 MW: a missing metric drops out of its component and the others are reweighted; a component with no data scores a neutral 50.",
     "Data completeness is the share of the score's weight that comes from fully observed components. It measures data coverage, not statistical confidence or the probability of success.",
     "Use it to guide further investigation. It does not replace utility interconnection studies, site engineering, permitting review or community engagement.",
@@ -666,7 +628,6 @@ function considerationsFor(input: FeasibilityInput, components: ComponentResult[
     add("community", air.score <= 30 ? "constraint" : "tradeoff", `EPA nonattainment: ${air.metrics[0].value}`);
   } else add("community", "neutral", "No listed ozone or PM2.5 nonattainment (EPA Green Book)");
 
-  for (const f of input.landFlags) add("community", f.severity === "fail" ? "constraint" : "tradeoff", `Land screening: ${f.title}`);
 
   for (const c of components) {
     if (c.status === "unavailable") add("data", "missing", `${c.label}: no data, scored as a neutral ${NEUTRAL_SCORE}`);

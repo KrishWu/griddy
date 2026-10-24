@@ -10,6 +10,7 @@ import { describe, test } from "node:test";
 import {
   COMPONENT_KEYS,
   DEFAULT_LOAD_MW,
+  FORMULA,
   NEUTRAL_SCORE,
   WEIGHTS,
   calculateFeasibilityScore,
@@ -23,8 +24,6 @@ import {
   scoreGeneration,
   scoreGridProximity,
   scoreInfrastructure,
-  scoreLand,
-  slopeScore,
 } from "./feasibility.ts";
 import { feasibilityInput } from "./feasibilityInput.ts";
 
@@ -42,8 +41,6 @@ function site(over = {}) {
     population: 1000,
     designations: [],
     aqi: { aqi: 42, category: "Good", pollutant: "PM2.5" },
-    meanSlopeDeg: 1.5,
-    landFlags: [],
     utility: identified("PG&E"),
     balancingAuthority: identified("CAISO"),
     outsideCoverage: false,
@@ -59,8 +56,6 @@ const NOTHING = {
   population: null,
   designations: null,
   aqi: null,
-  meanSlopeDeg: null,
-  landFlags: [],
   utility: UNKNOWN,
   balancingAuthority: UNKNOWN,
   outsideCoverage: false,
@@ -74,7 +69,7 @@ function invariants(r) {
   assert.ok(Number.isFinite(r.overallScoreRaw), "finite score");
   assert.ok(r.overallScoreRaw >= 0 && r.overallScoreRaw <= 100, `score ${r.overallScoreRaw} in 0-100`);
   assert.equal(r.overallScore, Math.round(r.overallScoreRaw));
-  assert.equal(r.components.length, 6);
+  assert.equal(r.components.length, 5);
   const sum = r.components.reduce((a, c) => a + c.weightedContribution, 0);
   close(sum, r.overallScoreRaw); // contributions reconcile with the score
   assert.equal(Math.round(sum), r.overallScore);
@@ -91,7 +86,13 @@ function invariants(r) {
 describe("weights and labels", () => {
   test("component weights sum to 100%", () => {
     close(Object.values(WEIGHTS).reduce((a, w) => a + w, 0), 1);
-    assert.deepEqual(COMPONENT_KEYS, ["grid", "generation", "community", "air", "land", "infrastructure"]);
+    assert.deepEqual(COMPONENT_KEYS, ["grid", "generation", "community", "air", "infrastructure"]);
+  });
+
+  test("land is not a component; its old 10% went to the others in proportion", () => {
+    assert.ok(!COMPONENT_KEYS.includes("land"));
+    assert.deepEqual(WEIGHTS, { grid: 0.33, generation: 0.22, community: 0.17, air: 0.17, infrastructure: 0.11 });
+    assert.equal(FORMULA, "0.33 G + 0.22 P + 0.17 C + 0.17 A + 0.11 I");
   });
 
   test("category bands use the displayed (rounded) score", () => {
@@ -315,7 +316,7 @@ describe("air quality and permitting", () => {
     assert.equal(a.score, 10);
     assert.equal(scoreAirPermitting([d("Moderate", "2006 24-hour PM2.5", "PM2.5"), d("Marginal")], null).score, 50);
     const r = calculateFeasibilityScore(site({ designations: sjv }));
-    close(comp(r, "air").weightedContribution, 10 * 0.15); // one component, not one per pollutant
+    close(comp(r, "air").weightedContribution, 10 * WEIGHTS.air); // one component, not one per pollutant
     invariants(r);
   });
 
@@ -341,30 +342,6 @@ describe("air quality and permitting", () => {
     assert.equal(a.status, "unavailable");
     assert.match(a.notes.join(" "), /does not by itself prohibit/);
     assert.match(a.notes.join(" "), /Not legal or regulatory advice/);
-  });
-});
-
-describe("land suitability", () => {
-  test("slope bands", () => {
-    for (const [deg, score] of [[0, 100], [3, 100], [3.01, 80], [5, 80], [5.5, 50], [10, 50], [10.1, 20], [35, 20]]) {
-      assert.equal(slopeScore(deg), score, `${deg} deg`);
-      assert.equal(scoreLand(deg).score, score);
-    }
-  });
-
-  test("8, 12. missing or negative slope is a neutral 50", () => {
-    for (const bad of [null, -2]) {
-      const l = scoreLand(bad);
-      assert.equal(l.score, NEUTRAL_SCORE);
-      assert.equal(l.status, "unavailable");
-    }
-  });
-
-  test("screening flags are shown, not scored, and a fail is a serious constraint", () => {
-    const flags = [{ severity: "fail", title: "Protected land" }];
-    assert.equal(scoreLand(1, flags).score, scoreLand(1).score);
-    const r = calculateFeasibilityScore(site({ landFlags: flags }));
-    assert.ok(r.seriousConstraints.some((t) => /Protected land/.test(t)));
   });
 });
 
@@ -406,7 +383,7 @@ describe("overall score", () => {
     assert.deepEqual(r.missingFields, []);
   });
 
-  test("10. all six components unavailable: neutral 50, 0% complete, qualified", () => {
+  test("10. every component unavailable: neutral 50, 0% complete, qualified", () => {
     const r = calculateFeasibilityScore(NOTHING);
     invariants(r);
     assert.equal(r.overallScore, 50);
@@ -415,18 +392,17 @@ describe("overall score", () => {
     assert.equal(r.completenessLabel, "Low");
     assert.ok(COMPONENT_KEYS.every((k) => r.componentStatuses[k] === "unavailable"));
     assert.match(r.qualification, /Low data completeness \(0%\)/);
-    assert.ok(r.missingFields.length >= 6);
+    assert.ok(r.missingFields.length >= COMPONENT_KEYS.length);
   });
 
-  test("8. missing slope, population, AQI and fuel mix lower completeness, not the scores", () => {
-    const r = calculateFeasibilityScore(site({ meanSlopeDeg: null, population: null, aqi: null, generation: { plantCount: 4, byFuelMw: null, totalMw: 500 } }));
+  test("8. missing population, AQI and fuel mix lower completeness, not the scores", () => {
+    const r = calculateFeasibilityScore(site({ population: null, aqi: null, generation: { plantCount: 4, byFuelMw: null, totalMw: 500 } }));
     invariants(r);
-    assert.equal(r.componentStatuses.land, "unavailable");
     assert.equal(r.componentStatuses.community, "unavailable");
     assert.equal(r.componentStatuses.generation, "partial");
     assert.equal(r.componentStatuses.air, "observed"); // the AQI is context only
-    close(r.dataCompletenessPercent, 55); // grid 30 + air 15 + infrastructure 10
-    close(r.partialPercent, 20);
+    close(r.dataCompletenessPercent, 61); // grid 33 + air 17 + infrastructure 11
+    close(r.partialPercent, 22);
     assert.equal(r.completenessLabel, "Moderate");
     assert.ok(r.qualification);
   });
@@ -479,21 +455,17 @@ describe("overall score", () => {
 });
 
 describe("example sites (qualitative)", () => {
-  test("A. Mendocino-like: far from the grid, few people, no land data", () => {
-    const r = calculateFeasibilityScore(
-      site({ substation: kv230(74), line: kv230(72), generation: { plantCount: 0, byFuelMw: {}, totalMw: 0 }, population: 0, meanSlopeDeg: null, reasons: { land: "no land screening here" } }),
-    );
+  test("A. Mendocino-like: far from the grid, few people", () => {
+    const r = calculateFeasibilityScore(site({ substation: kv230(74), line: kv230(72), generation: { plantCount: 0, byFuelMw: {}, totalMw: 0 }, population: 0 }));
     invariants(r);
     assert.ok(comp(r, "grid").score < 10);
     assert.ok(comp(r, "generation").score < 10);
     assert.ok(comp(r, "community").score > 90);
-    assert.equal(comp(r, "land").score, NEUTRAL_SCORE);
-    assert.equal(comp(r, "land").status, "unavailable");
-    assert.ok(r.dataCompletenessPercent < 100);
+    assert.ok(r.overallScore < 60, `score ${r.overallScore}`); // remote grid access outweighs the empty surroundings
     assert.ok(r.seriousConstraints.length >= 2); // both 220 kV+ assets 50 km or more away
   });
 
-  test("B. Alameda-like: close to the grid, many people, nonattainment, no land data", () => {
+  test("B. Alameda-like: close to the grid, many people, nonattainment", () => {
     const r = calculateFeasibilityScore(
       site({
         substation: kv230(3),
@@ -505,7 +477,6 @@ describe("example sites (qualitative)", () => {
           { pollutant: "Ozone", naaqs: "2008 8-hour ozone", area: "San Francisco Bay Area, CA", classification: "Marginal" },
           { pollutant: "PM2.5", naaqs: "2006 24-hour PM2.5", area: "San Francisco Bay Area, CA", classification: "Moderate" },
         ],
-        meanSlopeDeg: null,
       }),
     );
     invariants(r);
@@ -513,9 +484,8 @@ describe("example sites (qualitative)", () => {
     assert.ok(comp(r, "generation").score > 80);
     assert.ok(comp(r, "community").score < 10);
     assert.ok(comp(r, "air").score < 100);
-    assert.equal(comp(r, "land").status, "unavailable");
-    assert.ok(r.considerations.some((c) => c.group === "data" && /Land suitability/.test(c.text)));
     assert.ok(r.considerations.some((c) => c.group === "community" && c.tone === "tradeoff" && /people/.test(c.text)));
+    assert.ok(r.considerations.some((c) => c.group === "community" && /nonattainment/.test(c.text)));
   });
 });
 
@@ -596,8 +566,6 @@ describe("feasibilityInput", () => {
     assert.equal(input.population, 338_000);
     assert.equal(input.designations[0].classification, "Marginal");
     assert.equal(input.aqi.aqi, 55);
-    assert.equal(input.meanSlopeDeg, 2.1);
-    assert.deepEqual(input.landFlags, [{ severity: "warn", title: "Protected land nearby" }]);
     assert.deepEqual(input.utility, identified("PG&E"));
     assert.deepEqual(input.balancingAuthority, identified("CAISO"));
     assert.equal(input.outsideCoverage, false);
@@ -624,8 +592,8 @@ describe("feasibilityInput", () => {
     invariants(r);
     assert.equal(comp(r, "infrastructure").score, 20);
     assert.equal(comp(r, "infrastructure").status, "observed");
-    for (const key of ["grid", "generation", "community", "air", "land"]) assert.equal(r.componentStatuses[key], "unavailable", key);
-    assert.equal(r.dataCompletenessPercent, 10);
+    for (const key of ["grid", "generation", "community", "air"]) assert.equal(r.componentStatuses[key], "unavailable", key);
+    assert.equal(r.dataCompletenessPercent, 11);
     assert.equal(r.completenessLabel, "Low");
   });
 
@@ -644,18 +612,23 @@ describe("feasibilityInput", () => {
     assert.equal(feasibilityInput({ summary: summary(), view: view(), intel: intel({}, { nonattainment: undefined }) }).designations, null);
   });
 
-  test("site intel that failed or is still loading leaves air and land missing", () => {
+  test("site intel that failed or is still loading leaves air quality missing", () => {
     const failed = feasibilityInput({ summary: summary(), view: view(), intel: null });
     assert.equal(failed.designations, null);
-    assert.equal(failed.meanSlopeDeg, null);
-    assert.equal(failed.reasons.land, "site screening unavailable");
+    assert.equal(failed.reasons.air, "site screening unavailable");
     const pending = feasibilityInput({ summary: summary(), view: view(), intel: null, intelPending: true });
     assert.equal(pending.reasons.air, "site screening still loading");
   });
 
-  test("no land screening outside the demo areas says why", () => {
-    const input = feasibilityInput({ summary: summary(), view: view(), intel: intel({ mean_slope_deg: null }, { land_tier: "unavailable" }) });
-    assert.match(input.reasons.land, /demo areas or Earth Engine/);
+  test("land screening (slope, land cover, flags) never changes the GriddyGrade", () => {
+    const flat = calculateFeasibilityScore(feasibilityInput({ summary: summary(), view: view(), intel: intel() }));
+    const steep = feasibilityInput({
+      summary: summary(),
+      view: view(),
+      intel: intel({ mean_slope_deg: 25, land_cover: { "Built-up": 0.9 }, findings: [{ id: "land_protected", module: "site", severity: "fail", title: "Protected land", detail: "" }] }),
+    });
+    assert.ok(!("meanSlopeDeg" in steep) && !("landFlags" in steep));
+    assert.deepEqual(calculateFeasibilityScore(steep), flat);
   });
 
   test("an older summary without the 25 km aggregate is partial", () => {

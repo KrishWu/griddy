@@ -5,11 +5,9 @@
 import type { SiteView } from "@/components/explore/useSiteSummary";
 import type { SiteIntel, SiteSummary } from "@/lib/contract";
 
-import type { AssetRef, ComponentKey, Designation, FeasibilityInput, LandFlag, Lookup } from "./feasibility";
+import type { AssetRef, ComponentKey, Designation, FeasibilityInput, Lookup } from "./feasibility";
 
 const OUTSIDE = "outside California data coverage";
-/** E's land-screening findings that flag a site constraint: shown beside the land score, never scored. */
-const LAND_FLAG_IDS = new Set(["land_protected", "land_water", "land_built_up", "land_farmland_conversion"]);
 
 const rec = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -89,15 +87,6 @@ export function feasibilityInput({ summary, view, intel, intelPending = false }:
   const aq = rec(intel?.air_quality);
   const aqi = aq ? { aqi: num(aq.aqi), category: str(aq.category), pollutant: str(aq.pollutant) } : null;
 
-  const meanSlopeDeg = num(intel?.mean_slope_deg);
-  if (meanSlopeDeg === null) {
-    const tier = str(ix.land_tier);
-    reasons.land = !intel ? noIntel : !tier || tier === "unavailable" ? "no land screening here: demo areas or Earth Engine only" : "slope not computed";
-  }
-  const landFlags: LandFlag[] = (intel?.findings ?? [])
-    .filter((f) => LAND_FLAG_IDS.has(f.id) && (f.severity === "fail" || f.severity === "warn"))
-    .map((f) => ({ severity: f.severity as LandFlag["severity"], title: f.title }));
-
   // Utility / balancing authority: A's polygon lookups. "None" is a real answer (incl. outside
   // California); a layer that did not load is unknown. CAISO assumed by default does not count.
   const unknown: Lookup = { status: "unknown" };
@@ -115,8 +104,6 @@ export function feasibilityInput({ summary, view, intel, intelPending = false }:
     population,
     designations,
     aqi,
-    meanSlopeDeg,
-    landFlags,
     utility,
     balancingAuthority,
     outsideCoverage: outside,

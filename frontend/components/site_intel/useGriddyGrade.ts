@@ -1,5 +1,5 @@
 "use client";
-// The GriddyGrade for the selected site, shared by the headline card and the breakdown.
+// The GriddyGrade for the selected site, for GriddyGradeCard and its details.
 // OWNER: workstream E (Site Intelligence).
 // Inputs are data Griddy already loads (A's site summary, E's site intel), so this adds no
 // requests; the math is in feasibility.ts.
@@ -21,8 +21,8 @@ export interface ScenarioLoad {
   loadFactor: number;
 }
 
-// The headline card and the breakdown can mount apart (AppShell may put the card above A's Site
-// card), so the load choice lives in this tiny module store, not component state. A view
+// The load choice lives in this tiny module store, not component state, so it survives the card
+// remounting (AppShell re-keys panels on Run and moves the card between layouts). A view
 // preference only: never persisted.
 let loadBasis: LoadBasis = "scenario";
 const listeners = new Set<() => void>();
@@ -48,7 +48,7 @@ export interface GriddyGrade {
   result: FeasibilityResult | null;
   loading: boolean;
   error: string | null;
-  /** Site intel hasn't arrived: air and land count as missing until it does. */
+  /** Site intel hasn't arrived: air quality counts as missing until it does. */
   intelPending: boolean;
   scenarioLoad: ScenarioLoad | null;
   usingScenarioLoad: boolean;

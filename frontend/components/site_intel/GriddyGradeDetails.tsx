@@ -1,13 +1,41 @@
 "use client";
-// How the GriddyGrade is built: the six components, key considerations, method and limits.
-// OWNER: workstream E (Site Intelligence). The headline number is GriddyGradeCard.
+// The GriddyGrade's details, shown when its card is expanded: category, data completeness, load,
+// serious constraints, the five components, key considerations, method and limits.
+// OWNER: workstream E (Site Intelligence).
 import { ProvenanceTip } from "@/components/evaluate/ProvenanceTip";
-import { Panel } from "@/components/shell/Panel";
 import type { Provenance } from "@/lib/contract";
 
-import type { ComponentKey, ComponentResult, ComponentStatus, ConsiderationGroup, ConsiderationTone, FeasibilityResult } from "./feasibility";
-import { Meter } from "./GriddyGradeCard";
-import { useGriddyGrade } from "./useGriddyGrade";
+import {
+  DEFAULT_LOAD_MW,
+  FORMULA,
+  type ComponentKey,
+  type ComponentResult,
+  type ComponentStatus,
+  type ConsiderationGroup,
+  type ConsiderationTone,
+  type FeasibilityResult,
+} from "./feasibility";
+import { setLoadBasis, type GriddyGrade } from "./useGriddyGrade";
+
+const FILL: Record<ComponentStatus, string> = {
+  observed: "bg-sky-600 dark:bg-sky-400",
+  partial: "bg-sky-600/60 dark:bg-sky-400/60",
+  unavailable: "bg-zinc-400 dark:bg-zinc-600",
+};
+
+/** Score bar on a 0-100 track. `bands` marks the category boundaries (20/40/60/80) as gaps. */
+function Meter({ value, status = "observed", label, bands = false }: { value: number; status?: ComponentStatus; label?: string; bands?: boolean }) {
+  const a11y = label
+    ? { role: "meter", "aria-label": label, "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.round(value) }
+    : { "aria-hidden": true };
+  return (
+    <span {...a11y} className={`relative block w-full min-w-0 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 ${bands ? "h-3" : "h-1.5"}`}>
+      <span className={`block h-full rounded-full ${FILL[status]}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+      {bands &&
+        [20, 40, 60, 80].map((b) => <span key={b} className="absolute inset-y-0 w-0.5 bg-white dark:bg-zinc-950" style={{ left: `calc(${b}% - 1px)` }} />)}
+    </span>
+  );
+}
 
 // Which of the summary's and intel's provenance entries feed each component.
 const SOURCES: Record<ComponentKey, RegExp> = {
@@ -15,7 +43,6 @@ const SOURCES: Record<ComponentKey, RegExp> = {
   generation: /EIA-860/i,
   community: /population/i,
   air: /Green Book|AirNow/i,
-  land: /3DEP|WorldCover|Cropland Data|WDPA|Surface Water|Griddy screening/i,
   infrastructure: /Load Serving|Balancing Authority/i,
 };
 
@@ -29,6 +56,7 @@ function sourcesFor(c: ComponentResult, provenance: Provenance[]): Provenance[] 
 }
 
 const pct = (share: number) => `${Math.round(share * 100)}%`;
+const mwText = (v: number) => `${Math.round(v).toLocaleString()} MW`;
 
 function StatusBadge({ status }: { status: ComponentStatus }) {
   if (status === "observed") return null;
@@ -163,23 +191,110 @@ function KeyConsiderations({ r }: { r: FeasibilityResult }) {
   );
 }
 
-export function GriddyGradeBreakdown() {
-  const { result: r, provenance } = useGriddyGrade();
-  if (!r) return null; // the headline card shows loading and errors
+export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade; result: FeasibilityResult }) {
+  const load = g.scenarioLoad;
   return (
-    <Panel title="GriddyGrade breakdown" owner="E · Site intel">
-      <p className="text-xs text-zinc-600 dark:text-zinc-400">
-        How the GriddyGrade of <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{r.overallScore}</span> is built, at{" "}
-        <span className="tabular-nums">{Math.round(r.targetLoadMw).toLocaleString()} MW</span> average load. Open a row for its inputs and calculation.
-      </p>
-      <section className="mt-3">
+    <>
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">{r.category}</span>
+          <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">out of 100 · data center site feasibility, preliminary screening</span>
+        </span>
+        <ProvenanceTip label="GriddyGrade" provenance={{ kind: "inferred", source: "Griddy feasibility heuristic (initial product weights)" }}>
+          GriddyGrade = {FORMULA}. A screening heuristic, not an approval decision or a prediction of interconnection, permitting or cost.
+        </ProvenanceTip>
+      </div>
+      <div className="mt-2">
+        <Meter value={r.overallScoreRaw} label="GriddyGrade, 0 to 100" bands />
+      </div>
+
+      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-xs">
+        <dt className="text-[11px] text-zinc-500 dark:text-zinc-400">Data completeness</dt>
+        <dd className="flex flex-wrap items-center gap-x-1">
+          <span className="font-semibold tabular-nums">{r.dataCompletenessPercent}%</span>
+          <span>· {r.completenessLabel}</span>
+          {r.partialPercent > 0 && <span className="text-zinc-500">(+{r.partialPercent}% partial)</span>}
+          <ProvenanceTip label="Data completeness" provenance={{ kind: "inferred", source: "Share of the score's weight from fully observed components" }}>
+            High 80–100%, Moderate 50–79%, Low under 50%. It measures data coverage, not statistical confidence or the probability of success.
+          </ProvenanceTip>
+        </dd>
+        <dt className="text-[11px] text-zinc-500 dark:text-zinc-400">Site</dt>
+        <dd className="min-w-0 break-words">
+          {g.siteName}
+          {g.location && (
+            <span className="block tabular-nums text-zinc-500">
+              {g.location.lat.toFixed(3)}, {g.location.lon.toFixed(3)}
+            </span>
+          )}
+        </dd>
+        <dt className="text-[11px] text-zinc-500 dark:text-zinc-400">Assumed load</dt>
+        <dd className="min-w-0">
+          <span className="block">
+            <span className="font-semibold tabular-nums">{mwText(g.loadMw)}</span> average
+            <span className="text-zinc-500">
+              {g.usingScenarioLoad && load
+                ? ` · scenario: ${mwText(load.peakMw)} peak × ${load.loadFactor.toFixed(2)} load factor`
+                : ` · default assumption${load ? "" : " (this scenario is not a data center)"}`}
+            </span>
+          </span>
+          <span role="group" aria-label="Load used for the GriddyGrade" className="mt-1 inline-flex rounded-md border border-zinc-300 p-0.5 text-[11px] dark:border-zinc-700">
+            {(
+              [
+                ["scenario", "Scenario load"],
+                ["default", `${DEFAULT_LOAD_MW} MW default`],
+              ] as const
+            ).map(([value, label]) => {
+              const active = value === "scenario" ? g.usingScenarioLoad : !g.usingScenarioLoad;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={value === "scenario" && !load}
+                  onClick={() => setLoadBasis(value)}
+                  className={`rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    active ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black" : "text-zinc-600 dark:text-zinc-400"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </span>
+        </dd>
+      </dl>
+
+      {g.intelPending && <p className="mt-2 text-[11px] text-zinc-400">Waiting for site screening (air quality); it counts as missing until it arrives.</p>}
+      {r.qualification && (
+        <p
+          className={`mt-3 rounded border px-2 py-1 text-[11px] ${
+            r.completenessLabel === "Low"
+              ? "border-amber-400 bg-amber-50 font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+              : "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+          }`}
+        >
+          {r.qualification}
+        </p>
+      )}
+      {r.seriousConstraints.length > 0 && (
+        <div className="mt-3 rounded border border-red-300 bg-red-50 px-2 py-1 text-[11px] text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          <p className="font-semibold">Serious constraints (the GriddyGrade does not offset these)</p>
+          <ul className="mt-0.5 list-disc pl-4">
+            {r.seriousConstraints.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <section className="mt-4">
         <h3 className="flex items-baseline text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Components
           <span className="ml-auto font-normal normal-case tracking-normal">score × weight = points</span>
         </h3>
         <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {r.components.map((c) => (
-            <ComponentRow key={c.key} c={c} sources={sourcesFor(c, provenance)} />
+            <ComponentRow key={c.key} c={c} sources={sourcesFor(c, g.provenance)} />
           ))}
         </ul>
         <p className="mt-1 text-right text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
@@ -191,13 +306,13 @@ export function GriddyGradeBreakdown() {
 
       <details className="mt-3 text-[11px] text-zinc-500">
         <summary className="cursor-pointer">Method and limitations</summary>
-        <p className="mt-1 tabular-nums">GriddyGrade = 0.30 G + 0.20 P + 0.15 C + 0.15 A + 0.10 L + 0.10 I, each component 0–100.</p>
+        <p className="mt-1 tabular-nums">GriddyGrade = {FORMULA}, each component 0–100.</p>
         <ul className="mt-1 list-disc space-y-1 pl-4">
           {r.explanatoryNotes.map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
       </details>
-    </Panel>
+    </>
   );
 }

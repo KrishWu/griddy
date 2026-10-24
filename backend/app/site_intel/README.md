@@ -41,8 +41,10 @@ to its cleanest hours and reports avoided t CO2e/yr and an SCI score per GPU-hou
 
 The GriddyGrade scores the selected site 0-100 in the browser from data already loaded: A's site
 summary and this module's site intel. No extra endpoint, so it follows the scenario's load
-instantly. `GriddyGradeCard.tsx` shows it as the headline number (meant to sit above every other
-site detail); `GriddyGradeBreakdown.tsx` shows the six components; `useGriddyGrade.ts` feeds both.
+instantly. GriddyGrade = 0.33 grid proximity + 0.22 nearby generation + 0.17 community exposure +
+0.17 air quality / permitting + 0.11 utility / balancing authority (land is not scored).
+`GriddyGradeCard.tsx` shows it as just a number above every other card (AppShell mounts it first),
+with `GriddyGradeDetails.tsx` on expand; `useGriddyGrade.ts` feeds both.
 `feasibility.ts` holds the pure scoring math (weights, thresholds, missing-data rules);
 `feasibilityInput.ts` maps the summary and intel onto it. The weights are initial product
 heuristics, not validated predictions. The score relies on `extras["nonattainment_available"]`

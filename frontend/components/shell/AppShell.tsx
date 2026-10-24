@@ -14,6 +14,7 @@ import { SitePanel } from "@/components/explore/SitePanel";
 import { SimulatePanel } from "@/components/simulate/SimulatePanel";
 import { StressPanel } from "@/components/simulate/StressPanel";
 import { PanelGuard } from "@/components/shell/PanelGuard";
+import { GriddyGradeCard } from "@/components/site_intel/GriddyGradeCard";
 import { SiteIntelPanel } from "@/components/site_intel/SiteIntelPanel";
 import type { Mode, ScenarioResult } from "@/lib/contract";
 import { useGridForge, type View } from "@/lib/store";
@@ -56,6 +57,15 @@ function useIsLarge(): boolean {
   );
 }
 
+/** E's GriddyGrade for the selected site: the score viewers should see first, above every other card. */
+function GradeCard({ epoch }: { epoch: number }) {
+  return (
+    <PanelGuard key={`grade-${epoch}`} name="GriddyGrade">
+      <GriddyGradeCard />
+    </PanelGuard>
+  );
+}
+
 function SiteCards({ epoch }: { epoch: number }) {
   return (
     <>
@@ -63,7 +73,7 @@ function SiteCards({ epoch }: { epoch: number }) {
         <SitePanel />
       </PanelGuard>
       <PanelGuard key={`intel-${epoch}`} name="Site intelligence">
-        <SiteIntelPanel />
+        <SiteIntelPanel showGrade={false} />
       </PanelGuard>
     </>
   );
@@ -125,6 +135,8 @@ export function AppShell() {
       )}
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_1fr_420px] lg:overflow-hidden">
         <aside className="space-y-3 border-r border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
+          {/* On small screens the GriddyGrade leads the page; on large screens it tops the cards over the map. */}
+          {!large && <GradeCard epoch={v} />}
           <PanelGuard name="Build">
             <BuildPanel />
           </PanelGuard>
@@ -149,6 +161,7 @@ export function AppShell() {
               {/* Site results appear next to where you clicked, not three screens down the sidebar. */}
               {large && (
                 <div className="absolute bottom-8 left-3 z-10 max-h-[55%] w-80 space-y-2 overflow-y-auto">
+                  <GradeCard epoch={v} />
                   <SiteCards epoch={v} />
                 </div>
               )}

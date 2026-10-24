@@ -8,7 +8,6 @@ import { pct } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
 import { CarbonAwarePanel } from "./CarbonAwarePanel";
-import { GriddyGradeBreakdown } from "./GriddyGradeBreakdown";
 import { GriddyGradeCard } from "./GriddyGradeCard";
 
 // ESA WorldCover's own legend colors, so the bar matches the dataset's maps.
@@ -182,16 +181,13 @@ export function SiteIntelPanel({ showGrade = true }: { showGrade?: boolean }) {
   const { siteIntel } = useGridForge();
   return (
     <>
-      {/* The GriddyGrade headline first, then how it is built. Their own guards, so a scoring error
+      {/* The GriddyGrade (a number, details on expand), with its own guard so a scoring error
           can't hide the screening below. */}
       {showGrade && (
         <PanelGuard name="GriddyGrade">
           <GriddyGradeCard />
         </PanelGuard>
       )}
-      <PanelGuard name="GriddyGrade breakdown">
-        <GriddyGradeBreakdown />
-      </PanelGuard>
       <Panel title="Site intelligence" owner="E · Site intel">
         {siteIntel ? (
           <Screening intel={siteIntel} />
