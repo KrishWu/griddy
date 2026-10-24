@@ -1,0 +1,24 @@
+# Render Blueprint for the Griddy backend (FastAPI). The frontend stays on Cloudflare Pages
+# (deploy/cloudflare-pages), which forwards /api/* here. Setup: deploy/render/README.md.
+services:
+  - type: web
+    name: griddy-api
+    runtime: python
+    plan: free # 512 MB, 0.1 CPU; sleeps after 15 min idle, ~1 min to wake
+    region: oregon
+    branch: main
+    autoDeployTrigger: checksPass # redeploy after CI passes on main
+    buildCommand: pip install -r backend/requirements.txt
+    # From backend/, like uvicorn and pytest locally; data/ is read from the repo root.
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      # Earth Engine (optional; without it the site cards use cached data). Set both in
+      # the dashboard: the project ID, and /etc/secrets/<file> after uploading a
+      # service-account JSON key as a Secret File.
+      - key: EE_PROJECT
+        sync: false
+      - key: EE_SERVICE_ACCOUNT_KEY
+        sync: false
