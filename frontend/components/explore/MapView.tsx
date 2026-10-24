@@ -1,7 +1,7 @@
 "use client";
 // Interactive grid map.  OWNER: workstream A (Explore / GIS).
 // STUB: basemap + the four /api/layers + click-to-select-site + overlays from other modules.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Map as MLMap, GeoJSONSource } from "maplibre-gl";
 
 import { api } from "@/lib/api";
@@ -23,6 +23,8 @@ export function MapView() {
   const { scenario, selectSite, overlays } = useGridForge();
   const center = scenario?.site.location;
   const centerRef = useRef(center);
+  const [ready, setReady] = useState(false); // our layers exist; overlays can be drawn
+  const drawn = useRef(new Map<string, string>()); // overlay id -> signature currently on the map
 
   useEffect(() => {
     let cancelled = false;
@@ -43,13 +45,17 @@ export function MapView() {
         m.addLayer({ id: "plants", type: "circle", source: "plants", paint: { "circle-radius": 6, "circle-color": "#f59e0b", "circle-stroke-width": 1, "circle-stroke-color": "#fff" } });
         m.addSource("site", { type: "geojson", data: siteFeature(centerRef.current) });
         m.addLayer({ id: "site", type: "circle", source: "site", paint: { "circle-radius": 9, "circle-color": "#10b981", "circle-stroke-width": 2, "circle-stroke-color": "#fff" } });
+        setReady(true);
       });
       m.on("click", (e) => selectSite({ lon: e.lngLat.lng, lat: e.lngLat.lat }));
     })();
+    const overlaysOnMap = drawn.current;
     return () => {
       cancelled = true;
       map.current?.remove();
       map.current = null;
+      overlaysOnMap.clear();
+      setReady(false);
     };
   }, [selectSite]);
 
@@ -60,20 +66,40 @@ export function MapView() {
   }, [center]);
 
   // Draw overlays published by other modules (e.g. satellite imagery from workstream E).
+  // Waits until our layers exist, then syncs by id: changed or vanished overlays are removed.
   useEffect(() => {
     const m = map.current;
-    if (!m || !m.isStyleLoaded()) return;
+    if (!m || !ready) return;
+    const want = new Map(overlays.map((o) => [o.id, JSON.stringify([o.type, o.url, o.data, o.opacity])]));
+    for (const [id, sig] of drawn.current) {
+      if (want.get(id) === sig) continue;
+      if (m.getLayer(`ov-${id}`)) m.removeLayer(`ov-${id}`);
+      if (m.getSource(`ov-${id}`)) m.removeSource(`ov-${id}`);
+      drawn.current.delete(id);
+    }
     for (const o of overlays) {
-      if (m.getSource(`ov-${o.id}`)) continue;
-      if (o.type === "raster" && o.url) {
-        m.addSource(`ov-${o.id}`, { type: "raster", tiles: [o.url], tileSize: 256, attribution: o.attribution ?? undefined });
-        m.addLayer({ id: `ov-${o.id}`, type: "raster", source: `ov-${o.id}`, paint: { "raster-opacity": o.opacity ?? 0.8 } }, "transmission");
-      } else if (o.type === "geojson" && o.data) {
-        m.addSource(`ov-${o.id}`, { type: "geojson", data: o.data });
-        m.addLayer({ id: `ov-${o.id}`, type: "fill", source: `ov-${o.id}`, paint: { "fill-color": "#10b981", "fill-opacity": (o.opacity ?? 0.8) * 0.4 } });
+      if (drawn.current.has(o.id)) continue;
+      try {
+        if (o.type === "raster" && o.url) {
+          // Relative URLs (e.g. E's cached tiles at /api/...) must be absolute for the map
+          // worker; plain concatenation keeps the {z}/{x}/{y} placeholders unencoded.
+          const url = o.url.startsWith("/") ? window.location.origin + o.url : o.url;
+          m.addSource(`ov-${o.id}`, { type: "raster", tiles: [url], tileSize: 256, attribution: o.attribution ?? undefined });
+          // If you rename or split the transmission layer, update this beforeId.
+          const below = m.getLayer("transmission") ? "transmission" : undefined; // keep grid lines on top
+          m.addLayer({ id: `ov-${o.id}`, type: "raster", source: `ov-${o.id}`, paint: { "raster-opacity": o.opacity ?? 0.8 } }, below);
+        } else if (o.type === "geojson" && o.data) {
+          m.addSource(`ov-${o.id}`, { type: "geojson", data: o.data });
+          m.addLayer({ id: `ov-${o.id}`, type: "fill", source: `ov-${o.id}`, paint: { "fill-color": "#10b981", "fill-opacity": (o.opacity ?? 0.8) * 0.4 } });
+        }
+        if (m.getLayer(`ov-${o.id}`)) drawn.current.set(o.id, want.get(o.id)!);
+      } catch (err) {
+        console.warn(`overlay ${o.id} failed; will retry on the next change`, err);
+        if (m.getLayer(`ov-${o.id}`)) m.removeLayer(`ov-${o.id}`);
+        if (m.getSource(`ov-${o.id}`)) m.removeSource(`ov-${o.id}`);
       }
     }
-  }, [overlays]);
+  }, [overlays, ready]);
 
   return <div ref={el} className="h-full w-full" />;
 }

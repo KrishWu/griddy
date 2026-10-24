@@ -84,6 +84,7 @@ export interface GridConnection {
   export_limit_mw?: number;
   interconnection_km?: number;
   substation_id?: string | null;
+  poi_voltage_kv?: number | null;
   new_substation?: boolean;
 }
 

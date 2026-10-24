@@ -1,8 +1,9 @@
 """GridForge shared contract.
 
 These are the ONLY types that cross workstream boundaries. Every module reads and
-writes these shapes; the frontend mirrors them in frontend/lib/contract.ts and the
-example payloads live in contracts/fixtures/.
+writes these shapes; the frontend mirrors them in frontend/lib/contract.ts.
+Example payloads and JSON Schemas live in contracts/ (regenerate with
+scripts/export_contract.py).
 
 Change policy: never edit this file inside a feature PR. Put new outputs in an
 `extras` dict (inputs in `Scenario.options`) first. When a field truly needs to be
@@ -31,7 +32,8 @@ ProvenanceKind = Literal["observed", "assumption", "simulated", "inferred"]
 
 
 class Model(BaseModel):
-    model_config = {"extra": "forbid"}
+    # NaN/inf fail validation with the field name instead of reaching the UI as null.
+    model_config = {"extra": "forbid", "allow_inf_nan": False}
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +50,7 @@ class Provenance(Model):
     """Where a number came from. Shown in the UI next to every headline figure."""
 
     kind: ProvenanceKind
-    source: str = Field(description='e.g. "EIA-860 2024", "NREL ATB 2024 Moderate", "CAISO 2024"')
+    source: str = Field(description='e.g. "EIA-860 2024", "ATB 2025 Moderate", "CAISO 2024"')
     url: str | None = None
     note: str | None = None
 
@@ -122,6 +124,9 @@ class GridConnection(Model):
     export_limit_mw: float = Field(default=0, ge=0)
     interconnection_km: float = Field(default=5, ge=0, description="New line length to the point of interconnection")
     substation_id: str | None = None
+    poi_voltage_kv: float | None = Field(
+        default=None, description="Voltage at the point of interconnection (from A's nearest line/substation)"
+    )
     new_substation: bool = True
 
 

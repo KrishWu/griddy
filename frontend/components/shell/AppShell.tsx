@@ -8,11 +8,12 @@ import { MapView } from "@/components/explore/MapView";
 import { SitePanel } from "@/components/explore/SitePanel";
 import { SimulatePanel } from "@/components/simulate/SimulatePanel";
 import { StressPanel } from "@/components/simulate/StressPanel";
+import { PanelGuard } from "@/components/shell/PanelGuard";
 import { SiteIntelPanel } from "@/components/site_intel/SiteIntelPanel";
 import { useGridForge } from "@/lib/store";
 
 export function AppShell() {
-  const { error, result } = useGridForge();
+  const { error, result, resultVersion: v } = useGridForge();
   return (
     <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
@@ -22,20 +23,36 @@ export function AppShell() {
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_1fr_420px] lg:overflow-hidden">
         <aside className="space-y-3 border-r lg:overflow-y-auto border-zinc-200 p-3 dark:border-zinc-800">
-          <BuildPanel />
-          <SitePanel />
-          <SiteIntelPanel />
+          <PanelGuard name="Build">
+            <BuildPanel />
+          </PanelGuard>
+          <PanelGuard key={`site-${v}`} name="Site">
+            <SitePanel />
+          </PanelGuard>
+          <PanelGuard key={`intel-${v}`} name="Site intelligence">
+            <SiteIntelPanel />
+          </PanelGuard>
         </aside>
         <main className="h-[50vh] min-h-0 lg:h-auto">
-          <MapView />
+          <PanelGuard name="Map">
+            <MapView />
+          </PanelGuard>
         </main>
         <aside className="space-y-3 border-l lg:overflow-y-auto border-zinc-200 p-3 dark:border-zinc-800">
           {result ? (
             <>
-              <SimulatePanel />
-              <EvaluatePanel />
-              <StressPanel />
-              <ReportPanel />
+              <PanelGuard key={`sim-${v}`} name="Simulate">
+                <SimulatePanel />
+              </PanelGuard>
+              <PanelGuard key={`eval-${v}`} name="Evaluate">
+                <EvaluatePanel />
+              </PanelGuard>
+              <PanelGuard key={`stress-${v}`} name="Stress test">
+                <StressPanel />
+              </PanelGuard>
+              <PanelGuard key={`report-${v}`} name="Report">
+                <ReportPanel />
+              </PanelGuard>
             </>
           ) : (
             <p className="p-4 text-sm text-zinc-500">Pick a preset and press Run scenario.</p>

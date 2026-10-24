@@ -25,10 +25,17 @@ The full map is `ownership.json`.
 - Only create or modify files your workstream owns (see `ownership.json`). Put data
   files in `data/<your module>/`, tests in `backend/tests/test_<your module>*.py`, and
   Python deps in `backend/requirements/<your letter>-*.txt`.
+- **Data paths:** build them with `from app import DATA_DIR` (e.g.
+  `DATA_DIR / "explore" / "plants_ca.geojson"`), never relative to the working directory
+  (it's `backend/` under uvicorn and pytest). Raw downloads go in `data/<module>/raw/`
+  and caches in `data/<module>/cache/`; both are git-ignored. Commit only small processed
+  files, never anything over ~20 MB, and never licensed imagery.
 - **Shared files** (`backend/app/contract.py`, `frontend/lib/contract.ts`, `main.py`,
   `pipeline.py`, `frontend/lib/api.ts`, `package.json`, `CLAUDE.md`, ...) are frozen on
   feature branches. Never edit them in your feature PR, because two branches touching
-  the same file is exactly what causes merge conflicts.
+  the same file is exactly what causes merge conflicts. `check_ownership.py` (and CI)
+  fails a `ws/*` branch that touches one. Shared changes travel in their own small PR
+  from a `contract/<what>`, `deps/<what>` or `foundation/<what>` branch, merged right away.
 - **Need a contract change?** First try the escape hatches: `extras` on your result,
   `scenario.options` for inputs. If a typed field is truly needed, make a separate tiny
   PR to `main` from a `contract/<what>` branch containing ONLY `contract.py`, the matching
@@ -55,8 +62,10 @@ evaluation = evaluate(scenario, sim, catalog)    # C: app/evaluate/economics.py
 findings = stress_test(scenario, sim)            # B: app/simulate/stress.py
 ```
 
-plus `get_layer` / `summarize_site` (A, `app/explore/service.py`), `site_intel` (E,
-`app/site_intel/service.py`) and `list_presets` / `report_csv` (D, `app/builder/service.py`).
+then appends `site_findings(scenario, sim, evaluation)` (E, `app/site_intel/service.py`;
+an optional hook: if it raises, the run still succeeds), plus `get_layer` /
+`summarize_site` (A, `app/explore/service.py`), `site_intel` (E) and `list_presets` /
+`report_csv` (D, `app/builder/service.py`).
 Replace the function **bodies** freely. Keep the names, parameters, and return types.
 Each currently holds a working STUB so the app runs end to end from the start.
 
@@ -68,11 +77,10 @@ New backend endpoints go in your own `router.py`, which `main.py` already regist
 
 ## 4. Stay green
 
-From the repo root:
+From the repo root (subshells, so your working directory doesn't change):
 
 ```bash
-cd backend && .venv/bin/pytest -q          # contract + integration tests must pass
-cd frontend && npm run typecheck && npm run lint
+(cd backend && .venv/bin/pytest -q) && (cd frontend && npm run typecheck && npm run lint) && python3 scripts/check_ownership.py <letter>
 ```
 
 `backend/tests/test_contract.py` checks that every preset runs and that energy
@@ -105,10 +113,13 @@ must load inside `useEffect`.
 ## 7. Git
 
 - Branch name: `ws/<letter>-<short-name>`, e.g. `ws/b-simulate`. Branch from the latest `main`.
-- Open a **draft PR early** and merge at each integration checkpoint (see
-  `docs/WORKSTREAMS.md`). Small merges beat one huge merge at 2 PM.
+- Open a **draft PR early** (GitHub needs one commit first:
+  `git commit --allow-empty -m "ws/<letter>: start" && git push -u origin HEAD && gh pr create --draft --fill`)
+  and merge at each integration checkpoint (see `docs/WORKSTREAMS.md`). Small merges
+  beat one huge merge at 2 PM.
 - Before merging: `git fetch && git merge origin/main`, rerun the tests, run the
   ownership check.
 - Sync with `git merge origin/main`, never rebase (other people may have your commits).
-- Never force-push. Never commit secrets: API keys go in `backend/.env`
-  (git-ignored) and are read with `os.environ`.
+- Never force-push. Never commit secrets: API keys go in `backend/.env` (git-ignored;
+  copy `backend/.env.example`). `backend/app/__init__.py` loads it automatically, so
+  read keys with `os.environ.get("NAME")`.

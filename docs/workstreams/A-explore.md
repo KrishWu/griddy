@@ -33,7 +33,7 @@ satellite imagery). Keep that working when you restyle the map.
 
 | # | Task | Target |
 |---|---|---|
-| 1 | **Plants:** EIA-860 (2024) Plant + Generator files → California, operating, ≥1 MW → one point per plant with total nameplate MW and a fuel category (solar, wind, gas, hydro, geothermal, battery, nuclear, other). Write `data/explore/plants_ca.geojson` with a prep script `backend/app/explore/prepare_plants.py`. | 1 AM |
+| 1 | **Plants:** (download raw files to `data/explore/raw/`, which is git-ignored; build paths with `from app import DATA_DIR`) EIA-860 (2024) Plant + Generator files → California, operating, ≥1 MW → one point per plant with total nameplate MW and a fuel category (solar, wind, gas, hydro, geothermal, battery, nuclear, other). Write `data/explore/plants_ca.geojson` with a prep script `backend/app/explore/prepare_plants.py`. | 1 AM |
 | 2 | **Transmission:** California Energy Commission transmission lines (CC BY, `voltage_kv`, owner), simplified with shapely to keep the file small; ≥ 69 kV only. | 1 AM |
 | 3 | **Substations:** OpenStreetMap `power=substation` in California via Overpass (with `voltage` parsed to kV). HIFLD substations are restricted and EIA doesn't publish locations, so OSM is the open source. Note the coverage gap in a `Provenance`. | 7 AM |
 | 4 | **summarize_site:** nearest 3 substations (distance km, voltage), nearest line ≥ 230 kV (km, kV), plants within 25 km, county (point-in-polygon on a CA counties layer). Compute distances in EPSG:3310 (California Albers). Emit findings: `info` "Nearest 230 kV+ substation X km"; `warn` if > 30 km; always `needs_utility_study` on capacity. | 7 AM |
@@ -43,8 +43,16 @@ satellite imagery). Keep that working when you restyle the map.
 **Demo-site decision (first 15 min):** agree the default site with the team (placeholder:
 Kern County, `lon -119.47, lat 35.40`), then send D the coordinates for `DEFAULT_SITE`.
 
-**Hand-off to D:** `SiteSummary.nearest_line_km` / nearest substation distance is what D
-uses to prefill `scenario.grid.interconnection_km`. Make sure it's populated.
+**Hand-off (already wired in `store.tsx`):** when a site is clicked, the store copies your
+`SiteSummary.nearest_line_kv` into `scenario.grid.poi_voltage_kv` (B's interconnection-voltage
+stress test reads it) and `nearest_line_km` into `scenario.grid.interconnection_km` (C costs
+the tie line from it). Populate both. B may also call your `summarize_site()` directly
+(cached) for the preset site, so keep it fast: load layers once, no network per call.
+
+**Map view:** center on `scenario.site.location` (the agreed demo site) instead of the
+hard-coded Kern view. The overlay code already waits for your layers and swaps overlays
+when E's URL changes; keep that behavior if you restructure `MapView`. If you rename or
+split the `transmission` layer, update the overlay `beforeId` in `MapView` too.
 
 ## Stretch
 

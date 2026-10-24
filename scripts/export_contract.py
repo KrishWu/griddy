@@ -2,8 +2,9 @@
 """Regenerate contracts/*.json from backend/app/contract.py.
 
 Run after changing the contract:  backend/.venv/bin/python scripts/export_contract.py
-Writes JSON Schemas (for reference / codegen) and example payloads from the
-"hybrid" preset, with hourly arrays cut to the first 48 hours to stay small.
+Writes the JSON Schemas only, so two contract PRs don't fight over generated numbers.
+Add --examples to also rebuild example.scenario.json / example.result.json from the
+"hybrid" preset (hourly arrays cut to 48 h); only the foundation owner should need to.
 """
 
 import json
@@ -40,6 +41,8 @@ def main() -> None:
     OUT.mkdir(exist_ok=True)
     dump("scenario.schema.json", Scenario.model_json_schema())
     dump("scenario_result.schema.json", ScenarioResult.model_json_schema())
+    if "--examples" not in sys.argv:
+        return
     hybrid = next(p for p in list_presets() if p.id == "hybrid")
     dump("example.scenario.json", hybrid.model_dump(mode="json"))
     dump("example.result.json", truncate(run_scenario(hybrid).model_dump(mode="json")))

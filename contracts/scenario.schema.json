@@ -224,6 +224,19 @@
           "default": null,
           "title": "Substation Id"
         },
+        "poi_voltage_kv": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Voltage at the point of interconnection (from A's nearest line/substation)",
+          "title": "Poi Voltage Kv"
+        },
         "new_substation": {
           "default": true,
           "title": "New Substation",

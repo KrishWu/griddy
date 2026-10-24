@@ -59,6 +59,7 @@
     "export_limit_mw": 0.0,
     "interconnection_km": 15.0,
     "substation_id": null,
+    "poi_voltage_kv": null,
     "new_substation": true
   },
   "assumptions": {

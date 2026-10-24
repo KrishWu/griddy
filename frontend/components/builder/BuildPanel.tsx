@@ -19,10 +19,13 @@ export function BuildPanel() {
   const setAsset = (id: string, patch: Partial<Asset>) =>
     updateScenario((s) => ({ ...s, assets: s.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
   const addAsset = (kind: AssetKind) =>
-    updateScenario((s) => ({
-      ...s,
-      assets: [...s.assets, { id: `${kind}-${s.assets.length + 1}`, kind, capacity_mw: 100, duration_h: kind === "battery" ? 4 : null }],
-    }));
+    updateScenario((s) => {
+      // First unused id, so removing then re-adding never duplicates an id.
+      const used = new Set(s.assets.map((a) => a.id));
+      let n = 1;
+      while (used.has(`${kind}-${n}`)) n++;
+      return { ...s, assets: [...s.assets, { id: `${kind}-${n}`, kind, capacity_mw: 100, duration_h: kind === "battery" ? 4 : null }] };
+    });
   const removeAsset = (id: string) => updateScenario((s) => ({ ...s, assets: s.assets.filter((a) => a.id !== id) }));
 
   return (

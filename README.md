@@ -12,11 +12,11 @@ Built at the Stanford Cleantech Hackathon 2026.
 ## Run it
 
 ```bash
-scripts/setup.sh   # once: backend venv (Python 3.13) + npm ci
+scripts/setup.sh   # once: backend venv (Python 3.12-3.14, 3.13 preferred) + npm ci
 scripts/dev.sh     # API on :8000, app on http://localhost:3000
 ```
 
-Tests: `cd backend && .venv/bin/pytest -q` · `cd frontend && npm run typecheck && npm run lint`
+Tests: `(cd backend && .venv/bin/pytest -q) && (cd frontend && npm run typecheck && npm run lint)`
 
 ## How it fits together
 

@@ -46,7 +46,7 @@ def evaluate(scenario: Scenario, sim: SimulationResult, catalog: Catalog) -> Eva
         kw = asset.capacity_mw * 1000
         capex = kw * p["capex_usd_per_kw"]
         if asset.kind == "battery":
-            kwh = kw * (asset.duration_h or 4)
+            kwh = kw * (4 if asset.duration_h is None else asset.duration_h)
             capex += kwh * (p["capex_usd_per_kwh"] or 0)
         lines.append(CostLine(category="capex", item=f"{spec.label} ({asset.capacity_mw:.0f} MW)", usd=capex, provenance=spec.provenance))
         lines.append(CostLine(category="fixed_om", item=spec.label, usd=kw * p["fixed_om_usd_per_kw_yr"], provenance=spec.provenance))
@@ -94,12 +94,15 @@ def evaluate(scenario: Scenario, sim: SimulationResult, catalog: Catalog) -> Eva
     emissions_by_source["grid_imports"] = sum(m * c for m, c in zip(h.imports_mw, h.grid_co2_kg_per_mwh)) / 1000
 
     total_t = sum(emissions_by_source.values())
+    # Price carbon on on-site combustion only: CAISO import prices already embed
+    # California cap-and-trade, so charging imports again would double count.
+    direct_t = sum(v for k, v in emissions_by_source.items() if k != "grid_imports")
     if a.carbon_price_usd_per_t:
         lines.append(
             CostLine(
                 category="carbon",
-                item="Carbon price on all emissions",
-                usd=total_t * a.carbon_price_usd_per_t,
+                item="Carbon price on on-site combustion",
+                usd=direct_t * a.carbon_price_usd_per_t,
                 provenance=Provenance(kind="assumption", source=f"${a.carbon_price_usd_per_t}/t CO2"),
             )
         )
