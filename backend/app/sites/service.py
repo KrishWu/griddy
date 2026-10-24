@@ -74,6 +74,15 @@ def _site_artifact():
         return None
 
 
+START_SITE_KEYS = {"37.43_-122.17"}  # baked for the website's start (Stanford), not a representative build site
+
+
+def _build_sites() -> list[dict]:
+    """B's baked site profiles that stand for where generation gets built (the start site excluded)."""
+    index = json.loads((DATA_DIR / "simulate" / "sites" / "index.json").read_text(encoding="utf-8"))
+    return [s for s in index if s.get("key") not in START_SITE_KEYS]
+
+
 @lru_cache(maxsize=1)
 def capacity_credit() -> dict[str, float]:
     """Share of nameplate available at the system peak, per kind. Solar and wind are measured from B's 2024
@@ -85,9 +94,8 @@ def capacity_credit() -> dict[str, float]:
         supply = caiso[[c for c in caiso.columns if c.endswith("_mw")]].clip(lower=0).sum(axis=1)  # served-load proxy
         net = supply - caiso["solar_mw"].clip(lower=0) - caiso["wind_mw"].clip(lower=0)  # what firm capacity must cover
         top = np.argsort(-net.to_numpy())[:TOP_HOURS]
-        index = json.loads((DATA_DIR / "simulate" / "sites" / "index.json").read_text(encoding="utf-8"))
         solar, wind = [], []
-        for site in index:
+        for site in _build_sites():
             prof = pd.read_csv(DATA_DIR / "simulate" / "sites" / site["file"])
             solar.append(prof["solar_cf"].to_numpy()[top].mean())
             wind.append(prof["wind_cf"].to_numpy()[top].mean())
@@ -105,7 +113,7 @@ def annual_cf() -> dict[str, float]:
     """Annual capacity factors from B's 2024 site profiles: mean solar (AC) over the sites, and the best
     wind site's (wind gets built where it blows)."""
     try:
-        index = json.loads((DATA_DIR / "simulate" / "sites" / "index.json").read_text(encoding="utf-8"))
+        index = _build_sites()
         return {"solar_pv": float(np.mean([x["solar_cf"] for x in index])), "onshore_wind": float(max(x["wind_cf"] for x in index))}
     except (OSError, KeyError, ValueError, json.JSONDecodeError):
         log.exception("capacity factors from data/simulate failed; using catalog values")

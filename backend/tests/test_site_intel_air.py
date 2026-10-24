@@ -23,7 +23,10 @@ def no_key(monkeypatch):
 
 @pytest.fixture(scope="module")
 def hybrid():
+    # Pinned to Buttonwillow (San Joaquin Valley, Extreme ozone): the thresholds below are SJV's,
+    # whatever site the website starts at.
     preset = next(p for p in list_presets() if p.id == "hybrid")
+    preset = preset.model_copy(update={"site": preset.site.model_copy(update={"location": BUTTONWILLOW})}, deep=True)
     return preset, run_scenario(preset)
 
 
@@ -50,6 +53,16 @@ def test_snapshot_fallback_without_key(no_key):
     ids = {f.id: f.severity for f in air.air_findings(ctx)}
     assert ids["air_nonattainment"] == "warn" and "air_quality" in ids
     assert {p.source for p in ctx.provenance} >= {"EPA Green Book nonattainment areas", "AirNow (U.S. EPA and partners), preliminary data"}
+
+
+def test_greenbook_layer_availability_is_reported(no_key, monkeypatch, tmp_path):
+    # An empty list only means "attainment" when the layer loaded (the feasibility score checks this).
+    assert air.air_context(BUTTONWILLOW).nonattainment_loaded is True
+    assert air.air_context(LngLat(lon=-120.5, lat=41.5)).nonattainment_loaded is True  # Modoc: loaded, none listed
+    monkeypatch.setattr(air, "NONATTAINMENT", tmp_path / "missing.geojson")
+    ctx = air.air_context(BUTTONWILLOW)
+    assert ctx.nonattainment == [] and ctx.nonattainment_loaded is False
+    assert "nonattainment_loaded" not in (air.air_quality_dict(ctx) or {})
 
 
 def test_far_from_any_monitor(no_key):

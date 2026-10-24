@@ -39,6 +39,13 @@ def test_demo_site_screens_offline(offline):
     assert [order[f.severity] for f in intel.findings] == sorted(order[f.severity] for f in intel.findings)
 
 
+def test_nonattainment_availability_in_extras(offline, monkeypatch, tmp_path):
+    assert service.site_intel(KERN).extras["nonattainment_available"] is True
+    monkeypatch.setattr(air, "NONATTAINMENT", tmp_path / "missing.geojson")
+    intel = service.site_intel(KERN)
+    assert intel.extras["nonattainment"] == [] and intel.extras["nonattainment_available"] is False
+
+
 def test_far_site_degrades_to_findings(offline):
     intel = service.site_intel(LngLat(lon=-100.0, lat=40.0))  # Kansas: outside every offline dataset
     assert intel.land_cover == {}

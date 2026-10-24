@@ -14,7 +14,7 @@ Numbers are the Sat 1 AM snapshot (`sources.md`): refresh them before rehearsing
 
 | Time | D clicks | E says |
 |---|---|---|
-| 0:00 | The app opens on the California grid map. | "A 1 GW AI campus wants power, and only 13% of projects that join the interconnection queue ever get built. GridForge tells you in minutes whether a site is worth a queue position." |
+| 0:00 | The app opens on the California grid map. | "A 1 GW AI campus wants power, and only 13% of projects that join the interconnection queue ever get built. Griddy tells you in minutes whether a site is worth a queue position." |
 | 0:15 | Click the parcel at Buttonwillow, next to Midway substation. | "Buttonwillow in Kern County: 1.6 km from PG&E's Midway 500 kV substation." |
 | 0:25 | Point at the satellite overlay and the 2 km circle, then the Site intelligence panel. | "Google Earth Engine screens the 2 km around the parcel: flat at 0.4°, strong sun at 5.6 kWh/m²/day. But 74% of it is actively farmed, so there's a farmland-conversion flag. And it's in the San Joaquin Valley, Extreme ozone nonattainment." |
 | 0:50 | In Build, choose **Hybrid** (1.3 GW solar, 700 MW gas, 300 MW × 4 h battery). Run. | "Our hybrid campus: solar, gas and a battery, with only 300 MW from the grid." |
@@ -23,7 +23,7 @@ Numbers are the Sat 1 AM snapshot (`sources.md`): refresh them before rehearsing
 | 1:50 | Stress test on Hybrid: `AIR_PERMIT_RISK`. | "Here's what usually surfaces a year in: about 1,100 t of NOx against a 9 t major-source threshold. Expect offsets and top-tier controls from the air district." |
 | 2:05 | Switch to **Renewable-heavy**. Run. Stress test. | "The 'green' option misses 3,331 hours. It needs firming, and its interconnection needs a CAISO study. The tool says so instead of hiding it." |
 | 2:25 | Switch to **Grid-connected**. Carbon-aware panel: drag the slider to 30%. | "The campus as a virtual battery: moving 30% of the AI load to the cleanest hours of each day avoids about 65,000 t CO2e a year. The Green Software Foundation's SCI score drops per GPU-hour." |
-| 2:45 | Report: export. | "Every number with its source, plus an electrical bill of materials, ready for the utility conversation. That's GridForge." |
+| 2:45 | Report: export. | "Every number with its source, plus an electrical bill of materials, ready for the utility conversation. That's Griddy." |
 
 ## If something breaks
 

@@ -10,6 +10,7 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
 import { OptimizePanel, type RevealTarget } from "@/components/builder/OptimizePanel";
+import { GriddyMark } from "@/components/builder/GriddyMark";
 import { CompareView } from "@/components/builder/CompareView";
 import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
 import { ReportPanel } from "@/components/builder/ReportPanel";
@@ -23,6 +24,7 @@ import { SitePanel } from "@/components/explore/SitePanel";
 import { SettingsButton } from "@/components/settings/SettingsButton";
 import { SimulatePanel } from "@/components/simulate/SimulatePanel";
 import { StressPanel } from "@/components/simulate/StressPanel";
+import { GriddyGradeCard } from "@/components/site_intel/GriddyGradeCard";
 import { SiteIntelPanel } from "@/components/site_intel/SiteIntelPanel";
 import type { Mode, ScenarioResult } from "@/lib/contract";
 import { updateSettings, useSettings } from "@/lib/settings";
@@ -107,8 +109,10 @@ export function AppShell() {
       hint: "The selected site: grid context, nearby plants, site intelligence",
       content: (
         <>
+          {/* E's GriddyGrade: the score viewers should see first, above every other site card. */}
+          <PanelGuard key={`grade-${v}`} name="GriddyGrade"><GriddyGradeCard /></PanelGuard>
           <PanelGuard key={`site-${v}`} name="Site"><SitePanel /></PanelGuard>
-          <PanelGuard key={`intel-${v}`} name="Site intelligence"><SiteIntelPanel /></PanelGuard>
+          <PanelGuard key={`intel-${v}`} name="Site intelligence"><SiteIntelPanel showGrade={false} /></PanelGuard>
         </>
       ),
     },
@@ -210,7 +214,10 @@ export function AppShell() {
           data-chrome
           className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-zinc-200 bg-white/80 px-3 py-2 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950"
         >
-          <h1 className="text-lg font-bold">Griddy</h1>
+          <h1 className="flex items-center gap-1.5 text-lg font-bold">
+            <GriddyMark className="h-6 w-6 text-emerald-700 dark:text-cyan-300" />
+            Griddy
+          </h1>
           <span className="hidden text-sm text-zinc-500 xl:inline dark:text-zinc-400">Energy infrastructure planning</span>
           <Toggle label="Detail" value={detailMode} onChange={setDetailMode} options={[{ value: "basic", label: "Basic" }, { value: "advanced", label: "Advanced" }]} />
           <Toggle<View>

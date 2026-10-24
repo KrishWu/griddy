@@ -17,13 +17,16 @@ know your letter, ask.
 
 | | Workstream | Backend | Frontend |
 |---|---|---|---|
-| A | Explore (map + grid layers) | `backend/app/explore/` | `frontend/components/explore/` |
-| B | Simulate + Stress Test | `backend/app/simulate/` | `frontend/components/simulate/` |
+| A | Explore (map + grid layers), demand forecast | `backend/app/explore/`, `backend/app/forecast/`, `ml/demand_forecast/` | `frontend/components/explore/`, `frontend/components/forecast/` |
+| B | Simulate + Stress Test, site ranking | `backend/app/simulate/`, `backend/app/sites/`, `ml/site_location/` | `frontend/components/simulate/`, `frontend/components/sites/` |
 | C | Evaluate (costs, emissions, BOM) | `backend/app/evaluate/` | `frontend/components/evaluate/` |
-| D | Build + Report + UI shell | `backend/app/builder/` | `frontend/components/builder/`, `frontend/components/shell/AppShell.tsx`, `frontend/app/`, `frontend/lib/store.tsx` |
-| E | Site Intelligence (satellite, air, carbon) | `backend/app/site_intel/` | `frontend/components/site_intel/` |
+| D | Build + Report + UI shell | `backend/app/builder/` | `frontend/components/builder/`, `frontend/components/shell/AppShell.tsx`, `frontend/app/`, `frontend/lib/store.tsx`, `frontend/public/` |
+| E | Site Intelligence (satellite, air, carbon), pitch | `backend/app/site_intel/` | `frontend/components/site_intel/`, `docs/pitch/` |
 
-The full map is `ownership.json`.
+The full map is `ownership.json`. The app-wide UI added on 2026-10-24 (`frontend/components/`
+`about/`, `glossary/`, `settings/`, the other `shell/` files, `frontend/lib/settings.tsx` and
+`frontend/lib/glossary.ts`) isn't assigned to a workstream, so `check_ownership.py` fails a `ws/*`
+branch that touches it: change it in a `foundation/<what>` PR, like a shared file.
 
 ## 2. Edit only your own paths
 
@@ -110,6 +113,11 @@ scripts/setup.sh    # once: backend venv + npm ci
 scripts/dev.sh      # backend on :8000, frontend on :3000 (frontend proxies /api)
 ```
 
+The live app is https://getgriddy.app: the frontend is static files on Cloudflare Pages and
+the backend runs on Render. Render redeploys the backend after CI passes on `main`; the
+frontend is deployed separately (`deploy/cloudflare-pages/README.md`), so a merged frontend
+change isn't live until someone deploys it.
+
 The frontend is Next.js 16 (APIs differ from older versions). Read
 `frontend/AGENTS.md` and the guides in `frontend/node_modules/next/dist/docs/` before
 writing Next-specific code. Map components must be client components, and MapLibre
@@ -117,6 +125,8 @@ must load inside `useEffect`.
 
 ## 7. Git
 
+- The repo is https://github.com/KrishWu/griddy (it moved from `heruirayli/cleantech-hacks`;
+  old URLs and remotes redirect, or run `git remote set-url origin https://github.com/KrishWu/griddy.git`).
 - Branch name: `ws/<letter>-<short-name>`, e.g. `ws/b-simulate`. Branch from the latest `main`.
 - Open a **draft PR early** (GitHub needs one commit first:
   `git commit --allow-empty -m "ws/<letter>: start" && git push -u origin HEAD && gh pr create --draft --fill`)
