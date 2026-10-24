@@ -428,6 +428,17 @@ def test_placed_assets_blend_in_the_screen_and_fold_the_gen_tie_into_evaluate():
     assert f.needs_utility_study and f.metric > 0 and "150 MW of wind" in f.detail
 
 
+def test_judged_runs_keep_no_hourly_arrays():
+    """judge() and exact() record the weather check, then drop the run's hourly arrays (a few MB of
+    Python floats each), so ~20 finalists don't pile up on a 512 MB host; the response never reads them."""
+    ctx = context(OptimizeRequest(scenario=HYBRID, project=ProjectOptions(projection_years=0), placement="campus_only"))
+    mix = Mix.of(ctx.peak_mw, 0.5 * ctx.peak_mw, 0.0, 0.25 * ctx.peak_mw, 4.0)
+    j = opt.judge(ctx, mix)
+    assert j.sim.hourly is None and j.sim.summary.demand_mwh > 0
+    assert j.weather_ok is True  # campus placement: the exact run used the screen's own profiles
+    assert opt.exact(ctx, scenario_for(ctx, mix), mix).sim.hourly is None
+
+
 def test_a_dearer_remote_placement_is_replaced_by_the_campus_version():
     """Placement never costs more for the winning mix: a cell with the campus's own weather but a $500M
     gen-tie loses to the same mix at the campus, which then becomes the recommendation."""

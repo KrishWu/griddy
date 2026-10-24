@@ -402,12 +402,13 @@ def _cross(p: float, solar, wind, battery, durations, stage: str) -> list[Mix]:
 class Judged:
     mix: Mix  # after any firm-margin gas bump
     scenario: Scenario  # as judged (projected demand)
-    sim: SimulationResult
+    sim: SimulationResult  # hourly arrays dropped once scored (see _slim): summary and provenance only
     evaluation: EvaluationResult
     findings: list[Finding]
     failed: list[str]
     bumped_mw: float = 0.0
     place: Placement | None = None  # where its solar / wind went (None: the request's placement)
+    weather_ok: bool | None = None  # _weather_matches(), taken while the hourly arrays still exist
 
     @property
     def passes(self) -> bool:
@@ -705,7 +706,7 @@ def exact(ctx: Context, scenario: Scenario, mix: Mix) -> Judged:
     sim = simulate(scenario, ctx.catalog)
     findings = stress_test(scenario, sim) + _remote_finding(scenario)
     ev = evaluate(scenario, sim, ctx.catalog)
-    return Judged(mix, scenario, sim, ev, findings, _checks(ctx, sim, ev, findings, scenario))
+    return _slim(Judged(mix, scenario, sim, ev, findings, _checks(ctx, sim, ev, findings, scenario)))
 
 
 def judge(ctx: Context, mix: Mix, place: Placement | None = None) -> Judged:
@@ -724,7 +725,17 @@ def judge(ctx: Context, mix: Mix, place: Placement | None = None) -> Judged:
         findings = stress_test(sc, sim)
     ev = evaluate(sc, sim, ctx.catalog)
     findings = findings + _remote_finding(sc)
-    return Judged(mix, sc, sim, ev, findings, _checks(ctx, sim, ev, findings, sc), bumped, place or ctx.place)
+    j = Judged(mix, sc, sim, ev, findings, _checks(ctx, sim, ev, findings, sc), bumped, place or ctx.place)
+    j.weather_ok = _weather_matches(ctx, j)
+    return _slim(j)
+
+
+def _slim(j: Judged) -> Judged:
+    """Drop a judged run's hourly arrays once it is scored. They are Python lists of floats, a few MB
+    per run, and only _weather_matches() reads them; holding ~20 finalists' worth at once pushed one
+    request past 400 MB on a 512 MB host. Mutates in place: _run() keys finalists by id()."""
+    j.sim = j.sim.model_copy(update={"hourly": None})
+    return j
 
 
 def _non_dominated(items: list, cost, co2) -> list:
@@ -1046,7 +1057,7 @@ def _run(req: OptimizeRequest) -> dict:
     campus_only, weather_ok = None, None
     if best is not None and req.placement == "site_model":
         best, campus_only = _vs_campus(ctx, best, judged, passing, screened)
-        weather_ok = _weather_matches(ctx, best)
+        weather_ok = best.weather_ok
         if not weather_ok:
             ctx.notes.append("A remote cell's weather changed between the screen and the exact run (a live fetch landed or a stand-in "
                              "expired), so the screen ranked on slightly different solar / wind profiles; every reported number is the exact run's.")
