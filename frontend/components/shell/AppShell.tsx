@@ -5,10 +5,11 @@
 // map except its own controls. Every workstream's panel is mounted here, so feature branches edit
 // their own components, not this file.  OWNER: workstream D.
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
+import { OptimizePanel, type RevealTarget } from "@/components/builder/OptimizePanel";
 import { GriddyMark } from "@/components/builder/GriddyMark";
 import { CompareView } from "@/components/builder/CompareView";
 import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
@@ -32,7 +33,7 @@ import { useGridForge, type View } from "@/lib/store";
 import { BuildIcon, CostsIcon, LayersIcon, PlanIcon, ReportIcon, SimulateIcon, SiteIcon, StressIcon, SummaryIcon } from "./icons";
 import { PanelGuard } from "./PanelGuard";
 import { Sidebar, type SidebarTab } from "./Sidebar";
-import { selectSidebarTab, useSidebarTab } from "./sidebarTabs";
+import { selectSidebarTab, showRightTab, useSidebarTab } from "./sidebarTabs";
 
 /** Any number still coming from a stub or placeholder? Judges reward saying so. */
 function usesPlaceholderData(r: ScenarioResult | null): boolean {
@@ -70,6 +71,17 @@ export function AppShell() {
   const placeholder = useMemo(() => usesPlaceholderData(result), [result]);
   const [detailMode, setDetailMode] = useState<"basic" | "advanced">("basic");
   const advanced = detailMode === "advanced";
+  // "Use this design" in the optimizer: open the results tab it names (Advanced mode, single view,
+  // right sidebar expanded) so the loaded design's Simulate or Stress results are on screen.
+  const showPanel = useCallback(
+    (target: RevealTarget) => {
+      setView("single");
+      setDetailMode("advanced");
+      updateSettings({ rightCollapsed: false });
+      showRightTab(target);
+    },
+    [setView],
+  );
   const mode: Mode = scenario?.mode ?? "industrial";
   const compare = view === "compare";
   const { settings } = useSettings();
@@ -85,6 +97,7 @@ export function AppShell() {
       content: (
         <>
           <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
+          <PanelGuard name="Optimizer"><OptimizePanel advanced={advanced} onReveal={showPanel} /></PanelGuard>
           <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>
         </>
       ),
