@@ -5,17 +5,21 @@ https://getgriddy.app. `build.sh` runs `STATIC_EXPORT=1 next build` and copies `
 into `out/` here (Pages' GitHub builds only accept an output folder inside the root directory).
 `functions/api/[[path]].js` forwards `/api/*` to `BACKEND_ORIGIN` from `wrangler.toml`.
 
-**Frontend deploys are manual.** After merging frontend changes to `main`, run:
+**Deploying the frontend.** Pages is connected to GitHub (`KrishWu/griddy`, root directory
+`deploy/cloudflare-pages`, build command `bash build.sh`). Automatic production deployments are
+off for now, so each merge to `main` shows up as an Idle production deployment. To put `main` live:
 
-```bash
-scripts/deploy-frontend.sh   # builds with build.sh, uploads with Wrangler (first time: npx wrangler login)
-```
+- Cloudflare dashboard: Workers & Pages -> griddy -> Deployments -> the Idle entry -> ... ->
+  Retry deployment, which builds it from GitHub; or
+- `scripts/deploy-frontend.sh`, which builds locally with `build.sh` and uploads with Wrangler
+  (first time: `npx wrangler login`).
 
-The Pages project is also connected to GitHub (`KrishWu/griddy`, root directory
-`deploy/cloudflare-pages`, build command `bash build.sh`), but GitHub-built deployments
-skip the `/api` code, so every `/api` call on them returns 404 (seen on `2c825c7`, and with
-an advanced-mode `_worker.js` in #28). Keep automatic production deployments off in the
-dashboard (Settings -> Builds -> Branch control).
+GitHub builds include the `/api` code: the PR previews for #31-#33 and the production build of
+`5f5877a` (`5b59f56f`) all served `/api` on 2026-10-24. The first GitHub builds that day (`2c825c7`,
+and #28's preview) skipped it, so every `/api` call returned 404; the cause was never confirmed.
+After any production deploy, check that https://getgriddy.app/api/health returns 200, and roll back
+in the dashboard if it doesn't. Turning automatic production deployments back on (Settings ->
+Builds -> Branch control) makes every merge to `main` go live by itself.
 
 The backend runs on Render at https://griddy-api.onrender.com (`render.yaml`,
 `deploy/render/README.md`). Its free plan sleeps after 15 minutes idle, so the first `/api`
