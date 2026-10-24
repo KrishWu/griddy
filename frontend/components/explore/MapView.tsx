@@ -21,6 +21,7 @@ import { useGridForge } from "@/lib/store";
 import { closeForecastDrawer, isForecastDrawerOpen, subscribeForecastDrawer, toggleForecastDrawer, useForecastDrawer } from "./forecastDrawer";
 import { footprintBounds, footprintsFC, loadCatalog } from "./footprints";
 import { CA_BOUNDS, EMPTY_FC, circleRing, locKey, num } from "./geo";
+import { LANDMARKS, landmarkElement } from "./landmarks";
 import { LayerControl, type LayerStatus } from "./LayerControl";
 import {
   AREA_LAYER_IDS,
@@ -368,6 +369,10 @@ export function MapView({ advanced = true }: { advanced?: boolean }) {
       map.current = m;
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
       m.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
+      // Named places with an always-visible title (Stanford, where the website starts); removed with the map.
+      for (const lm of LANDMARKS) {
+        new maplibregl.Marker({ element: landmarkElement(lm.name), anchor: "bottom", offset: [0, -12] }).setLngLat([lm.lon, lm.lat]).addTo(m);
+      }
 
       // (Re)add our sources + layers; runs on every style load (initial basemap or fallback).
       const install = () => {

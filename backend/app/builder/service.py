@@ -27,7 +27,7 @@ from app.builder.project_report import project_report_rows
 # 220 kV+ facility is the SLAC 230 kV substation/line, 3.4 km away (A's site summary).
 DEFAULT_SITE = Site(
     id="stanford",
-    name="Stanford, Santa Clara County",
+    name="Stanford University",
     location=LngLat(lon=-122.1697, lat=37.4275),
     county="Santa Clara",
     utility_territory="PG&E",
