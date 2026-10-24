@@ -3,6 +3,7 @@
 // branches edit their own components, not this file.  OWNER: workstream D.
 import { useMemo } from "react";
 
+import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
 import { CompareView } from "@/components/builder/CompareView";
 import { ReportPanel } from "@/components/builder/ReportPanel";
@@ -89,6 +90,9 @@ export function AppShell() {
         <aside className="space-y-3 border-r border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
           <PanelGuard name="Build">
             <BuildPanel />
+          </PanelGuard>
+          <PanelGuard name="Assumptions">
+            <AssumptionsPanel />
           </PanelGuard>
           <PanelGuard key={`site-${v}`} name="Site">
             <SitePanel />

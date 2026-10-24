@@ -88,152 +88,152 @@ export function ReportView() {
 
   return (
     <div className="min-h-screen bg-zinc-100 py-6 print:bg-white print:py-0">
-    <main className="mx-auto max-w-4xl space-y-6 rounded-lg bg-white p-8 text-zinc-900 shadow-sm print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-      <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Link href="/" className="text-sm text-emerald-700 hover:underline">
-          ← Back to the planner
-        </Link>
-        <span className="ml-auto" />
-        <button className="rounded border border-zinc-300 px-3 py-1 text-sm" onClick={() => void downloadCsv(result)}>
-          Download CSV
-        </button>
-        <button className="rounded bg-zinc-900 px-3 py-1 text-sm text-white" onClick={() => window.print()}>
-          Print / Save as PDF
-        </button>
-      </div>
-
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-zinc-500">GridForge scenario report</p>
-        <h1 className="text-2xl font-bold">{sc.name}</h1>
-        <p className="text-sm text-zinc-600">
-          {sc.site.name} · {sc.site.location.lat.toFixed(3)}, {sc.site.location.lon.toFixed(3)}
-          {sc.site.county ? ` · ${sc.site.county} County` : ""}
-          {sc.site.utility_territory ? ` · ${sc.site.utility_territory}` : ""} · {sc.mode === "community" ? "Community microgrid" : "Industrial / AI campus"}
-        </p>
-        {placeholder && (
-          <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
-            Some figures still use placeholder data or stub models; they are marked in the sources below.
-          </p>
-        )}
-      </header>
-
-      <Section title="Headline results">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            ["CAPEX", usd(e.capex_total_usd)],
-            ["Annual OPEX", usd(e.annual_opex_usd)],
-            ["Net present cost", usd(e.npc_usd)],
-            ["LCOE", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`],
-            ["CO2e per year", tons(em.annual_t_co2e)],
-            ["Carbon intensity", `${Math.round(em.intensity_kg_per_mwh)} kg/MWh`],
-            ["On-site clean share", pct(s.onsite_clean_share)],
-            ["Unmet demand", `${s.hours_unmet} h (${mwh(s.unmet_mwh)})`],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded border border-zinc-200 p-2">
-              <div className="text-[11px] text-zinc-500">{label}</div>
-              <div className="text-base font-semibold tabular-nums">{value}</div>
-            </div>
-          ))}
+      <main className="mx-auto max-w-4xl space-y-6 rounded-lg bg-white p-8 text-zinc-900 shadow-sm print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <Link href="/" className="text-sm text-emerald-700 hover:underline">
+            ← Back to the planner
+          </Link>
+          <span className="ml-auto" />
+          <button className="rounded border border-zinc-300 px-3 py-1 text-sm" onClick={() => void downloadCsv(result)}>
+            Download CSV
+          </button>
+          <button className="rounded bg-zinc-900 px-3 py-1 text-sm text-white" onClick={() => window.print()}>
+            Print / Save as PDF
+          </button>
         </div>
-        <p className="text-[11px] text-zinc-500">Financial boundary: {e.financial_boundary}</p>
-      </Section>
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        <Section title="Design">
+        <header className="space-y-1">
+          <p className="text-xs uppercase tracking-wide text-zinc-500">GridForge scenario report</p>
+          <h1 className="text-2xl font-bold">{sc.name}</h1>
+          <p className="text-sm text-zinc-600">
+            {sc.site.name} · {sc.site.location.lat.toFixed(3)}, {sc.site.location.lon.toFixed(3)}
+            {sc.site.county ? ` · ${sc.site.county} County` : ""}
+            {sc.site.utility_territory ? ` · ${sc.site.utility_territory}` : ""} · {sc.mode === "community" ? "Community microgrid" : "Industrial / AI campus"}
+          </p>
+          {placeholder && (
+            <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              Some figures still use placeholder data or stub models; they are marked in the sources below.
+            </p>
+          )}
+        </header>
+
+        <Section title="Headline results">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              ["CAPEX", usd(e.capex_total_usd)],
+              ["Annual OPEX", usd(e.annual_opex_usd)],
+              ["Net present cost", usd(e.npc_usd)],
+              ["LCOE", `$${e.lcoe_usd_per_mwh.toFixed(0)}/MWh`],
+              ["CO2e per year", tons(em.annual_t_co2e)],
+              ["Carbon intensity", `${Math.round(em.intensity_kg_per_mwh)} kg/MWh`],
+              ["On-site clean share", pct(s.onsite_clean_share)],
+              ["Unmet demand", `${s.hours_unmet} h (${mwh(s.unmet_mwh)})`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded border border-zinc-200 p-2">
+                <div className="text-[11px] text-zinc-500">{label}</div>
+                <div className="text-base font-semibold tabular-nums">{value}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-zinc-500">Financial boundary: {e.financial_boundary}</p>
+        </Section>
+
+        <div className="grid gap-6 sm:grid-cols-2">
+          <Section title="Design">
+            <Table
+              head={["Asset", "Capacity", "Energy"]}
+              rows={[
+                ...sc.assets.map((x) => [
+                  ASSET_META[x.kind].label,
+                  mw(x.capacity_mw),
+                  x.kind === "battery" ? `${mwh(x.capacity_mw * (x.duration_h ?? 4))} (${x.duration_h ?? 4} h)` : "",
+                ]),
+                ["Grid import limit", mw(sc.grid.import_limit_mw), ""],
+                ["Grid export limit", mw(sc.grid.export_limit_mw ?? 0), ""],
+              ]}
+            />
+          </Section>
+          <Section title="Demand and grid">
+            <Table
+              head={["", "Value"]}
+              rows={[
+                ["Peak demand", mw(sc.demand.peak_mw)],
+                ["Load factor", (sc.demand.load_factor ?? 0.9).toFixed(2)],
+                ...(sc.mode === "community" ? [] : [["PUE", (sc.demand.pue ?? 1.2).toFixed(2)]]),
+                ["Load profile", sc.demand.profile ?? "flat"],
+                ["Annual demand", mwh(s.demand_mwh)],
+                ["Peak grid import", mw(s.peak_import_mw)],
+                ["New line to grid", `${(sc.grid.interconnection_km ?? 0).toFixed(0)} km`],
+                ["Point of interconnection", sc.grid.poi_voltage_kv ? `${Math.round(sc.grid.poi_voltage_kv)} kV` : "not yet known"],
+              ]}
+            />
+          </Section>
+        </div>
+
+        <Section title="Assumptions">
           <Table
-            head={["Asset", "Capacity", "Energy"]}
+            head={["Assumption", "Value"]}
             rows={[
-              ...sc.assets.map((x) => [
-                ASSET_META[x.kind].label,
-                mw(x.capacity_mw),
-                x.kind === "battery" ? `${mwh(x.capacity_mw * (x.duration_h ?? 4))} (${x.duration_h ?? 4} h)` : "",
-              ]),
-              ["Grid import limit", mw(sc.grid.import_limit_mw), ""],
-              ["Grid export limit", mw(sc.grid.export_limit_mw ?? 0), ""],
+              ["Weather / price year", String(a.weather_year ?? 2024)],
+              ["Analysis period", `${a.analysis_years ?? 20} years`],
+              ["Discount rate", pct(a.discount_rate ?? 0.07)],
+              ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 4).toFixed(2)}/MMBtu`],
+              ["Carbon price (on-site combustion)", `$${(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t`],
+              ["Grid price source", a.price_source === "flat" ? `Flat $${(a.flat_price_usd_per_mwh ?? 60).toFixed(0)}/MWh` : "CAISO historical hourly"],
+              ["Import delivery adder", `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
             ]}
           />
         </Section>
-        <Section title="Demand and grid">
+
+        <Section title="Costs">
           <Table
-            head={["", "Value"]}
-            rows={[
-              ["Peak demand", mw(sc.demand.peak_mw)],
-              ["Load factor", (sc.demand.load_factor ?? 0.9).toFixed(2)],
-              ...(sc.mode === "community" ? [] : [["PUE", (sc.demand.pue ?? 1.2).toFixed(2)]]),
-              ["Load profile", sc.demand.profile ?? "flat"],
-              ["Annual demand", mwh(s.demand_mwh)],
-              ["Peak grid import", mw(s.peak_import_mw)],
-              ["New line to grid", `${(sc.grid.interconnection_km ?? 0).toFixed(0)} km`],
-              ["Point of interconnection", sc.grid.poi_voltage_kv ? `${Math.round(sc.grid.poi_voltage_kv)} kV` : "not yet known"],
-            ]}
+            head={["Item", "Category", "Amount", "Source"]}
+            rows={e.lines.map((l) => [
+              l.item,
+              l.category.replace("_", " "),
+              `${usd(l.usd)}${l.category === "capex" ? "" : " /yr"}`,
+              <span key="s" className="text-zinc-500">
+                {sourceLabel(l.provenance)}
+              </span>,
+            ])}
           />
         </Section>
-      </div>
 
-      <Section title="Assumptions">
-        <Table
-          head={["Assumption", "Value"]}
-          rows={[
-            ["Weather / price year", String(a.weather_year ?? 2024)],
-            ["Analysis period", `${a.analysis_years ?? 20} years`],
-            ["Discount rate", pct(a.discount_rate ?? 0.07)],
-            ["Gas price (annual average)", `$${(a.gas_price_usd_per_mmbtu ?? 4).toFixed(2)}/MMBtu`],
-            ["Carbon price (on-site combustion)", `$${(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t`],
-            ["Grid price source", a.price_source === "flat" ? `Flat $${(a.flat_price_usd_per_mwh ?? 60).toFixed(0)}/MWh` : "CAISO historical hourly"],
-            ["Import delivery adder", `$${(a.import_adder_usd_per_mwh ?? 20).toFixed(0)}/MWh`],
-          ]}
-        />
-      </Section>
+        {e.bom.length > 0 && (
+          <Section title="Bill of materials">
+            <Table head={["Item", "Quantity", "Basis"]} rows={e.bom.map((b) => [b.item, `${b.quantity.toLocaleString()} ${b.unit}`, b.basis])} />
+          </Section>
+        )}
 
-      <Section title="Costs">
-        <Table
-          head={["Item", "Category", "Amount", "Source"]}
-          rows={e.lines.map((l) => [
-            l.item,
-            l.category.replace("_", " "),
-            `${usd(l.usd)}${l.category === "capex" ? "" : " /yr"}`,
-            <span key="s" className="text-zinc-500">
-              {sourceLabel(l.provenance)}
-            </span>,
-          ])}
-        />
-      </Section>
-
-      {e.bom.length > 0 && (
-        <Section title="Bill of materials">
-          <Table head={["Item", "Quantity", "Basis"]} rows={e.bom.map((b) => [b.item, `${b.quantity.toLocaleString()} ${b.unit}`, b.basis])} />
+        <Section title="Emissions">
+          <Table
+            head={["Source", "t CO2e / yr"]}
+            rows={Object.entries(em.by_source_t_co2e).map(([k, v]) => [k === "grid_imports" ? "Grid imports" : (ASSET_META[k as keyof typeof ASSET_META]?.label ?? k), tons(v)])}
+          />
         </Section>
-      )}
 
-      <Section title="Emissions">
-        <Table
-          head={["Source", "t CO2e / yr"]}
-          rows={Object.entries(em.by_source_t_co2e).map(([k, v]) => [k === "grid_imports" ? "Grid imports" : (ASSET_META[k as keyof typeof ASSET_META]?.label ?? k), tons(v)])}
-        />
-      </Section>
+        <Section title="Feasibility findings">
+          <ul className="space-y-1 text-xs">
+            {result.findings.map((f) => (
+              <li key={`${f.module}-${f.id}`}>
+                <span className={`font-semibold uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span> {f.title}: {f.detail}
+                {f.needs_utility_study && <span className="text-amber-700"> (needs a utility study)</span>}
+              </li>
+            ))}
+          </ul>
+        </Section>
 
-      <Section title="Feasibility findings">
-        <ul className="space-y-1 text-xs">
-          {result.findings.map((f) => (
-            <li key={`${f.module}-${f.id}`}>
-              <span className={`font-semibold uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span> {f.title}: {f.detail}
-              {f.needs_utility_study && <span className="text-amber-700"> (needs a utility study)</span>}
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      <Section title="Sources">
-        <ul className="space-y-0.5 text-xs text-zinc-600">
-          {sources.map((p) => (
-            <li key={`${p.kind}|${p.source}|${p.url ?? ""}`}>
-              <span className="font-medium">{p.kind}</span>: {p.source}
-              {p.url && <span className="text-zinc-400"> ({p.url})</span>}
-            </li>
-          ))}
-        </ul>
-      </Section>
-    </main>
+        <Section title="Sources">
+          <ul className="space-y-0.5 text-xs text-zinc-600">
+            {sources.map((p) => (
+              <li key={`${p.kind}|${p.source}|${p.url ?? ""}`}>
+                <span className="font-medium">{p.kind}</span>: {p.source}
+                {p.url && <span className="text-zinc-400"> ({p.url})</span>}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      </main>
     </div>
   );
 }
