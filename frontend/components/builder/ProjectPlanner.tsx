@@ -1,45 +1,30 @@
 "use client";
 
-import { useState } from "react";
 import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
-import { post } from "@/lib/api";
-import type { Scenario } from "@/lib/contract";
+import type { PlanningInputs } from "./useProjectPlanning";
 import { useGridForge } from "@/lib/store";
 import { NumberField } from "./NumberField";
 
-interface Plan {
-  scenario: Scenario;
-  projection: { years: number; peak_mw: number; unmet_hours: number; capex_usd: number; annual_t_co2e: number; lcoe_usd_per_mwh: number };
-  screening: { meets_entered_checks: boolean; issues: string[]; basis: string };
-}
-
 export function ProjectPlanner() {
-  const { scenario, setScenario, updateScenario, presets, applyPreset, runNow, running, autoRun } = useGridForge();
-  const [plant, setPlant] = useState("hybrid");
-  const [share, setShare] = useState(70);
-  const [storage, setStorage] = useState(4);
-  const [reserve, setReserve] = useState(15);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [proposal, setProposal] = useState<{ plan: Plan; key: string } | null>(null);
+  const { scenario, updateScenario, presets, applyPreset, runNow, running, autoRun, projectPlanning } = useGridForge();
+  const { inputs, updateInputs, busy, error, plan: proposal, retry } = projectPlanning;
+  const plant = inputs.plant_type;
+  const share = inputs.renewable_energy_share * 100;
+  const storage = inputs.storage_hours;
+  const reserve = inputs.reserve_margin * 100;
+  const setPlant = (value: string) => updateInputs({ plant_type: value as PlanningInputs["plant_type"] });
+  const setShare = (value: number) => updateInputs({ renewable_energy_share: value / 100 });
+  const setStorage = (value: number) => updateInputs({ storage_hours: value });
+  const setReserve = (value: number) => updateInputs({ reserve_margin: value / 100 });
   if (!scenario) return <Panel title="Plan a project">Loading…</Panel>;
   const options = (scenario.options?.project ?? {}) as Record<string, number | null>;
   const field = (key: string, fallback: number) => options[key] ?? fallback;
   const set = (key: string, value: number | null) => updateScenario(s => ({ ...s, options: { ...s.options, project: { ...s.options?.project as object, [key]: value } } }));
-  const body = { scenario, plant_type: plant, renewable_energy_share: share / 100, storage_hours: storage, reserve_margin: reserve / 100, project: options };
-  const key = JSON.stringify(body);
-  const stale = proposal?.key !== key;
-  const design = async () => {
-    setBusy(true); setError(null);
-    try { setProposal({ plan: await post<Plan>("/projects/plan", body), key }); }
-    catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
-  };
-  const projected = proposal?.plan.projection;
+  const projected = proposal?.projection;
   return <Panel title="Plan a project">
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">Choose a site or highlight an area on the map, then size a plant for your demand.</p>
+      <p className="text-xs text-zinc-500">Your project updates automatically when you change its inputs.</p>
       <label className="block text-xs">Start from a design
         <select className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1.5 dark:border-zinc-700" value={scenario.preset ?? "custom"} onChange={e => applyPreset(e.target.value)}>
           <option value="custom">Custom project</option>
@@ -84,18 +69,17 @@ export function ProjectPlanner() {
           <p className="text-zinc-500">Jobs use illustrative labor-spending assumptions. Contract value is indicative and does not reduce owner costs.</p>
         </div>
       </details>
-      <button disabled={busy} onClick={() => void design()} className="w-full rounded bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? "Checking projected demand…" : "Size plant for demand"}</button>
-      {error && <p role="alert" className="break-words text-xs text-red-600">{error}</p>}
+      {busy && <p role="status" aria-live="polite" className="text-xs text-zinc-500">Recalculating project…</p>}
+      {error && <div role="alert" className="text-xs text-red-600"><p>Could not recalculate the project.</p><button onClick={retry} className="mt-1 underline">Retry</button></div>}
       {proposal && projected && <div className="space-y-2 rounded border border-emerald-200 bg-emerald-50/40 p-2 text-xs dark:border-emerald-900 dark:bg-emerald-950/20">
         <p className="font-semibold">Year {projected.years}: {projected.peak_mw.toLocaleString(undefined, { maximumFractionDigits: 1 })} MW projected peak</p>
         <p>${(projected.capex_usd / 1e6).toFixed(1)}M capital · ${projected.lcoe_usd_per_mwh.toFixed(0)}/MWh · {(projected.annual_t_co2e / 1000).toFixed(1)} kt CO₂e/yr</p>
         <p>{projected.unmet_hours.toLocaleString()} hours unmet at projected demand</p>
-        {proposal.plan.scenario.assets.map(a => <p key={a.id}>{a.kind.replaceAll("_", " ")}: {a.capacity_mw.toFixed(1)} MW{a.kind === "battery" ? ` × ${a.duration_h} h` : ""}</p>)}
-        {proposal.plan.screening.issues.map(issue => <p key={issue} className="text-amber-800 dark:text-amber-300">{issue}</p>)}
-        <p className="text-zinc-500">{proposal.plan.screening.basis} Utility review required.</p>
-        <button disabled={stale} onClick={() => { setScenario(proposal.plan.scenario); setProposal(null); }} className="rounded bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-black">{stale ? "Inputs changed — size again" : "Use this design"}</button>
+        {proposal.scenario.assets.map(a => <p key={a.id}>{a.kind.replaceAll("_", " ")}: {a.capacity_mw.toFixed(1)} MW{a.kind === "battery" ? ` × ${a.duration_h} h` : ""}</p>)}
+        {proposal.screening.issues.map(issue => <p key={issue} className="text-amber-800 dark:text-amber-300">{issue}</p>)}
+        <p className="text-zinc-500">{proposal.screening.basis} Utility review required.</p>
       </div>}
-      {!autoRun && <button disabled={running} className="w-full rounded border px-3 py-1.5 text-sm" onClick={() => void runNow()}>Run current design</button>}
+      {!autoRun && <button disabled={running || busy} className="w-full rounded border px-3 py-1.5 text-sm" onClick={() => void runNow()}>Run current design</button>}
     </div>
   </Panel>;
 }

@@ -4,6 +4,7 @@
 // everything else in local component state. Panels read/write through useGridForge().
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useProjectPlanning, type ProjectPlanningState } from "@/components/builder/useProjectPlanning";
 import { api } from "./api";
 import { SCHEMA_VERSION, type LngLat, type MapOverlay, type Mode, type Scenario, type ScenarioResult, type SiteIntel, type SiteSummary } from "./contract";
 
@@ -13,6 +14,7 @@ type ErrorSource = "presets" | "run" | "compare";
 interface GridForgeState {
   presets: Scenario[];
   scenario: Scenario | null;
+  projectPlanning: ProjectPlanningState;
   /** The scenario's display name: the preset's name, or "<preset> (modified)" once edited. */
   scenarioLabel: string;
   setScenario: (s: Scenario) => void;
@@ -158,6 +160,7 @@ function designKey(s: Scenario): string {
 export function GridForgeProvider({ children }: { children: ReactNode }) {
   const [presets, setPresets] = useState<Scenario[]>([]);
   const [scenario, setScenario] = useState<Scenario | null>(null);
+  const projectPlanning = useProjectPlanning(scenario, setScenario);
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [resultVersion, setResultVersion] = useState(0);
   const [panelEpoch, setPanelEpoch] = useState(0);
@@ -232,7 +235,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   );
 
   const run = useCallback(async () => {
-    if (!scenario) return;
+    if (!scenario || projectPlanning.busy || projectPlanning.error) return;
     // Only the newest run may write state, so a slow older run (e.g. from a debounced
     // auto-run) can't overwrite a newer result.
     const my = ++runSeq.current;
@@ -250,7 +253,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     } finally {
       if (my === runSeq.current) setRunning(false);
     }
-  }, [scenario, labelFor, fail]);
+  }, [scenario, labelFor, fail, projectPlanning.busy, projectPlanning.error]);
 
   const runNow = useCallback(() => {
     setPanelEpoch((e) => e + 1);
@@ -259,10 +262,10 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
 
   // Debounced auto-run: any scenario edit re-runs half a second after the last change.
   useEffect(() => {
-    if (!autoRun || !scenario) return;
+    if (!autoRun || !scenario || projectPlanning.busy || projectPlanning.error) return;
     const t = setTimeout(() => void run(), 500);
     return () => clearTimeout(t);
-  }, [run, autoRun, scenario]);
+  }, [run, autoRun, scenario, projectPlanning.busy, projectPlanning.error]);
 
   const updateScenario = useCallback((fn: (s: Scenario) => Scenario) => setScenario((s) => (s ? fn(s) : s)), []);
 
@@ -386,6 +389,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       presets,
       scenario,
       scenarioLabel,
+      projectPlanning,
       setScenario,
       updateScenario,
       applyPreset,
@@ -421,6 +425,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       presets,
       scenario,
       scenarioLabel,
+      projectPlanning,
       updateScenario,
       applyPreset,
       loadCompared,
