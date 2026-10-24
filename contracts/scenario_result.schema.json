@@ -478,6 +478,19 @@
           "default": null,
           "title": "Substation Id"
         },
+        "poi_voltage_kv": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Voltage at the point of interconnection (from A's nearest line/substation)",
+          "title": "Poi Voltage Kv"
+        },
         "new_substation": {
           "default": true,
           "title": "New Substation",
@@ -638,7 +651,7 @@
           "type": "string"
         },
         "source": {
-          "description": "e.g. \"EIA-860 2024\", \"NREL ATB 2024 Moderate\", \"CAISO 2024\"",
+          "description": "e.g. \"EIA-860 2024\", \"ATB 2025 Moderate\", \"CAISO 2024\"",
           "title": "Source",
           "type": "string"
         },

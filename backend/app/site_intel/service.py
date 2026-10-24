@@ -8,7 +8,7 @@ air quality, and hourly grid carbon for carbon-aware load shifting
 
 from __future__ import annotations
 
-from app.contract import Finding, LngLat, Provenance, SiteIntel
+from app.contract import EvaluationResult, Finding, LngLat, Provenance, Scenario, SimulationResult, SiteIntel
 
 
 def site_intel(location: LngLat) -> SiteIntel:
@@ -19,3 +19,13 @@ def site_intel(location: LngLat) -> SiteIntel:
         ],
         provenance=[Provenance(kind="assumption", source="STUB")],
     )
+
+
+def site_findings(scenario: Scenario, sim: SimulationResult, evaluation: EvaluationResult) -> list[Finding]:
+    """Findings that need the scenario's results, appended to every /api/run.
+
+    E.g. AIR_PERMIT_RISK = C's gas NOx (evaluation.extras["nox_t_per_yr"]) at a site in a
+    nonattainment area (from cached AirNow/EPA data, never a live call here: this
+    runs on every scenario run and compare). STUB: no findings yet.
+    """
+    return []

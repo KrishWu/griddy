@@ -1,8 +1,8 @@
 "use client";
 // App-wide state: the scenario being edited, the latest results, and the selected
-// site. SHARED (foundation). Panels read/write through useGridForge(); add new
-// fields here only if more than one workstream needs them.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+// site.  OWNER: workstream D. Other workstreams: ask D for new shared state and keep
+// everything else in local component state. Panels read/write through useGridForge().
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api } from "./api";
 import type { LngLat, MapOverlay, Scenario, ScenarioResult, SiteIntel, SiteSummary } from "./contract";
@@ -32,6 +32,8 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [siteSummary, setSiteSummary] = useState<SiteSummary | null>(null);
   const [siteIntel, setSiteIntel] = useState<SiteIntel | null>(null);
+  const latestSiteId = useRef<string | null>(null);
+  const runSeq = useRef(0);
 
   useEffect(() => {
     api
@@ -45,23 +47,56 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
 
   const run = useCallback(async () => {
     if (!scenario) return;
+    // Only the newest run may write state, so a slow older run (e.g. from a debounced
+    // auto-run) can't overwrite a newer result.
+    const my = ++runSeq.current;
     setRunning(true);
     setError(null);
     try {
-      setResult(await api.run(scenario));
+      const r = await api.run(scenario);
+      if (my === runSeq.current) setResult(r);
     } catch (e) {
-      setError((e as Error).message);
+      if (my === runSeq.current) setError((e as Error).message);
     } finally {
-      setRunning(false);
+      if (my === runSeq.current) setRunning(false);
     }
   }, [scenario]);
 
   const updateScenario = useCallback((fn: (s: Scenario) => Scenario) => setScenario((s) => (s ? fn(s) : s)), []);
 
   const selectSite = useCallback(async (p: LngLat) => {
-    setScenario((s) => (s ? { ...s, site: { ...s.site, location: p } } : s));
+    // A clicked point is a new site: fresh id/name, never the preset's Kern labels.
+    // Modules that cache per site should key on location rounded to 0.01 deg, not id.
+    const id = `site-${p.lon.toFixed(3)}-${p.lat.toFixed(3)}`;
+    latestSiteId.current = id;
+    setScenario((s) =>
+      s
+        ? { ...s, site: { id, name: `Site at ${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}`, location: p, balancing_authority: s.site.balancing_authority } }
+        : s,
+    );
+    setSiteSummary(null);
+    setSiteIntel(null);
     const [summary, intel] = await Promise.allSettled([api.siteSummary(p), api.siteIntel(p)]);
-    setSiteSummary(summary.status === "fulfilled" ? summary.value : null);
+    if (latestSiteId.current !== id) return; // a newer click won; drop stale responses
+    if (summary.status === "fulfilled") {
+      const { site, nearest_line_kv, nearest_line_km } = summary.value;
+      setSiteSummary(summary.value);
+      // Hand A's grid context to the scenario: B's stress test reads poi_voltage_kv,
+      // C costs the tie line from interconnection_km.
+      setScenario((s) =>
+        s && s.site.id === id
+          ? {
+              ...s,
+              site: { ...s.site, county: site.county, utility_territory: site.utility_territory },
+              grid: {
+                ...s.grid,
+                poi_voltage_kv: nearest_line_kv ?? s.grid.poi_voltage_kv,
+                interconnection_km: nearest_line_km ?? s.grid.interconnection_km,
+              },
+            }
+          : s,
+      );
+    }
     setSiteIntel(intel.status === "fulfilled" ? intel.value : null);
   }, []);
 

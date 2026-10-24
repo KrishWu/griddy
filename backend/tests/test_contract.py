@@ -76,22 +76,25 @@ def test_api_endpoints_respond():
     assert len(client.post("/api/compare", json=presets).json()) == len(presets)
 
 
-def _ts_interfaces() -> dict[str, dict[str, bool]]:
-    """Parse frontend/lib/contract.ts into {Interface: {field: optional}}."""
+def _ts_interfaces() -> dict[str, dict[str, tuple[bool, bool]]]:
+    """Parse frontend/lib/contract.ts into {Interface: {field: (optional, nullable)}}."""
     import re
 
     src = (Path(__file__).resolve().parents[2] / "frontend" / "lib" / "contract.ts").read_text()
-    out: dict[str, dict[str, bool]] = {}
+    out: dict[str, dict[str, tuple[bool, bool]]] = {}
     for name, body in re.findall(r"export interface (\w+) \{(.*?)\n\}", src, re.S):
-        fields = re.findall(r"^\s+(\w+)(\??):", body, re.M)
-        out[name] = {f: bool(opt) for f, opt in fields}
+        fields = re.findall(r"^\s+(\w+)(\??):(.*?);?$", body, re.M)
+        out[name] = {f: (bool(opt), "| null" in ts_type) for f, opt, ts_type in fields}
     return out
 
 
 def test_typescript_contract_mirrors_python():
-    """contract.ts must declare exactly the same fields as contract.py, and every field
-    Python requires must be required in TypeScript too."""
+    """contract.ts must declare exactly the same fields as contract.py, every field
+    Python requires must be required in TypeScript too, and a field is nullable
+    (`| null`) in TypeScript exactly when it can be None in Python."""
     import inspect
+    import types
+    import typing
 
     from pydantic import BaseModel
 
@@ -114,6 +117,26 @@ def test_typescript_contract_mirrors_python():
         if extra := sorted(set(ts[name]) - set(py)):
             problems.append(f"{name}: in contract.ts but not contract.py: {extra}")
         for field, info in py.items():
-            if info.is_required() and ts[name].get(field):
+            if field not in ts[name]:
+                continue
+            ts_optional, ts_nullable = ts[name][field]
+            if info.is_required() and ts_optional:
                 problems.append(f"{name}.{field}: required in contract.py but optional (?) in contract.ts")
+            ann = info.annotation
+            py_nullable = typing.get_origin(ann) in (typing.Union, types.UnionType) and type(None) in typing.get_args(ann)
+            if py_nullable != ts_nullable:
+                want = "add" if py_nullable else "remove"
+                problems.append(f"{name}.{field}: {want} `| null` in contract.ts to match contract.py")
     assert not problems, "\n".join(problems)
+
+
+def test_site_findings_hook_cannot_break_a_run(monkeypatch):
+    """Sponsor integrations are optional: if E's hook raises, the core result still returns."""
+    import app.pipeline as pipeline
+
+    def boom(*_):
+        raise RuntimeError("Earth Engine unreachable")
+
+    monkeypatch.setattr(pipeline, "site_findings", boom)
+    result = pipeline.run_scenario(list_presets()[0])
+    assert any(f.id == "site_findings_error" for f in result.findings)

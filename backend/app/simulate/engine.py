@@ -69,7 +69,7 @@ def simulate(scenario: Scenario, catalog: Catalog) -> SimulationResult:
     for a in scenario.assets:
         if a.kind == "battery":
             batt_mw += a.capacity_mw
-            batt_mwh += a.capacity_mw * (a.duration_h or 4)
+            batt_mwh += a.capacity_mw * (4 if a.duration_h is None else a.duration_h)
         else:
             cap[a.kind] += a.capacity_mw
     rte = catalog.spec("battery").round_trip_efficiency or 0.85

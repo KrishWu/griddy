@@ -225,3 +225,10 @@ data/raw/
 *.tiff
 .DS_Store
 data/cache/
+
+# Raw downloads, caches and licensed imagery stay local (use data/raw/<module>/)
+data/*/raw/
+data/*/cache/
+# Demo videos: host externally and link from docs/pitch/
+*.mp4
+*.mov
