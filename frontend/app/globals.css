@@ -21,6 +21,7 @@
   --black: #070e1a;
   /* Settings > Text size (data-text-size on <html>, below). */
   --text-scale: 1;
+  --scrollbar-thumb: var(--tone-300);
   color-scheme: light;
 }
 
@@ -57,6 +58,7 @@
   --tone-800: #24364e;
   --tone-900: #142238;
   --tone-950: #0c182a;
+  --scrollbar-thumb: var(--tone-700);
   color-scheme: dark;
 }
 
@@ -77,6 +79,7 @@
   --tone-900: #1a1a1a;
   --tone-950: #0a0a0a;
   --black: #000000;
+  --scrollbar-thumb: var(--tone-700);
   color-scheme: dark;
 }
 /* Text that only inherits its color (no text-* class) would inherit the light page's dark ink, computed
@@ -90,6 +93,11 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Scrollbars follow the theme: a tone-colored thumb on a clear track, so they sit on whatever panel or
+   page is behind them. Set on every element (not just inherited from <html>) so Mixed's dark chrome
+   picks up its own --scrollbar-thumb. (Safari ignores scrollbar-color; color-scheme still darkens it.) */
+* { scrollbar-color: var(--scrollbar-thumb) transparent; }
 
 button, input, select { accent-color: #047857; }
 [data-theme="dark"] button, [data-theme="dark"] input, [data-theme="dark"] select,

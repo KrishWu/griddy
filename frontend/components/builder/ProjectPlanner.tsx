@@ -45,7 +45,7 @@ export function ProjectPlanner() {
         </select>
       </label>
       <p className="text-[11px] text-zinc-500">This design serves the entered load with generation, storage and grid imports. Solar or wind + storage adds no gas plant; the hybrid option includes gas backup. Data-center profiles are optional under Build.</p>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 items-end gap-2">
         <NumberField label="Demand growth" unit="% / yr" value={field("annual_demand_growth", 0.02) * 100} min={0} max={30} step={0.5} onChange={v => set("annual_demand_growth", v / 100)} />
         <NumberField label="Plan ahead" unit="years" value={field("projection_years", 5)} min={0} max={30} onChange={v => set("projection_years", Math.round(v))} />
       </div>

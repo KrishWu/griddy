@@ -33,7 +33,7 @@ export function AreaPanel() {
   const current = response?.key === body ? response : null;
   const stats = current?.stats;
   const set = (key: string, v: number) => updateScenario(s => ({ ...s, options: { ...s.options, area: { ...s.options?.area as object, [key]: v } } }));
-  return <Panel title="People & demand in selected area">
+  return <Panel title="People & demand">
     <div ref={setHost} className="mb-3" />
     {view === "compare" && <p className="mb-2 text-xs text-zinc-500">Open Single view to highlight an area.</p>}
     {!footprint ? <p className="text-xs text-zinc-500">Highlight an area to estimate its residents and electricity demand.</p> : <div className="space-y-2 text-xs">
