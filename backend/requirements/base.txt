@@ -1,0 +1,8 @@
+# Shared by every module (foundation). Versions verified together on Python 3.13.
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
+numpy==2.5.4
+pandas==2.3.3
+httpx==0.28.1
+pytest==9.1.1

@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.1.0",
+  "id": "hybrid",
+  "name": "Hybrid power campus",
+  "mode": "industrial",
+  "preset": "hybrid",
+  "site": {
+    "id": "kern-example",
+    "name": "Example site - Kern County, CA",
+    "location": {
+      "lon": -119.47,
+      "lat": 35.4
+    },
+    "county": "Kern",
+    "balancing_authority": "CAISO",
+    "utility_territory": "PG&E",
+    "footprint": null
+  },
+  "demand": {
+    "kind": "data_center",
+    "peak_mw": 1000.0,
+    "load_factor": 0.9,
+    "pue": 1.2,
+    "profile": "flat",
+    "flexible_share": 0.0
+  },
+  "assets": [
+    {
+      "id": "solar-1",
+      "kind": "solar_pv",
+      "name": null,
+      "capacity_mw": 1300.0,
+      "duration_h": null,
+      "location": null,
+      "overrides": {}
+    },
+    {
+      "id": "gas-1",
+      "kind": "gas_cc",
+      "name": null,
+      "capacity_mw": 600.0,
+      "duration_h": null,
+      "location": null,
+      "overrides": {}
+    },
+    {
+      "id": "batt-1",
+      "kind": "battery",
+      "name": null,
+      "capacity_mw": 300.0,
+      "duration_h": 4.0,
+      "location": null,
+      "overrides": {}
+    }
+  ],
+  "grid": {
+    "connected": true,
+    "import_limit_mw": 300.0,
+    "export_limit_mw": 0.0,
+    "interconnection_km": 15.0,
+    "substation_id": null,
+    "new_substation": true
+  },
+  "assumptions": {
+    "weather_year": 2024,
+    "analysis_years": 20,
+    "discount_rate": 0.07,
+    "gas_price_usd_per_mmbtu": 4.0,
+    "carbon_price_usd_per_t": 0.0,
+    "price_source": "caiso_historical",
+    "flat_price_usd_per_mwh": 60.0,
+    "import_adder_usd_per_mwh": 20.0
+  },
+  "options": {}
+}

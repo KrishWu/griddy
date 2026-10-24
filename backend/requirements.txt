@@ -1,0 +1,8 @@
+# Do not edit on feature branches. Add packages to your own file in requirements/
+# so five branches never conflict on this one.
+-r requirements/base.txt
+-r requirements/a-explore.txt
+-r requirements/b-simulate.txt
+-r requirements/c-evaluate.txt
+-r requirements/d-builder.txt
+-r requirements/e-site-intel.txt
