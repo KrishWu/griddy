@@ -81,3 +81,61 @@ def test_exports_carry_jobs_production_contracts_carbon_and_outage_metrics():
         assert lookup[key][3] == unit
         assert lookup[key][4]
     assert "no executed contracts" in lookup[("contracts", "status")][2]
+
+
+def test_weak_wind_site_drops_wind_from_hybrid_and_says_why():
+    plan = plan_project(PlanRequest(scenario=BASE))
+    kinds = {a.kind for a in plan["scenario"].assets}
+    assert "onshore_wind" not in kinds and "solar_pv" in kinds
+    notes = plan["screening"]["notes"]
+    assert len(notes) == 1 and "Wind left out" in notes[0] and "goes to solar" in notes[0]
+    assert notes[0] in plan["screening"]["issues"]  # the planner panel lists screening issues
+    assert plan["scenario"].options["sizing"]["renewable_split"] == {"solar_pv": 1.0}
+    # The 1 GW campus no longer gets a multi-GW wind farm sized on a ~3% capacity factor.
+    assert plan["projection"]["capex_usd"] < 10e9
+    assert 30 < plan["projection"]["lcoe_usd_per_mwh"] < 200
+
+
+def test_sizing_notes_are_not_screening_failures():
+    sc = BASE.model_copy(deep=True)
+    plan = plan_project(PlanRequest(scenario=sc, project=ProjectOptions(outage_hours=1)))
+    failures = [x for x in plan["screening"]["issues"] if x not in plan["screening"]["notes"]]
+    assert plan["screening"]["meets_entered_checks"] == (not failures)
+
+
+def test_windy_site_keeps_the_60_40_hybrid_split(monkeypatch):
+    import dataclasses
+
+    import app.builder.planner as planner
+
+    real = planner.prepare
+
+    def windy(scenario, catalog):
+        prep = real(scenario, catalog)
+        w = prep.drivers.wind_cf
+        prep.drivers = dataclasses.replace(prep.drivers, wind_cf=w * (0.40 / float(w.mean())))
+        return prep
+
+    monkeypatch.setattr(planner, "prepare", windy)
+    plan = plan_project(PlanRequest(scenario=BASE))
+    caps = {a.kind: a.capacity_mw for a in plan["scenario"].assets}
+    assert {"solar_pv", "onshore_wind"} <= caps.keys()
+    assert plan["screening"]["notes"] == []
+    assert plan["scenario"].options["sizing"]["renewable_split"] == {"solar_pv": 0.6, "onshore_wind": 0.4}
+    # Energy (capacity x CF) splits 60/40: wind at CF 0.40 carries 40% of the target.
+    solar_cf = float(real(plan["scenario"].model_copy(update={"assets": []}), planner.get_catalog()).drivers.solar_cf.mean())
+    assert caps["solar_pv"] * solar_cf / (caps["onshore_wind"] * 0.40) == pytest.approx(1.5, rel=0.02)
+
+
+def test_resource_aware_split_moves_a_weak_solar_share_to_wind():
+    from types import SimpleNamespace
+
+    from app.builder.planner import resource_aware_split
+    typical = {"solar_pv": 0.30, "onshore_wind": 0.45}
+    catalog = SimpleNamespace(spec=lambda k: SimpleNamespace(typical_capacity_factor=typical[k]))
+    weights = {"solar_pv": 0.6, "onshore_wind": 0.4}
+    split, notes = resource_aware_split(weights, {"solar_pv": 0.10, "onshore_wind": 0.40}, catalog)
+    assert split == {"onshore_wind": 1.0} and "Solar left out" in notes[0]
+    assert resource_aware_split(weights, {"solar_pv": 0.25, "onshore_wind": 0.30}, catalog) == (weights, [])
+    kept, both_weak = resource_aware_split(weights, {"solar_pv": 0.05, "onshore_wind": 0.05}, catalog)
+    assert kept == weights and "Both solar and wind are weak" in both_weak[0]

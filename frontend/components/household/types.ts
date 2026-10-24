@@ -205,3 +205,38 @@ export interface HouseholdResult {
   assumptions: { key: string; label: string; value: string; provenance: Prov }[];
   warnings: string[];
 }
+
+/** POST /api/household/solar/optimize: search solar kW (and battery kWh) for the best 25-year NPV. */
+export interface SolarOptimizeRequest {
+  household: HouseholdRequest;
+  budget_usd?: number | null;
+  roof_kw_max?: number | null;
+  include_battery?: boolean;
+}
+
+export interface SolarOptimizeCandidate {
+  solar_kw: number;
+  battery_kwh: number;
+  upfront_cost_usd: number;
+  npv_usd: number;
+  payback_years: number | null;
+  feasible: boolean;
+}
+
+export interface SolarOptimizeResult {
+  applicable: boolean;
+  solar_kw: number;
+  battery_kwh: number;
+  upfront_cost_usd: number;
+  annual_savings_usd: number;
+  payback_years: number | null;
+  npv_usd: number;
+  annual_production_kwh: number;
+  /** Production / annual use. */
+  offset_share: number;
+  /** What capped the size: any of "roof", "budget", "demand". */
+  binding: string[];
+  reason: string;
+  candidates: SolarOptimizeCandidate[];
+  provenance: Prov[];
+}

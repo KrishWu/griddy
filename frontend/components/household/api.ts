@@ -2,7 +2,7 @@
 // OWNER: household (frontend).
 import { post, request } from "@/lib/api";
 
-import type { HouseholdOptions, HouseholdRequest, HouseholdResult, UsageParseResult } from "./types";
+import type { HouseholdOptions, HouseholdRequest, HouseholdResult, SolarOptimizeRequest, SolarOptimizeResult, UsageParseResult } from "./types";
 
 export const householdApi = {
   options: () => request<HouseholdOptions>("/household/options"),
@@ -10,6 +10,9 @@ export const householdApi = {
   /** Abortable: the what-if controls fire a new plan on every change and cancel the stale one. */
   plan: (req: HouseholdRequest, signal?: AbortSignal) =>
     request<HouseholdResult>("/household/plan", { method: "POST", body: JSON.stringify(req), signal }),
+  /** Best solar (+ battery) size for this home by 25-year NPV, within roof room and budget. */
+  optimizeSolar: (req: SolarOptimizeRequest, signal?: AbortSignal) =>
+    request<SolarOptimizeResult>("/household/solar/optimize", { method: "POST", body: JSON.stringify(req), signal }),
 };
 
 /** The backend's error text, trimmed to its `detail` when FastAPI sent one. */

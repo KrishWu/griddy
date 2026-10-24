@@ -662,6 +662,28 @@ export const GLOSSARY = {
     why: "Griddy reports simple payback (upfront cost after incentives ÷ first-year savings) and a 25-year NPV that does include rate growth and panel aging.",
     unit: "years",
   },
+  years_to_profitable: {
+    term: "Years to profitable",
+    long: "Discounted payback from the go-ahead",
+    def: "How many years from the decision to build until the design's savings, versus buying all its power from the utility, have repaid the build cost, counting the construction years and the cost of capital.",
+    summary: "Years from the go-ahead until discounted savings versus utility power repay the build cost.",
+    why: "Griddy walks year by year: the build cost at the go-ahead, the construction years, then each year's savings versus buying every served MWh at California's 2024 average utility rate (EIA), with the design's own grid purchases at that rate too, discounted at the scenario's real rate. The same walk gives the 20-year net savings; simple payback (build cost ÷ year-1 savings) is in the tooltip.",
+    unit: "years",
+  },
+  homes_equivalent: {
+    term: "Homes' worth of electricity",
+    def: "A size comparison: the project's yearly energy divided by what an average California home uses in a year (6,482 kWh, EIA RECS 2020).",
+    summary: "Yearly energy served ÷ an average California home's 6,482 kWh a year.",
+    why: "Makes a TWh figure easy to picture. For an AI campus it is a comparison only: the campus, not homes, uses the power.",
+    unit: "homes",
+  },
+  time_to_power: {
+    term: "Time to power",
+    def: "How long until a new load can switch on. Getting a big grid connection means utility studies and upgrades, and the median generation or storage project built in 2025 waited over 5 years from its connection request (LBNL Queued Up 2026).",
+    summary: "How soon a new load can switch on, often limited by how much grid capacity it must wait for.",
+    why: "Griddy shows how much grid import capacity a design asks for versus the facility's peak. On-site supply that shrinks that request can mean powering up sooner, but only a utility study can say how much sooner.",
+    unit: "MW of grid import asked for",
+  },
   cca: {
     term: "CCA",
     long: "Community Choice Aggregator",

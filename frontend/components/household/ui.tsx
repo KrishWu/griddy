@@ -26,14 +26,29 @@ export function Card({ title, aside, children, className }: { title?: ReactNode;
   );
 }
 
-export function StatTile({ label, value, sub, provenance, tipLabel }: { label: ReactNode; value: string; sub?: ReactNode; provenance?: Prov | Prov[] | null; tipLabel?: string }) {
+export function StatTile({
+  label,
+  value,
+  sub,
+  provenance,
+  tipLabel,
+  compact,
+}: {
+  label: ReactNode;
+  value: string;
+  sub?: ReactNode;
+  provenance?: Prov | Prov[] | null;
+  tipLabel?: string;
+  /** Secondary numbers: smaller type and padding, so the headline above stays the focus. */
+  compact?: boolean;
+}) {
   return (
-    <div className="min-w-0 rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className={`min-w-0 rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${compact ? "px-2.5 py-1.5" : "px-3 py-2"}`}>
       <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
         <span className="truncate">{label}</span>
         {provenance !== undefined && <ProvenanceTip label={tipLabel ?? (typeof label === "string" ? label : "this number")} provenance={provenance} />}
       </div>
-      <div className="text-lg font-semibold tabular-nums text-zinc-900 sm:text-xl dark:text-zinc-50">{value}</div>
+      <div className={`font-semibold tabular-nums text-zinc-900 dark:text-zinc-50 ${compact ? "text-base" : "text-lg sm:text-xl"}`}>{value}</div>
       {sub && <div className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{sub}</div>}
     </div>
   );
