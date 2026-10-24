@@ -1,8 +1,13 @@
 # Cloudflare Pages deploy
 
-The frontend ships as static files (`STATIC_EXPORT=1 next build` writes `frontend/out/`) to the
-Cloudflare Pages project `griddy`, served at https://getgriddy.app. `functions/api/[[path]].js`
-forwards `/api/*` to `BACKEND_ORIGIN` from `wrangler.toml`.
+The frontend ships as static files to the Cloudflare Pages project `griddy`, served at
+https://getgriddy.app. `build.sh` runs `STATIC_EXPORT=1 next build` and copies `frontend/out/`
+into `out/` here, because Pages only accepts an output folder inside its root directory.
+`functions/api/[[path]].js` forwards `/api/*` to `BACKEND_ORIGIN` from `wrangler.toml`.
+
+Pages builds every push to `main` from GitHub (`KrishWu/griddy`) with root directory
+`deploy/cloudflare-pages` and build command `bash build.sh`. `scripts/deploy-frontend.sh`
+uploads a local build instead, if a GitHub build ever needs bypassing.
 
 The backend runs on Render at https://griddy-api.onrender.com (`render.yaml`,
 `deploy/render/README.md`). Its free plan sleeps after 15 minutes idle, so the first `/api`
@@ -30,4 +35,4 @@ cloudflared tunnel route dns griddy-api api.getgriddy.app
 plus `~/.cloudflared/config.yml` pointing the tunnel at `http://127.0.0.1:8000`, and the
 custom domain `getgriddy.app` added to the Pages project in the Cloudflare dashboard.
 
-Redeploy the frontend after merging frontend changes: `scripts/deploy-frontend.sh`.
+Merging to `main` redeploys the frontend; no manual step is needed.
