@@ -10,33 +10,51 @@ import { Term } from "@/components/glossary/Term";
 import { ActiveChart, CHART_WRAP, DayChart, MonthBars } from "./charts";
 import { compactUsd, kg, kwh, num, pct0, signedKg, signedUsd, usd0 } from "./fmt";
 import type { ProfileDraft } from "./ProfileForm";
-import type { HouseholdResult, HouseholdWhatIf, Recommendation } from "./types";
+import { SolarOptimizer } from "./SolarOptimizer";
+import type { HouseholdRequest, HouseholdResult, HouseholdWhatIf, Recommendation } from "./types";
 import { Badge, Card, FOCUS, LegendRow, Notes, Slider, StatTile } from "./ui";
 
-/** Solar 0 or 3–10 kW, battery 0 or 5–15 kWh (the backend's ranges): snap the gap to its floor. */
+/** Solar 0 or 1 kW up (the optimizer's search range), battery 0 or 5–15 kWh: snap the gap to its floor. */
 const snap = (v: number, floor: number) => (v > 0 && v < floor ? floor : v);
 
-export function SolarTab({ r, draft, whatif, setWhatif }: { r: HouseholdResult; draft: ProfileDraft; whatif: HouseholdWhatIf; setWhatif: (p: Partial<HouseholdWhatIf>) => void }) {
+export function SolarTab({
+  r,
+  draft,
+  patchDraft,
+  whatif,
+  setWhatif,
+  request,
+}: {
+  r: HouseholdResult;
+  draft: ProfileDraft;
+  patchDraft: (p: Partial<ProfileDraft>) => void;
+  whatif: HouseholdWhatIf;
+  setWhatif: (p: Partial<HouseholdWhatIf>) => void;
+  request: HouseholdRequest;
+}) {
   const s = r.solar;
   const renter = draft.tenure === "rent";
   const kw = whatif.solar_kw ?? 0;
   const bat = whatif.battery_kwh ?? 0;
   const existing = draft.has_solar && !kw;
+  // 10 kW by default; room for a bigger roof or an optimizer pick (it searches up to 15 kW).
+  const kwMax = Math.min(15, Math.max(10, Math.ceil(kw), Math.ceil(draft.roof_kw_max ?? 0)));
   return (
     <div className="grid gap-3">
-      <Card title={existing ? "Your existing system, plus what-ifs" : "Size a system"} aside={<Term k="nbt">Net Billing Tariff</Term>}>
+      <SolarOptimizer r={r} draft={draft} patchDraft={patchDraft} whatif={whatif} setWhatif={setWhatif} request={request} />
+      <Card title={existing ? "Your existing system, plus what-ifs" : "Size a system yourself"} aside={<Term k="nbt">Net Billing Tariff</Term>}>
         <div className="space-y-3">
           <Slider
             label="Rooftop solar"
             value={kw}
             min={0}
-            max={10}
+            max={kwMax}
             step={0.5}
             format={(v) => (v === 0 ? (draft.has_solar ? "existing only" : "none") : `${v} kW`)}
-            onChange={(v) => setWhatif({ solar_kw: snap(v, 3) || null })}
+            onChange={(v) => setWhatif({ solar_kw: snap(v, 1) || null })}
             changed={kw > 0}
             onReset={() => setWhatif({ solar_kw: null, battery_kwh: null })}
-            hint={draft.roof_kw_max ? `Your roof fits about ${draft.roof_kw_max} kW.` : "0, or 3 to 10 kW. A typical home system is 4 to 7 kW."}
+            hint={draft.roof_kw_max ? `Your roof fits about ${draft.roof_kw_max} kW.` : `0, or 1 to ${kwMax} kW. A typical home system is 4 to 7 kW.`}
           />
           <Slider
             label="Home battery"

@@ -22,6 +22,32 @@ class PlanRequest(Model):
     project: ProjectOptions = Field(default_factory=ProjectOptions)
 
 
+# A renewable whose site capacity factor is below this fraction of the catalog's typical CF is left out of the
+# hybrid mix: meeting its energy share there takes several times the usual capacity (e.g. 8 GW of wind for 1 GW).
+WEAK_RESOURCE_FRACTION = 0.5
+LABELS = {"solar_pv": "solar", "onshore_wind": "wind"}
+
+
+def resource_aware_split(weights: dict[str, float], cfs: dict[str, float], catalog) -> tuple[dict[str, float], list[str]]:
+    """Drop a weak renewable from the hybrid split and give its share to the usable one; keep the split otherwise."""
+    weak = {}
+    for kind in weights:
+        typical = catalog.spec(kind).typical_capacity_factor
+        if typical and cfs[kind] < WEAK_RESOURCE_FRACTION * typical:
+            weak[kind] = typical
+    usable = [k for k in weights if k not in weak]
+    if not weak or not usable:
+        if weak:
+            return weights, ["Both solar and wind are weak at this site (capacity factor below half the NREL ATB reference); "
+                             "the default 60/40 split is kept, so expect a large, costly renewable build."]
+        return weights, []
+    keep = usable[0]
+    notes = [f"{LABELS[k].capitalize()} left out of the hybrid: this site's modelled {LABELS[k]} capacity factor is "
+             f"{cfs[k]:.1%}, below half the {typ:.1%} NREL ATB reference, so its {weights[k]:.0%} share of the renewable "
+             f"target goes to {LABELS[keep]}." for k, typ in weak.items()]
+    return {keep: 1.0}, notes
+
+
 def plan_project(req: PlanRequest) -> dict:
     sc = req.scenario.model_copy(deep=True)
     if not 0 < sc.demand.peak_mw <= 20000:
@@ -46,9 +72,13 @@ def plan_project(req: PlanRequest) -> dict:
     weights = {"solar_pv": 1.0} if req.plant_type == "solar_storage" else {"onshore_wind": 1.0}
     if req.plant_type == "hybrid":
         weights = {"solar_pv": 0.6, "onshore_wind": 0.4}
+    notes: list[str] = []
     if renewable:
+        cfs = {kind: float(getattr(prep.drivers, "solar_cf" if kind == "solar_pv" else "wind_cf").mean()) for kind in weights}
+        if req.plant_type == "hybrid":
+            weights, notes = resource_aware_split(weights, cfs, catalog)
         for kind, share in weights.items():
-            cf = float(getattr(prep.drivers, "solar_cf" if kind == "solar_pv" else "wind_cf").mean())
+            cf = cfs[kind]
             if cf <= 0:
                 raise ValueError(f"No usable resource profile for {kind} at this site.")
             assets.append(Asset(id=f"planned-{kind}", kind=kind, capacity_mw=mean * target * share / cf))
@@ -79,6 +109,7 @@ def plan_project(req: PlanRequest) -> dict:
     if any(f.severity == "fail" for f in findings):
         failures.append("Hourly stress screening contains failing findings.")
     sc.options["sizing"] = {"plant_type": req.plant_type, "projected_peak_mw": projected.demand.peak_mw,
+        "renewable_split": weights if renewable else {}, "notes": notes,
         "basis": "Capacity sized for compound demand growth; renewable share is a gross energy sizing target before curtailment and storage losses. A heuristic candidate, not a least-cost optimum or a certified design."}
     return {"scenario": sc, "projection": {"years": req.project.projection_years,
         "peak_mw": projected.demand.peak_mw, "demand_mwh": sim.summary.demand_mwh,
@@ -88,6 +119,7 @@ def plan_project(req: PlanRequest) -> dict:
         "lcoe_usd_per_mwh": evaluation.economics.lcoe_usd_per_mwh,
         "annual_t_co2e": evaluation.emissions.annual_t_co2e,
         "resilience": sim.extras["resilience"]},
-        "screening": {"meets_entered_checks": not failures, "issues": failures,
+        # Sizing notes are listed with the issues (the planner panel shows that list) but are not failures.
+        "screening": {"meets_entered_checks": not failures, "issues": notes + failures, "notes": notes,
             "needs_utility_study": True, "basis": sc.options["sizing"]["basis"]},
         "findings": [f.model_dump() for f in findings]}

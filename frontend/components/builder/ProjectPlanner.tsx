@@ -24,7 +24,15 @@ export function ProjectPlanner() {
   const projected = proposal?.projection;
   return <Panel title="Plan grid infrastructure">
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">Plan power plants, storage and a grid connection to serve an area&apos;s demand. Compare cost, power, carbon and resilience before detailed engineering.</p>
+      {scenario.mode === "community"
+        ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-900 dark:bg-emerald-950/40">
+            <p className="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-50">Plan a community microgrid that keeps critical loads on in a grid outage and lowers bills and carbon.</p>
+            <p className="mt-1 text-xs leading-snug text-zinc-600 dark:text-zinc-300">It uses the same hour-by-hour model Griddy runs for AI campuses, whose fast-growing demand is straining the grid. The Summary shows homes powered, outage protection, cost per home and payback, each with its source.</p>
+          </div>
+        : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-900 dark:bg-emerald-950/40">
+            <p className="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-50">Plan power for a big new load like a 1 GW AI campus: where to build, what to build, what it costs, and when it pays back.</p>
+            <p className="mt-1 text-xs leading-snug text-zinc-600 dark:text-zinc-300">Plan power plants, storage and a grid connection for the demand, then compare cost, payback, carbon and resilience before detailed engineering.</p>
+          </div>}
       <label className="block text-xs">Start from a design
         <select className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1.5 dark:border-zinc-700" value={scenario.preset ?? "custom"} onChange={e => applyPreset(e.target.value)}>
           <option value="custom">Custom project</option>

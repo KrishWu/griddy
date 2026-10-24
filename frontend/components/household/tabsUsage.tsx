@@ -125,6 +125,25 @@ export function CostsTab({ r }: { r: HouseholdResult }) {
           </span>
         }
       >
+        <div className="mb-3 grid grid-cols-2 gap-3 rounded-md bg-zinc-50 p-2.5 dark:bg-zinc-900">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+              Annual bill (estimate) <ProvenanceTip label="Annual bill" provenance={[...b.provenance, ...loadProvenance(r)]} />
+            </div>
+            <div className="text-3xl font-bold tabular-nums tracking-tight text-zinc-950 dark:text-white">{usd0(b.annual_usd)}</div>
+            <div className="text-xs tabular-nums text-zinc-600 dark:text-zinc-300">about {usd0(num(b.annual_usd) / 12)} / month</div>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+              Electricity cost <ProvenanceTip label="Effective electricity cost" provenance={[...b.provenance, ...loadProvenance(r)]} />
+            </div>
+            <div className="text-3xl font-bold tabular-nums tracking-tight text-zinc-950 dark:text-white">
+              {cents(b.effective_usd_per_kwh)}
+              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300"> / kWh</span>
+            </div>
+            <div className="text-xs text-zinc-600 dark:text-zinc-300">all-in average, fixed charges included</div>
+          </div>
+        </div>
         <HBars
           ariaLabel="Annual cost by TOU period"
           rows={b.by_period.map((p) => ({

@@ -337,3 +337,40 @@ class HouseholdResult(Out):
     assumptions: list[Assumption]
     warnings: list[str]
     time_view: dict
+
+
+# ---------------------------------------------------------------------------
+# Solar sizing search (POST /api/household/solar/optimize)
+# ---------------------------------------------------------------------------
+
+
+class SolarOptimizeRequest(In):
+    household: HouseholdRequest
+    budget_usd: float | None = Field(default=None, ge=0, le=10_000_000)
+    roof_kw_max: float | None = Field(default=None, ge=0, le=50)
+    include_battery: bool = True
+
+
+class SolarCandidate(Out):
+    solar_kw: float
+    battery_kwh: float
+    upfront_cost_usd: float  # after incentives
+    npv_usd: float
+    payback_years: float | None
+    feasible: bool
+
+
+class SolarOptimizeResult(Out):
+    applicable: bool
+    solar_kw: float  # new solar to add (existing solar is kept)
+    battery_kwh: float  # new battery to add
+    upfront_cost_usd: float  # after incentives; compared with the budget
+    annual_savings_usd: float
+    payback_years: float | None
+    npv_usd: float  # 25-year NPV, same as the Solar tab
+    annual_production_kwh: float
+    offset_share: float  # production / annual use
+    binding: list[Literal["roof", "budget", "demand"]]
+    reason: str
+    candidates: list[SolarCandidate]
+    provenance: list[Prov]

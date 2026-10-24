@@ -10,16 +10,18 @@
 // OWNER: household (frontend).
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { ProvenanceTip } from "@/components/evaluate/ProvenanceTip";
 import { Term } from "@/components/glossary/Term";
 import { api } from "@/lib/api";
 
 import { errorText, householdApi } from "./api";
-import { kg, kwh, num, pct0, usd0 } from "./fmt";
-import { setHomePin, useHomePin, type HomePin } from "./homePin";
+import { cents, kg, kwh, num, pct0, signedUsd, usd0 } from "./fmt";
+import { selectHomeTab, setHomePin, useHomePin, type HomePin } from "./homePin";
 import { DEFAULT_DRAFT, ProfileForm, toRequest, type ProfileDraft } from "./ProfileForm";
 import { OutlookTab, SolarTab, TipsTab } from "./tabsMore";
 import { CostsTab, loadProvenance, SimulatedBadge, SourcesTab, UsageTab } from "./tabsUsage";
-import type { HouseholdOptions, HouseholdResult, HouseholdWhatIf, TimeSelection, UtilityId } from "./types";
+import { planBlurb } from "./theme";
+import type { HouseholdOptions, HouseholdRequest, HouseholdResult, HouseholdWhatIf, Prov, TimeSelection, UtilityId } from "./types";
 import { TimeContext } from "./TimeContext";
 import { FOCUS, StatTile } from "./ui";
 import { WhatIfTab } from "./WhatIfTab";
@@ -59,6 +61,8 @@ interface HomeState {
   place: PinPlace | null;
   time: TimeSelection;
   setTime: (patch: Partial<TimeSelection>) => void;
+  /** The body of the current /plan request (the Solar tab's optimizer sends the same household). */
+  request: HouseholdRequest;
 }
 
 const HomeCtx = createContext<HomeState | null>(null);
@@ -192,8 +196,8 @@ export function HouseholdProvider({ active, children }: { active: boolean; child
   }, [active, key, nonce]);
 
   const value = useMemo<HomeState>(
-    () => ({ draft, patchDraft, whatif, setWhatif, options, result, error, pending, retry, pin, place: place && key0 === place.key ? place : null, time, setTime }),
-    [draft, patchDraft, whatif, setWhatif, options, result, error, pending, retry, pin, place, key0, time, setTime],
+    () => ({ draft, patchDraft, whatif, setWhatif, options, result, error, pending, retry, pin, place: place && key0 === place.key ? place : null, time, setTime, request }),
+    [draft, patchDraft, whatif, setWhatif, options, result, error, pending, retry, pin, place, key0, time, setTime, request],
   );
   return <HomeCtx.Provider value={value}>{children}</HomeCtx.Provider>;
 }
@@ -248,28 +252,120 @@ export function HomeProfilePanel() {
   );
 }
 
-function Headline({ r }: { r: HouseholdResult }) {
+/** The hero: the bill first (what a household came here to understand), then the price per kWh and
+ *  the plan behind it, then the single biggest saving with a jump to Tips. */
+function BillHero({ r }: { r: HouseholdResult }) {
+  const b = r.bill;
+  const recs = [...r.recommendations].filter((x) => num(x.annual_usd_saved) >= 1).sort((x, y) => num(y.annual_usd_saved) - num(x.annual_usd_saved));
+  const top = recs[0];
+  // The biggest saving is often an investment (solar); name the best no-cost change beside it.
+  const free = top?.upfront_usd ? recs.find((x) => !x.upfront_usd) : undefined;
+  const custom = b.plan === "custom";
+  const blurb = custom ? b.plan_label : planBlurb(b.plan_label);
+  const withChanges = num(r.whatif.combined.annual_usd);
+  const changed = Math.abs(withChanges - num(b.annual_usd)) >= 1;
+  const recProv: Prov[] = [
+    {
+      kind: "simulated",
+      source: "Griddy Home: your hourly load re-priced with each change on your rate plan",
+      note: "Estimate. Solar and battery savings use NREL PVWatts output and PG&E Net Billing export credits; see the Solar tab for its sources.",
+    },
+    ...b.provenance,
+  ];
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <section aria-label="Your electricity bill" className="min-w-0 rounded-xl border-2 border-emerald-700/25 bg-white p-3 sm:p-4 dark:border-cyan-300/25 dark:bg-zinc-950">
+      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-900 dark:text-cyan-200">
+        Your electricity bill <span className="font-normal normal-case tracking-normal text-zinc-500 dark:text-zinc-400">(estimate)</span>
+        <ProvenanceTip label="Annual bill" provenance={[...b.provenance, ...loadProvenance(r)]} />
+      </div>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="text-4xl font-bold tabular-nums tracking-tight text-zinc-950 dark:text-white">{usd0(b.annual_usd)}</span>
+        <span className="text-base font-medium text-zinc-600 dark:text-zinc-300">a year</span>
+        <span className="text-base text-zinc-600 dark:text-zinc-300">
+          · about <strong className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{usd0(num(b.annual_usd) / 12)}</strong> / month
+        </span>
+      </div>
+      {changed && (
+        <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-300">
+          With your what-if and solar changes: <strong className="tabular-nums">{usd0(withChanges)}</strong> a year{" "}
+          <span className={withChanges <= num(b.annual_usd) ? "text-emerald-800 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}>({signedUsd(withChanges - num(b.annual_usd))})</span>
+        </p>
+      )}
+      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+            Electricity cost
+            <ProvenanceTip label="Effective electricity cost" provenance={[...b.provenance, ...loadProvenance(r)]} />
+          </div>
+          <div className="text-2xl font-bold tabular-nums text-zinc-950 dark:text-white">
+            {cents(b.effective_usd_per_kwh)}
+            <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300"> / kWh</span>
+          </div>
+          <div className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">all-in average over {kwh(r.usage.annual_kwh)}</div>
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+            Rate plan
+            <ProvenanceTip label="Rate plan" provenance={b.provenance} />
+          </div>
+          <div className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-50" title={b.plan_label}>
+            {custom ? "Flat rate" : b.plan}
+          </div>
+          <div className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+            {blurb ? `${blurb}. ` : ""}
+            {b.fixed_usd > 0 ? `Includes ${usd0(b.fixed_usd)} a year of fixed charges you pay whatever you use.` : "No fixed monthly charge in this estimate."}
+          </div>
+        </div>
+      </div>
+      {top && (
+        <button
+          type="button"
+          onClick={() => selectHomeTab("right", "tips")}
+          className={`mt-3 flex w-full min-w-0 items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-left hover:border-emerald-400 dark:border-emerald-900 dark:bg-emerald-950/40 dark:hover:border-emerald-700 ${FOCUS}`}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm text-emerald-950 dark:text-emerald-100">
+              <strong className="font-bold tabular-nums">Save about {usd0(top.annual_usd_saved)}/yr:</strong> {top.title}
+            </span>
+            <span className="block text-[11px] leading-snug text-emerald-900/80 dark:text-emerald-200/80">
+              {top.upfront_usd ? `${usd0(top.upfront_usd)} upfront. ` : "No upfront cost. "}
+              {free ? `No-cost pick: ${free.title} (about ${usd0(free.annual_usd_saved)}/yr). ` : ""}
+              Estimates; see every tip.
+            </span>
+          </span>
+          <span aria-hidden className="shrink-0 self-center text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+            Tips →
+          </span>
+        </button>
+      )}
+      {top && (
+        <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+          How savings are estimated <ProvenanceTip label="Savings estimate" provenance={recProv} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Secondary numbers under the bill: use, CO2e and carbon-free share. */
+function SecondaryStats({ r }: { r: HouseholdResult }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
       <StatTile
-        label={<>Electricity use</>}
+        compact
+        label="Electricity use"
         tipLabel="Annual electricity use"
         value={kwh(r.usage.annual_kwh)}
-        sub={`a year · CA average ${kwh(r.usage.benchmark.ca_avg_annual_kwh)}`}
+        sub={`a year · CA avg ${kwh(r.usage.benchmark.ca_avg_annual_kwh)}`}
         provenance={loadProvenance(r)}
       />
+      <StatTile compact label="Grid CO2e" tipLabel="Annual grid CO2e (estimate)" value={kg(r.carbon.annual_kg_hourly)} sub="a year (estimate)" provenance={r.carbon.provenance} />
       <StatTile
-        label="Annual bill (estimate)"
-        value={usd0(r.bill.annual_usd)}
-        sub={`${r.bill.plan === "custom" ? "at a flat $/kWh" : `on ${r.bill.plan}`}${r.bill.fixed_usd > 0 ? `, incl. ${usd0(r.bill.fixed_usd)} fixed` : ""}`}
-        provenance={r.bill.provenance}
-      />
-      <StatTile label="Grid CO2e (estimate)" tipLabel="Annual grid CO2e" value={`${kg(r.carbon.annual_kg_hourly)}`} sub="a year, from your hourly use" provenance={r.carbon.provenance} />
-      <StatTile
-        label="Carbon-free share"
+        compact
+        label="Carbon-free"
         tipLabel="Carbon-free share of your hours"
         value={pct0(cleanShare(r))}
-        sub="of grid imports, weighted by every 2024 hour"
+        sub="of your grid power, hour-weighted"
         provenance={[
           {
             kind: "inferred",
@@ -285,7 +381,7 @@ function Headline({ r }: { r: HouseholdResult }) {
 
 /** Right sidebar: headline numbers, notes, then one dashboard section. */
 export function HomeDashboard({ tab }: { tab: HomeTabId }) {
-  const { draft, whatif, setWhatif, options, result, error, pending, retry, pin, time, setTime } = useHome();
+  const { draft, patchDraft, whatif, setWhatif, options, result, error, pending, retry, pin, time, setTime, request } = useHome();
 
   let panel: ReactNode = null;
   if (result) {
@@ -293,7 +389,7 @@ export function HomeDashboard({ tab }: { tab: HomeTabId }) {
     else if (tab === "costs") panel = <CostsTab r={result} />;
     else if (tab === "sources") panel = <SourcesTab r={result} />;
     else if (tab === "whatif") panel = <WhatIfTab r={result} draft={draft} whatif={whatif} setWhatif={setWhatif} options={options} pending={pending} />;
-    else if (tab === "solar") panel = <SolarTab r={result} draft={draft} whatif={whatif} setWhatif={setWhatif} />;
+    else if (tab === "solar") panel = <SolarTab r={result} draft={draft} patchDraft={patchDraft} whatif={whatif} setWhatif={setWhatif} request={request} />;
     else if (tab === "outlook") panel = <OutlookTab r={result} whatif={whatif} setWhatif={setWhatif} />;
     else panel = <TipsTab r={result} />;
   }
@@ -332,7 +428,8 @@ export function HomeDashboard({ tab }: { tab: HomeTabId }) {
         </div>
       ) : (
         <>
-          <Headline r={result} />
+          <BillHero r={result} />
+          <SecondaryStats r={result} />
           <TimeContext r={result} value={time} onChange={setTime} />
           {result.warnings.length > 0 && (
             <details className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
