@@ -27,7 +27,6 @@ import { useGridForge } from "@/lib/store";
 import { closeForecastDrawer, isForecastDrawerOpen, subscribeForecastDrawer, toggleForecastDrawer, useForecastDrawer } from "./forecastDrawer";
 import { footprintBounds, footprintsFC, loadCatalog } from "./footprints";
 import { CA_BOUNDS, EMPTY_FC, circleRing, locKey, num } from "./geo";
-import { LANDMARKS, landmarkElement } from "./landmarks";
 import { useLayerState, type LayerStatus } from "./layerState";
 import {
   AREA_LAYER_IDS,
@@ -100,7 +99,7 @@ function motion(): { animate: boolean; essential: true } {
 }
 
 /** Camera padding for framing footprints: the map minus the overlays that stay on it (search, view
- *  buttons and Highlight area at the top left, zoom/compass at the top right, scale bar and attribution
+ *  buttons at the top left, zoom/compass at the top right, scale bar and attribution
  *  at the bottom). The Site cards and layers card used to float here; they live in the sidebars now.
  *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds.
  *  `shift`: px on the right covered by the forecast drawer. */
@@ -375,10 +374,6 @@ export function MapView() {
       });
       m.addControl(locate, "top-right");
       m.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
-      // Named places with an always-visible title (Stanford, where the website starts); removed with the map.
-      for (const lm of LANDMARKS) {
-        new maplibregl.Marker({ element: landmarkElement(lm.name), anchor: "bottom", offset: [0, -12] }).setLngLat([lm.lon, lm.lat]).addTo(m);
-      }
 
       // (Re)add our sources + layers; runs on every style load (initial basemap or fallback).
       const install = () => {
@@ -526,7 +521,9 @@ export function MapView() {
         raf = requestAnimationFrame(() => {
           raf = 0;
           if (map.current !== m) return;
-          m.getCanvas().style.cursor = areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "";
+          // ProjectMapTools sets data-area-cursor while the Highlight area box is being drawn or edited.
+          const canvas = m.getCanvas();
+          canvas.style.cursor = canvas.dataset.areaCursor || (areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "");
         });
       });
       m.on("mouseout", () => {
@@ -781,7 +778,7 @@ export function MapView() {
   return (
     <div className="relative h-full w-full overflow-hidden" style={mapFilter ? ({ "--map-filter": mapFilter } as CSSProperties) : undefined}>
       <div ref={el} className="h-full w-full" />
-      {/* Top-left: search, view controls, highlighted-area zoning and basemap notices. Kept clear of the
+      {/* Top-left: search, view controls and basemap notices. Kept clear of the
           zoom/compass (top-right) and, while it is open, of the forecast drawer, so on a narrow strip of
           map the search box narrows instead of sliding under them. */}
       <div

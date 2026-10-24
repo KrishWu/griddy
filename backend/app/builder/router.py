@@ -1,10 +1,12 @@
 """Presets + report endpoints.  OWNER: workstream D."""
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
+from app.builder.run_progress import run_progress
 from app.builder.service import list_presets, report_csv
 from app.contract import Scenario, ScenarioResult
+from app.builder.optimizer import OptimizeRequest, optimize
 from app.builder.planner import PlanRequest, plan_project
 
 router = APIRouter(prefix="/api", tags=["build"])
@@ -26,3 +28,17 @@ def plan(req: PlanRequest) -> dict:
         return plan_project(req)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/projects/optimize")
+def optimize_route(req: OptimizeRequest) -> dict:
+    try:
+        return optimize(req)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/projects/run-stream")
+def stream_run(scenario: Scenario) -> StreamingResponse:
+    return StreamingResponse(run_progress(scenario), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})

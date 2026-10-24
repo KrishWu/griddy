@@ -5,10 +5,13 @@
 // map except its own controls. Every workstream's panel is mounted here, so feature branches edit
 // their own components, not this file.  OWNER: workstream D.
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
+import { RunFeedback } from "@/components/builder/RunFeedback";
+import { AreaToolsProvider } from "@/components/explore/areaTools";
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
+import { OptimizePanel, type RevealTarget } from "@/components/builder/OptimizePanel";
 import { GriddyMark } from "@/components/builder/GriddyMark";
 import { CompareView } from "@/components/builder/CompareView";
 import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
@@ -32,7 +35,7 @@ import { useGridForge, type View } from "@/lib/store";
 import { BuildIcon, CostsIcon, LayersIcon, PlanIcon, ReportIcon, SimulateIcon, SiteIcon, StressIcon, SummaryIcon } from "./icons";
 import { PanelGuard } from "./PanelGuard";
 import { Sidebar, type SidebarTab } from "./Sidebar";
-import { selectSidebarTab, useSidebarTab } from "./sidebarTabs";
+import { selectSidebarTab, showRightTab, useSidebarTab } from "./sidebarTabs";
 
 /** Any number still coming from a stub or placeholder? Judges reward saying so. */
 function usesPlaceholderData(r: ScenarioResult | null): boolean {
@@ -70,6 +73,17 @@ export function AppShell() {
   const placeholder = useMemo(() => usesPlaceholderData(result), [result]);
   const [detailMode, setDetailMode] = useState<"basic" | "advanced">("basic");
   const advanced = detailMode === "advanced";
+  // "Use this design" in the optimizer: open the results tab it names (Advanced mode, single view,
+  // right sidebar expanded) so the loaded design's Simulate or Stress results are on screen.
+  const showPanel = useCallback(
+    (target: RevealTarget) => {
+      setView("single");
+      setDetailMode("advanced");
+      updateSettings({ rightCollapsed: false });
+      showRightTab(target);
+    },
+    [setView],
+  );
   const mode: Mode = scenario?.mode ?? "industrial";
   const compare = view === "compare";
   const { settings } = useSettings();
@@ -85,6 +99,7 @@ export function AppShell() {
       content: (
         <>
           <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
+          <PanelGuard name="Optimizer"><OptimizePanel advanced={advanced} onReveal={showPanel} /></PanelGuard>
           <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>
         </>
       ),
@@ -196,6 +211,7 @@ export function AppShell() {
 
   return (
     <LayerStateProvider>
+      <AreaToolsProvider>
       <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
         <header
           data-chrome
@@ -246,6 +262,7 @@ export function AppShell() {
             <SettingsButton />
           </div>
         </header>
+        <RunFeedback />
         {error && (
           <div data-chrome className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             <span className="truncate">{error}</span>
@@ -294,6 +311,7 @@ export function AppShell() {
           )}
         </div>
       </div>
+      </AreaToolsProvider>
     </LayerStateProvider>
   );
 }

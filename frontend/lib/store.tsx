@@ -4,6 +4,7 @@
 // everything else in local component state. Panels read/write through useGridForge().
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { runWithProgress, type RunProgress } from "@/components/builder/runWithProgress";
 import { useProjectPlanning, type ProjectPlanningState } from "@/components/builder/useProjectPlanning";
 import { allowSitePlacement } from "@/components/site_intel/regionGuard";
 
@@ -45,6 +46,7 @@ interface GridForgeState {
    *  panel error boundaries on it, so auto-runs never remount panels and reset their state. */
   panelEpoch: number;
   running: boolean;
+  runProgress: (RunProgress & { startedAt: number }) | null;
   error: string | null;
   run: () => Promise<void>;
   /** Explicit Run button: also resets any crashed panel. */
@@ -185,7 +187,10 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [resultVersion, setResultVersion] = useState(0);
   const [panelEpoch, setPanelEpoch] = useState(0);
-  const [running, setRunning] = useState(false);
+  const [activeRun, setActiveRun] = useState<Scenario | null>(null);
+  const running = activeRun !== null && activeRun === scenario;
+  const [progress, setProgress] = useState<{ scenario: Scenario; value: RunProgress & { startedAt: number } } | null>(null);
+  const runProgress = progress?.scenario === scenario ? progress.value : null;
   const [error, setError] = useState<string | null>(null);
   const [errorSource, setErrorSource] = useState<ErrorSource | null>(null);
   const [siteSummary, setSiteSummary] = useState<SiteSummary | null>(null);
@@ -198,6 +203,8 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
   const [comparing, setComparing] = useState(false);
   const latestSiteId = useRef<string | null>(null);
   const runSeq = useRef(0);
+  const runAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => { runSeq.current++; runAbort.current?.abort(); }, [scenario]);
   const compareSeq = useRef(0);
 
   const fail = useCallback((source: ErrorSource, message: string) => {
@@ -262,19 +269,29 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     // Only the newest run may write state, so a slow older run (e.g. from a debounced
     // auto-run) can't overwrite a newer result.
     const my = ++runSeq.current;
-    setRunning(true);
+    runAbort.current?.abort();
+    const controller = new AbortController();
+    runAbort.current = controller;
+    const startedAt = Date.now();
+    setActiveRun(scenario);
+    setProgress({ scenario, value: { percent: 0, message: "Connecting to simulation", startedAt } });
     setError(null);
     setErrorSource(null);
     try {
-      const r = await api.run({ ...scenario, name: labelFor(scenario) });
+      const r = await runWithProgress({ ...scenario, name: labelFor(scenario) }, (value) => {
+        if (my === runSeq.current) setProgress({ scenario, value: { ...value, startedAt } });
+      }, controller.signal);
       if (my === runSeq.current) {
         setResult(r);
         setResultVersion((v) => v + 1);
       }
     } catch (e) {
-      if (my === runSeq.current) fail("run", (e as Error).message);
+      if (my === runSeq.current && !controller.signal.aborted) {
+        setProgress(null);
+        fail("run", (e as Error).message);
+      }
     } finally {
-      if (my === runSeq.current) setRunning(false);
+      if (my === runSeq.current) setActiveRun(null);
     }
   }, [scenario, labelFor, fail, projectPlanning.busy, projectPlanning.error]);
 
@@ -430,6 +447,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       resultVersion,
       panelEpoch,
       running,
+      runProgress,
       error,
       run,
       runNow,
@@ -463,6 +481,7 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
       resultVersion,
       panelEpoch,
       running,
+      runProgress,
       error,
       run,
       runNow,
