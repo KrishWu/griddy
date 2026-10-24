@@ -134,7 +134,10 @@ class Assumptions(Model):
     weather_year: int = 2024
     analysis_years: int = 20
     discount_rate: float = 0.07
-    gas_price_usd_per_mmbtu: float = 4.0
+    gas_price_usd_per_mmbtu: float = Field(
+        default=3.65,
+        description="Annual-average gas price. Default: EIA 2024 California citygate price (series N3050CA3, $3.79/Mcf / 1.038 MMBtu/Mcf)",
+    )
     carbon_price_usd_per_t: float = 0.0
     price_source: Literal["caiso_historical", "flat"] = "caiso_historical"
     flat_price_usd_per_mwh: float = 60.0
