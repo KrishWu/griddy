@@ -662,12 +662,12 @@ export const GLOSSARY = {
     why: "Griddy reports simple payback (upfront cost after incentives ÷ first-year savings) and a 25-year NPV that does include rate growth and panel aging.",
     unit: "years",
   },
-  simple_payback: {
-    term: "Simple payback",
-    long: "Years to profitable",
-    def: "How many years of savings it takes to earn back the build cost: upfront capital ÷ yearly savings versus buying all the power from the grid.",
-    summary: "Years of savings versus grid-only power needed to earn back the build cost.",
-    why: "Griddy compares each design's year-1 operating cost with buying every served MWh at 2024 CAISO hourly prices plus a delivery adder. It ignores interest, so the 20-year net savings figure (discounted) is the stricter test.",
+  years_to_profitable: {
+    term: "Years to profitable",
+    long: "Discounted payback from the go-ahead",
+    def: "How many years from the decision to build until the design's savings, versus buying all its power from the utility, have repaid the build cost, counting the construction years and the cost of capital.",
+    summary: "Years from the go-ahead until discounted savings versus utility power repay the build cost.",
+    why: "Griddy walks year by year: the build cost at the go-ahead, the construction years, then each year's savings versus buying every served MWh at California's 2024 average utility rate (EIA), with the design's own grid purchases at that rate too, discounted at the scenario's real rate. The same walk gives the 20-year net savings; simple payback (build cost ÷ year-1 savings) is in the tooltip.",
     unit: "years",
   },
   homes_equivalent: {

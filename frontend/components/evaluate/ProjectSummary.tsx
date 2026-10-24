@@ -85,6 +85,20 @@ function gridAsk(c: EconomicCase): { value: string; sub: string; sentence: strin
   };
 }
 
+/** "Years to profitable" for each verdict: a number of years only when the cash walk turns positive in the analysis. */
+function paybackText(c: EconomicCase): { value: string; sub: string } {
+  switch (c.verdict) {
+    case "grid_baseline":
+      return { value: "—", sub: "this is the buy-from-utility case: nothing to earn back" };
+    case "no_payback":
+      return { value: "Doesn't pay back", sub: `costs ${usd(-c.savingsUsd)}/yr more to run than buying from the utility` };
+    case "slow_payback":
+      return { value: `${Math.round(c.buildYears + c.years)}+ years`, sub: `saves ${usd(c.savingsUsd)}/yr, too little to repay ${usd(c.capexUsd)} in ${c.years} years of operation` };
+    case "pays_back":
+      return { value: `${years1(c.paybackYears ?? 0)} years`, sub: `from go-ahead: ${c.buildYears}-yr build + discounted savings on ${usd(c.capexUsd)}` };
+  }
+}
+
 function jobsFact(p: ProjectMetrics | null, local = false) {
   if (!p) return null;
   const j = p.jobs;
@@ -97,16 +111,12 @@ function jobsFact(p: ProjectMetrics | null, local = false) {
 /** POWER PLANTS & GRID: the economic reason to build this design, versus buying all its power from the grid. */
 function WhyBuild({ result, c }: { result: ScenarioResult; c: EconomicCase }) {
   const prov = economicProvenance(c), p = projectOf(result), ask = gridAsk(c);
-  const v = VERDICT[c.verdict];
-  const payback = c.paybackYears === null
-    ? <Headline tone={c.verdict === "grid_baseline" ? "neutral" : "bad"} label={<Label term="simple_payback" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
-        value={c.verdict === "grid_baseline" ? "—" : "Doesn't pay back"} sub={c.verdict === "grid_baseline" ? "this is the buy-from-utility case: nothing to earn back" : `vs utility rates: costs ${usd(-c.savingsUsd)}/yr more to run`} />
-    : <Headline tone={v.tone} label={<Label term="simple_payback" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
-        value={`${years1(c.paybackYears)} years`} sub={c.paybackYears > c.years ? `longer than the ${c.years}-year analysis` : `from go-ahead: ${c.buildYears}-yr build + discounted savings on ${usd(c.capexUsd)}`} />;
+  const pb = paybackText(c);
   return <section aria-label="Why build it" className="mb-4 rounded-xl border-2 border-zinc-200 p-3 dark:border-zinc-700">
     <BlockHeader title="Why build it" verdict={c.verdict} />
     <div className="grid grid-cols-2 gap-2">
-      {payback}
+      <Headline tone={VERDICT[c.verdict].tone} label={<Label term="years_to_profitable" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
+        value={pb.value} sub={pb.sub} />
       <Headline tone={c.savingsUsd > 0 && c.verdict !== "grid_baseline" ? "good" : c.verdict === "grid_baseline" ? "neutral" : "bad"}
         label={<Label tip="Savings vs grid-only" provenance={prov.savings}>{c.savingsUsd >= 0 ? "Saves vs utility power" : "Extra cost vs utility power"}</Label>}
         value={`${usd(Math.abs(c.savingsUsd))}/yr`}
@@ -114,13 +124,13 @@ function WhyBuild({ result, c }: { result: ScenarioResult; c: EconomicCase }) {
     </div>
     <p className="mt-2.5 text-sm font-medium leading-snug text-zinc-800 dark:text-zinc-100">{verdictSentence(c)}</p>
     <div className="mt-2.5 grid grid-cols-2 gap-2">
-      <Fact label={<Label tip="20-year net savings" provenance={prov.net}>{c.years}-year net savings</Label>} value={signed(c.netSavingsPvUsd)} sub="vs buying from the utility, present value" />
+      <Fact label={<Label tip="20-year net savings" provenance={prov.net}>{c.years}-year net savings</Label>} value={signed(c.netSavingsPvUsd)} sub={`after ${c.years} years of operation vs buying from the utility, today's dollars`} />
       <Fact label={<Label term="homes_equivalent" tip="Homes' worth of electricity" provenance={prov.homes}>Homes&apos; worth of power</Label>} value={`${count(c.homesEquivalent)} homes`} sub="California average homes, a size comparison" />
       {jobsFact(p)}
       <Fact label={<Label term="time_to_power" tip="Grid capacity asked for" provenance={prov.grid_ask}>Grid capacity needed</Label>} value={ask.value} sub={ask.sub} />
     </div>
     <p className="mt-2 text-[11px] leading-snug text-zinc-600 dark:text-zinc-400"><span className="font-semibold text-zinc-800 dark:text-zinc-200"><Term k="time_to_power">Time to power</Term>:</span> {ask.sentence} <ProvenanceTip label="Grid connection wait" provenance={QUEUE_PROVENANCE} /></p>
-    <p className="mt-1.5 text-[10px] leading-snug text-zinc-500">Screening estimates in real 2024 dollars. The alternative is buying the same MWh from the utility at California&apos;s 2024 average industrial rate (EIA); the tooltip also shows the lower wholesale-price floor.</p>
+    <p className="mt-1.5 text-[10px] leading-snug text-zinc-500">Screening estimates in real 2024 dollars. The alternative is buying the same MWh from the utility at California&apos;s 2024 average industrial rate (EIA), and the design&apos;s own grid purchases are priced the same way; the tooltip also shows the lower wholesale-price floor.</p>
   </section>;
 }
 
@@ -135,7 +145,7 @@ function CommunityBenefit({ result, c }: { result: ScenarioResult; c: EconomicCa
     kind: "inferred",
     source: "Griddy estimate per average California home (6,482 kWh a year, EIA RECS 2020)",
     url: RECS_PROVENANCE.url,
-    note: `This design: NPC ${usd(c.npcUsd)} ÷ annuity factor ${c.af.toFixed(3)} (build and running cost spread over ${c.years} years) ÷ ${whole(c.servedMwh)} MWh × 6.482 MWh per home, vs buying from the utility ${usd(c.gridAnnualUsd)} a year (${c.retailLabel}, EIA) on the same basis.`,
+    note: `This design: NPC ${usd(c.designNpcUsd)} (its own grid power at the utility rate) ÷ annuity factor ${c.af.toFixed(3)} (build and running cost spread over ${c.years} years) ÷ ${whole(c.servedMwh)} MWh × 6.482 MWh per home, vs buying from the utility ${usd(c.gridAnnualUsd)} a year (${c.retailLabel}, EIA) on the same basis.`,
   };
   const co2Prov: Provenance = {
     kind: "inferred",
@@ -155,15 +165,14 @@ function CommunityBenefit({ result, c }: { result: ScenarioResult; c: EconomicCa
     <div className="mt-2.5 grid grid-cols-2 gap-2">
       <Fact label={<Label tip="Cost per home per year" provenance={perHomeProv}>Cost per home / year</Label>}
         value={`${usd(k.perHomeDesignUsd)}`} sub={<>vs {usd(k.perHomeGridUsd)} from the utility: <span className={diff <= 0 ? "font-semibold text-emerald-700 dark:text-emerald-300" : "font-semibold text-amber-700 dark:text-amber-300"}>{usd(Math.abs(diff))} {diff <= 0 ? "less" : "more"}</span></>} />
-      <Fact label={<Label term="simple_payback" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
-        value={c.paybackYears === null ? (c.verdict === "grid_baseline" ? "—" : "Doesn't pay back") : `${years1(c.paybackYears)} years`}
-        sub={c.paybackYears === null ? (c.verdict === "grid_baseline" ? "buy-from-utility case" : "vs utility rates") : c.paybackYears > c.years ? `longer than the ${c.years}-year analysis` : `on ${usd(c.capexUsd)} upfront`} />
+      <Fact label={<Label term="years_to_profitable" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
+        value={paybackText(c).value} sub={paybackText(c).sub} />
       {jobsFact(p, true)}
       <Fact label={<Label term="co2e" tip="CO2e vs all-grid" provenance={co2Prov}>CO₂e vs all-grid</Label>}
         value={co2Diff === null ? `${tons(k.co2.designT)}/yr` : Math.abs(co2Diff) < 0.005 ? "Same" : `${pct(Math.abs(co2Diff))} ${co2Diff < 0 ? "less" : "more"}`}
         sub={`${tons(k.co2.designT)}/yr, ${k.co2.designPerHomeT.toFixed(2)} t per home${k.co2.gridPerHomeT === null ? "" : ` vs ${k.co2.gridPerHomeT.toFixed(2)} t all-grid`}`} />
     </div>
-    <p className="mt-1.5 text-[10px] leading-snug text-zinc-500">Screening estimates in real 2024 dollars. Per-home figures use an average California home&apos;s 6,482 kWh a year; the alternative is California&apos;s 2024 average residential rate (EIA).</p>
+    <p className="mt-1.5 text-[10px] leading-snug text-zinc-500">Screening estimates in real 2024 dollars. Per-home figures use an average California home&apos;s 6,482 kWh a year; the alternative is California&apos;s 2024 average residential rate (EIA), and the microgrid&apos;s own grid purchases are priced the same way.</p>
   </section>;
 }
 
