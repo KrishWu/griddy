@@ -8,13 +8,10 @@
 // stands in for the number only where the model has no score (outside its coverage, or unavailable).
 import { useEffect, useId, useRef, useState } from "react";
 
-import { mlScore, useMlGrade } from "@/components/sites/useMlGrade";
+import { fmtGrade, mlScore, useMlGrade } from "@/components/sites/useMlGrade";
 
 import { GriddyGradeDetails } from "./GriddyGradeDetails";
 import { useGriddyGrade } from "./useGriddyGrade";
-
-/** At most one decimal: 95.6, 100, 1. */
-const fmtScore = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 export function GriddyGradeCard() {
   const g = useGriddyGrade();
@@ -49,7 +46,7 @@ export function GriddyGradeCard() {
           </h2>
           {shown !== null ? (
             <p className="mt-1 text-7xl font-bold leading-none tracking-tight tabular-nums">
-              {fmtScore(shown)}
+              {fmtGrade(shown)}
               <span className="sr-only"> out of 100</span>
               {heuristicOnly && (
                 <span className="ml-2 align-middle text-[10px] font-normal tracking-normal text-zinc-500" title={ml.grade?.note ?? ml.error ?? undefined}>
@@ -65,7 +62,7 @@ export function GriddyGradeCard() {
             <p className="mt-1 text-sm text-zinc-500">Drop a data center on the map to grade the site.</p>
           )}
         </div>
-        {r && (
+        {(r || modelScore !== null) && (
           <button
             type="button"
             aria-expanded={open}
@@ -86,9 +83,9 @@ export function GriddyGradeCard() {
         )}
       </div>
       <div id={detailsId}>
-        {r && open && (
+        {(r || modelScore !== null) && open && (
           <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-            <GriddyGradeDetails grade={g} result={r} ml={ml.grade} />
+            <GriddyGradeDetails grade={g} result={r} ml={ml} />
           </div>
         )}
       </div>

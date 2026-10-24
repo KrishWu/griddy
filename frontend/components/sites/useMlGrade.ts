@@ -3,7 +3,7 @@
 // data center feasibility score, 100 = the best 5 km cell in California.  OWNER: workstream B.
 // Keyed on the location rounded to 0.0001 deg; results are cached per key so moving between
 // sites and back doesn't refetch.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { request } from "@/lib/api";
 import type { LngLat, Provenance } from "@/lib/contract";
@@ -38,9 +38,22 @@ export interface MlGrade {
 const cache = new Map<string, MlGrade>();
 const keyOf = (p: LngLat) => `${p.lon.toFixed(4)},${p.lat.toFixed(4)}`;
 
-export function useMlGrade(location: LngLat | null): { grade: MlGrade | null; loading: boolean; error: string | null } {
+export interface MlGradeState {
+  grade: MlGrade | null;
+  loading: boolean;
+  /** The request failed (network, server); distinct from a site the model has no score for. */
+  error: string | null;
+  retry: () => void;
+}
+
+export function useMlGrade(location: LngLat | null): MlGradeState {
   const key = location ? keyOf(location) : null;
   const [own, setOwn] = useState<{ key: string; grade: MlGrade | null; error: string | null } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => {
+    setOwn(null);
+    setAttempt((a) => a + 1);
+  }, []);
 
   useEffect(() => {
     if (!key || cache.has(key)) return;
@@ -56,13 +69,16 @@ export function useMlGrade(location: LngLat | null): { grade: MlGrade | null; lo
     return () => {
       stale = true;
     };
-  }, [key]);
+  }, [key, attempt]);
 
-  if (!key) return { grade: null, loading: false, error: null };
+  if (!key) return { grade: null, loading: false, error: null, retry };
   const cached = cache.get(key);
-  if (cached) return { grade: cached, loading: false, error: null };
-  return { grade: own?.key === key ? own.grade : null, loading: own?.key !== key, error: own?.key === key ? own.error : null };
+  if (cached) return { grade: cached, loading: false, error: null, retry };
+  return { grade: own?.key === key ? own.grade : null, loading: own?.key !== key, error: own?.key === key ? own.error : null, retry };
 }
+
+/** At most one decimal: 95.6, 100, 1. */
+export const fmtGrade = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 /** The ML score when the model covers this point, else null (callers fall back to the heuristic). */
 export function mlScore(g: MlGrade | null): number | null {

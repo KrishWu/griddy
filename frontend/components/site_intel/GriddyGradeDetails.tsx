@@ -5,7 +5,7 @@
 // OWNER: workstream E (Site Intelligence).
 import { ProvenanceTip } from "@/components/evaluate/ProvenanceTip";
 import { MlGradeDetails } from "@/components/sites/MlGradeDetails";
-import { mlScore, type MlGrade } from "@/components/sites/useMlGrade";
+import { fmtGrade, mlScore, type MlGradeState } from "@/components/sites/useMlGrade";
 import type { Provenance } from "@/lib/contract";
 
 import {
@@ -33,9 +33,23 @@ const FILL: Record<ComponentStatus, string> = {
 };
 
 /** Score bar on a 0-100 track. `bands` marks the category boundaries (20/40/60/80) as gaps. */
-function Meter({ value, status = "observed", label, bands = false }: { value: number; status?: ComponentStatus; label?: string; bands?: boolean }) {
+function Meter({
+  value,
+  status = "observed",
+  label,
+  valueText,
+  bands = false,
+}: {
+  value: number;
+  status?: ComponentStatus;
+  label?: string;
+  /** Spoken value, e.g. the headline's "97.8" (defaults to the value rounded to one decimal). */
+  valueText?: string;
+  bands?: boolean;
+}) {
+  const now = Math.round(value * 10) / 10;
   const a11y = label
-    ? { role: "meter", "aria-label": label, "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.round(value) }
+    ? { role: "meter", "aria-label": label, "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": now, "aria-valuetext": valueText ?? String(now) }
     : { "aria-hidden": true };
   return (
     <span {...a11y} className={`relative block w-full min-w-0 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 ${bands ? "h-3" : "h-1.5"}`}>
@@ -200,32 +214,65 @@ function KeyConsiderations({ r }: { r: FeasibilityResult }) {
   );
 }
 
-export function GriddyGradeDetails({ grade: g, result: r, ml = null }: { grade: GriddyGrade; result: FeasibilityResult; ml?: MlGrade | null }) {
+export function GriddyGradeDetails({ grade: g, result: r, ml }: { grade: GriddyGrade; result: FeasibilityResult | null; ml: MlGradeState }) {
   const load = g.scenarioLoad;
-  const modelScore = mlScore(ml);
+  const modelScore = mlScore(ml.grade);
+  // Until the model answers, no number is called the GriddyGrade; after a failed request the
+  // heuristic stands in, labelled as the site checks.
+  const headline = modelScore ?? (ml.loading ? null : (r?.overallScore ?? null));
+  const category = ml.loading ? "Loading the model score…" : modelScore !== null ? categoryFor(modelScore) : (r?.category ?? "No score for this site");
+  const basis =
+    modelScore !== null
+      ? "projected by the site-location model"
+      : ml.loading
+        ? "waiting for the site-location model"
+        : ml.error
+          ? "site checks shown: the model score failed to load"
+          : "site checks (model has no score here)";
   return (
     <>
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{modelScore !== null ? categoryFor(modelScore) : r.category}</span>
-          <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
-            out of 100 · data center site feasibility, {modelScore !== null ? "projected by the site-location model" : "site checks (model has no score here)"}
-          </span>
+          <span className="block text-sm font-semibold">{category}</span>
+          <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">out of 100 · data center site feasibility, {basis}</span>
         </span>
-        {modelScore === null && (
+        {ml.error && (
+          <button
+            type="button"
+            onClick={ml.retry}
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-700 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300"
+          >
+            Retry
+          </button>
+        )}
+        {modelScore === null && !ml.loading && r && (
           <ProvenanceTip label="Site checks" provenance={{ kind: "inferred", source: "Griddy feasibility heuristic (initial product weights)" }}>
             Site checks = {FORMULA}. A screening heuristic, not an approval decision or a prediction of interconnection, permitting or cost.
           </ProvenanceTip>
         )}
       </div>
-      <div className="mt-2">
-        <Meter value={modelScore ?? r.overallScoreRaw} label="GriddyGrade, 0 to 100" bands />
-      </div>
-      {ml && (
-        <div className="mt-3">
-          <MlGradeDetails grade={ml} />
+      {headline !== null && (
+        <div className="mt-2">
+          <Meter value={headline} label="GriddyGrade, 1 to 100" valueText={fmtGrade(headline)} bands />
         </div>
       )}
+      {ml.grade && (
+        <div className="mt-3">
+          <MlGradeDetails grade={ml.grade} />
+        </div>
+      )}
+      {!r ? (
+        <p className="mt-4 text-[11px] text-zinc-500 dark:text-zinc-400">Site checks unavailable: the site summary failed to load.</p>
+      ) : (
+        <SiteChecks g={g} r={r} load={load} />
+      )}
+    </>
+  );
+}
+
+function SiteChecks({ g, r, load }: { g: GriddyGrade; r: FeasibilityResult; load: GriddyGrade["scenarioLoad"] }) {
+  return (
+    <>
       <h3 className="mt-4 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         Site checks · {r.overallScore}
         <ProvenanceTip label="Site checks" provenance={{ kind: "inferred", source: "Griddy feasibility heuristic (initial product weights)" }}>
