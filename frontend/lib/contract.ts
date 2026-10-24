@@ -332,7 +332,7 @@ export interface DemandForecast {
 /** What-if inputs for site recommendations: a forecast plus how to cover its growth. */
 export interface SiteRequest {
   forecast?: ForecastRequest;
-  /** Share of the new firm peak each AssetKind covers, e.g. {solar_pv: 0.4, battery: 0.4, gas_cc: 0.2}. */
+  /** clean_energy_share (0-1) of new energy from solar_pv : onshore_wind; the remaining peak from battery : gas_cc (relative weights). */
   mix?: Record<string, number> | null;
   weights?: Record<string, number> | null;
 }
