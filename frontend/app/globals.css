@@ -1,8 +1,21 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eff6f3;
+  --foreground: #183b32;
+  --tone-50: #eff6f3;
+  --tone-100: #e4eee9;
+  --tone-200: #cdded5;
+  --tone-300: #aec8bb;
+  --tone-400: #789a89;
+  --tone-500: #5c786b;
+  --tone-600: #496357;
+  --tone-700: #334f42;
+  --tone-800: #244034;
+  --tone-900: #183429;
+  --tone-950: #10261e;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -10,13 +23,35 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-zinc-50: var(--tone-50);
+  --color-zinc-100: var(--tone-100);
+  --color-zinc-200: var(--tone-200);
+  --color-zinc-300: var(--tone-300);
+  --color-zinc-400: var(--tone-400);
+  --color-zinc-500: var(--tone-500);
+  --color-zinc-600: var(--tone-600);
+  --color-zinc-700: var(--tone-700);
+  --color-zinc-800: var(--tone-800);
+  --color-zinc-900: var(--tone-900);
+  --color-zinc-950: var(--tone-950);
+  --color-black: #070e1a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme="dark"] {
+  --background: #070e1a;
+  --foreground: #e4edf8;
+  --tone-50: #f0f5fc;
+  --tone-100: #e3edf9;
+  --tone-200: #c9d9eb;
+  --tone-300: #aebfd5;
+  --tone-400: #91a8c2;
+  --tone-500: #869ab2;
+  --tone-600: #596e89;
+  --tone-700: #344963;
+  --tone-800: #24364e;
+  --tone-900: #142238;
+  --tone-950: #0c182a;
+  color-scheme: dark;
 }
 
 body {
@@ -24,6 +59,12 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+button, input, select { accent-color: #047857; }
+[data-theme="dark"] button, [data-theme="dark"] input, [data-theme="dark"] select { accent-color: #67e8f9; }
+[data-theme="dark"] .maplibregl-ctrl-group { background: #142238; }
+[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
+[data-theme="dark"] .maplibregl-popup-content { background: #e3edf9; color: #142238; }
 
 /* Printable report (/report): plain paper, sensible margins.  OWNER: workstream D. */
 @media print {
@@ -33,5 +74,6 @@ body {
   body {
     background: #fff;
     color: #000;
+    color-scheme: light;
   }
 }

@@ -1,4 +1,6 @@
 "use client";
+import { ProjectDetails } from "@/components/evaluate/ProjectSummary";
+import { projectOf, resilienceOf } from "@/components/evaluate/project";
 // Printable scenario report: headline numbers, design, assumptions, every cost
 // line with its source, BOM, emissions, findings.  OWNER: workstream D.
 // Lives at /report; state comes from GridForgeProvider in the root layout.
@@ -60,6 +62,10 @@ function allProvenance(r: ScenarioResult, site: (SiteSummary | SiteIntel)[]): Pr
   r.simulation.provenance.forEach(add);
   r.evaluation.economics.lines.forEach((l) => add(l.provenance));
   r.evaluation.emissions.provenance.forEach(add);
+  const project = projectOf(r);
+  if (project) { add(project.provenance); add(project.jobs.provenance); project.area.demographics?.provenance.forEach(add); }
+  const resilience = resilienceOf(r);
+  if (resilience) add(resilience.provenance);
   site.forEach((x) => x.provenance.forEach(add));
   return [...seen.values()];
 }
@@ -219,6 +225,8 @@ export function ReportView() {
             ]}
           />
         </Section>
+
+        <ProjectDetails result={result} expanded />
 
         <Section title="Costs">
           <Table

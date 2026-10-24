@@ -265,3 +265,112 @@ export interface ScenarioResult {
   evaluation: EvaluationResult;
   findings: Finding[];
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2: demand forecast (A, /api/forecast) and site recommendations (B, /api/sites)
+// ---------------------------------------------------------------------------
+
+/** What-if inputs for the demand forecast. Unset fields take the named scenario's preset. */
+export interface ForecastRequest {
+  scenario?: string;
+  year?: number;
+  population_growth?: number | null;
+  use_dof_population?: boolean | null;
+  electrification_growth?: number | null;
+  efficiency_offset?: number | null;
+  /** New data-center peak MW by 5-digit county FIPS. */
+  data_center_mw?: Record<string, number> | null;
+  data_center_load_factor?: number | null;
+  /** Share of data-center load that shifts off the peak (carbon-aware scheduling). */
+  data_center_flexible_share?: number | null;
+}
+
+export interface RegionForecast {
+  region: string;
+  name: string;
+  base_peak_mw: number;
+  base_energy_mwh: number;
+  peak_mw_p50: number;
+  peak_mw_p90: number;
+  energy_mwh: number;
+  growth_peak_mw_p90: number;
+  /** [{year, peak_mw_p50, peak_mw_p90, energy_mwh}] from the base year to the target year. */
+  trajectory?: Record<string, number>[];
+}
+
+export interface CountyForecast {
+  geoid: string;
+  county: string;
+  region: string;
+  base_peak_mw: number;
+  peak_mw_p50: number;
+  peak_mw_p90: number;
+  energy_mwh: number;
+  growth_peak_mw_p90: number;
+  added_load_mw?: number;
+}
+
+export interface DemandForecast {
+  available: boolean;
+  mode: "ml" | "scenario_on_observed" | "unavailable";
+  artifact_id?: string | null;
+  base_year?: number | null;
+  scenario: string;
+  year: number;
+  params?: Record<string, unknown>;
+  scenarios?: Record<string, Record<string, unknown>>;
+  years?: number[];
+  regions?: RegionForecast[];
+  counties?: CountyForecast[];
+  total_growth_peak_mw_p90?: number;
+  metrics?: Record<string, unknown>;
+  provenance?: Provenance[];
+  notes?: string[];
+  extras?: Record<string, unknown>;
+}
+
+/** What-if inputs for site recommendations: a forecast plus how to cover its growth. */
+export interface SiteRequest {
+  forecast?: ForecastRequest;
+  /** clean_energy_share (0-1) of new energy from solar_pv : onshore_wind; the remaining peak from battery : gas_cc (relative weights). */
+  mix?: Record<string, number> | null;
+  weights?: Record<string, number> | null;
+}
+
+export interface SiteCandidate {
+  id: string;
+  kind: AssetKind;
+  mw: number;
+  location: LngLat;
+  county?: string | null;
+  region: string;
+  suitability: number;
+  d_line_hv_km: number;
+  d_sub_hv_km?: number | null;
+  queue_mw?: number;
+  growth_150km_gwh?: number;
+  in_nonattainment?: boolean;
+  capex_usd?: number | null;
+  gen_tie_usd?: number | null;
+  reason: string;
+}
+
+/** Screening candidates, not buildable sites. */
+export interface SiteRecommendation {
+  available: boolean;
+  mode: "model" | "heuristic" | "unavailable";
+  artifact_id?: string | null;
+  scenario: string;
+  year: number;
+  need_mw_by_region?: Record<string, number>;
+  nameplate_need_mw?: Record<string, number>;
+  allocated_mw?: Record<string, number>;
+  unmet_mw?: Record<string, number>;
+  capacity_credit?: Record<string, number>;
+  sites?: SiteCandidate[];
+  total_capex_usd?: number | null;
+  model_metrics?: Record<string, unknown>;
+  provenance?: Provenance[];
+  caveats?: string[];
+  extras?: Record<string, unknown>;
+}

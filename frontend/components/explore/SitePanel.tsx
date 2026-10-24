@@ -2,11 +2,14 @@
 // Selected-site summary: grid context, nearby plants, findings and sources.  OWNER: workstream A (Explore / GIS).
 import { useMemo, type ReactNode } from "react";
 
+import { countyByName, scenarioLabel, signedMw } from "@/components/forecast/forecastData";
+import { forecastAdjusted, usePhase2 } from "@/components/forecast/usePhase2";
 import { FindingsList } from "@/components/shell/FindingsList";
 import { Panel } from "@/components/shell/Panel";
 import type { Provenance, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
+import { openForecastDrawer } from "./forecastDrawer";
 import { countyLabel, fmtCap, fmtKm, fmtKv, fmtMw, readableName, safeUrl } from "./geo";
 import { FUEL_COLOR, FUEL_LABEL, QUEUE_TYPE_COLOR, QUEUE_TYPE_LABEL, voltageClass, type QueueType } from "./palette";
 import { Dot, LineSwatch } from "./Swatch";
@@ -35,6 +38,7 @@ export function SitePanel() {
         <span className="block font-medium">{name}</span>
         {!name.includes(coords) && <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{coords}</span>}
       </p>
+      <DemandOutlook county={view?.county ?? scenario.site.county} />
       {summary && view ? (
         <SiteDetails summary={summary} v={view} />
       ) : loading ? (
@@ -50,6 +54,31 @@ export function SitePanel() {
         <p className="text-sm text-zinc-500">Click the map to select a site.</p>
       )}
     </Panel>
+  );
+}
+
+/** The Phase 2 forecast for the site's county (same scenario as the forecast drawer), with a link to it. */
+function DemandOutlook({ county }: { county: string | null | undefined }) {
+  const forecast = usePhase2((s) => s.forecast);
+  const { setView } = useGridForge();
+  const c = countyByName(forecast, county);
+  if (!forecast?.available || !c) return null;
+  const scenario = `${scenarioLabel(forecast.scenario).toLowerCase()} scenario${forecastAdjusted(forecast) ? ", adjusted" : ""}`;
+  return (
+    <p className="-mt-1 mb-3 text-xs text-zinc-600 dark:text-zinc-400" title={`New P90 peak demand vs ${forecast.base_year ?? 2024}; county demand is an estimate`}>
+      <span className="font-medium text-zinc-800 dark:text-zinc-200">Demand outlook</span> · {c.county} County: peak{" "}
+      <span className="font-medium tabular-nums text-zinc-800 dark:text-zinc-200">{signedMw(c.growth_peak_mw_p90)}</span> by {forecast.year} ({scenario}) ·{" "}
+      <button
+        type="button"
+        className="font-medium text-sky-700 underline decoration-sky-300 hover:decoration-sky-600 dark:text-sky-400 dark:decoration-sky-700"
+        onClick={() => {
+          setView("single"); // the drawer lives on the map
+          openForecastDrawer();
+        }}
+      >
+        Open forecast
+      </button>
+    </p>
   );
 }
 

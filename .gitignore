@@ -232,3 +232,9 @@ data/*/cache/
 # Demo videos: host externally and link from docs/pitch/
 *.mp4
 *.mov
+
+# Phase 2 ML: raw downloads, caches and training runs stay on the training machine;
+# only exported artifacts under ml/artifacts/ are committed
+ml/*/data/raw/
+ml/*/cache/
+ml/*/runs/

@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 
 from app.contract import Asset, DemandSpec, GridConnection, LngLat, Scenario, ScenarioResult, Site
+from app.builder.project_report import project_report_rows
 
 # Team's demo site: Buttonwillow, Kern County, about a mile from PG&E's Midway 500 kV
 # substation (the PG&E/SCE junction at the south end of Path 15).
@@ -152,4 +154,7 @@ def report_csv(result: ScenarioResult) -> str:
         w.writerow(["emissions", source, round(t), "t CO2e/yr", ""])
     for f in result.findings:
         w.writerow(["finding", f.title, f.severity, "", f.detail])
+    w.writerows(project_report_rows(result))
+    if sc.site.footprint:
+        w.writerow(["site", "selected_footprint", json.dumps(sc.site.footprint), "GeoJSON", "User-selected area"])
     return buf.getvalue()
