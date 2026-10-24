@@ -21,7 +21,7 @@ GRID_STEP_DEG = 0.01  # cache key resolution (~1.1 km); never key on site.id
 # Tracy / Los Banos: the best-screening open cell near PG&E's 500 kV substation
 # (OpenStreetMap: Tesla 37.712,-121.565; Los Banos 37.053,-121.021).
 DEMO_SITES: dict[str, dict] = {
-    "kern": {"label": "Kern County (placeholder demo site)", "location": LngLat(lon=-119.47, lat=35.40)},
+    "kern": {"label": "Buttonwillow, Kern County (team demo site, by Midway 500 kV)", "location": LngLat(lon=-119.47, lat=35.40)},
     "tracy": {"label": "Tracy, 4 km from the 500 kV Tesla substation", "location": LngLat(lon=-121.53, lat=37.74)},
     "los_banos": {"label": "Westside San Joaquin Valley, 3 km from the 500 kV Los Banos substation", "location": LngLat(lon=-120.99, lat=37.06)},
 }
