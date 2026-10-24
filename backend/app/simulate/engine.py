@@ -124,12 +124,15 @@ def prepare(scenario: Scenario, catalog: Catalog) -> Prepared:
         rte=rte,
         import_limit_mw=g.import_limit_mw if g.connected else 0.0,
         export_limit_mw=g.export_limit_mw if g.connected else 0.0,
+        # Price-aware grid charging (dispatch rule 6); scenario.options["grid_charging"] = False turns it off.
+        grid_charging=g.connected and bool(scenario.options.get("grid_charging", True)),
     )
     drivers = Drivers(
         demand_mw=demand,
         solar_cf=_renewable_cf(scenario, "solar_pv", site_w, year, prov),
         wind_cf=_renewable_cf(scenario, "onshore_wind", site_w, year, prov),
-        import_cost_usd_per_mwh=grid.price_usd_per_mwh + a.import_adder_usd_per_mwh + a.carbon_price_usd_per_t * grid.grid_co2_kg_per_mwh / 1000,
+        # CAISO prices already embed cap-and-trade, so (like evaluate) no carbon price on imports.
+        import_cost_usd_per_mwh=grid.price_usd_per_mwh + a.import_adder_usd_per_mwh,
         export_price_usd_per_mwh=grid.price_usd_per_mwh,
         gas_cc_cost_usd_per_mwh=_marginal_cost(catalog, scenario, "gas_cc"),
         gas_ct_cost_usd_per_mwh=_marginal_cost(catalog, scenario, "gas_ct"),
@@ -180,9 +183,12 @@ def summarize(prep: Prepared, d: Dispatch) -> SimulationSummary:
 
     demand = prep.drivers.demand_mw
     ren = total(d.generation_mw["solar_pv"]) + total(d.generation_mw["onshore_wind"])
-    # On-site clean energy served: renewables used directly plus what the battery returned
-    # (the battery only charges from on-site renewable surplus).
-    clean = ren - total(d.curtailed_mw) - total(d.exports_mw) - total(d.charge_mw) + total(d.discharge_mw)
+    # On-site clean energy served: renewables used directly plus the renewable share of
+    # what the battery returned (it also charges from cheap imports when grid charging is on).
+    grid_charge = total(d.grid_charge_mw) if d.grid_charge_mw is not None else 0.0
+    ren_charge = total(d.charge_mw) - grid_charge
+    ren_share = ren_charge / (ren_charge + grid_charge) if ren_charge + grid_charge > 0 else 1.0
+    clean = ren - total(d.curtailed_mw) - total(d.exports_mw) - ren_charge + ren_share * total(d.discharge_mw)
     batt_mwh = prep.fleet.batt_mwh
     return SimulationSummary(
         demand_mwh=total(demand),
@@ -231,6 +237,7 @@ def to_result(prep: Prepared, d: Dispatch, started: float | None = None) -> Simu
         "weather_site": profiles.site_key(s.site.location.lat, s.site.location.lon),
         "marginal_cost_usd_per_mwh": {"gas_cc": prep.drivers.gas_cc_cost_usd_per_mwh, "gas_ct": prep.drivers.gas_ct_cost_usd_per_mwh},
         "battery_energy_mwh": prep.fleet.batt_mwh,
+        "battery_grid_charge_mwh": float(d.grid_charge_mw.sum()) if d.grid_charge_mw is not None else 0.0,
         "notes": prep.notes,
     }
     if started is not None:

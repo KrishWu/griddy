@@ -41,7 +41,7 @@ def test_hybrid_meets_demand_with_real_profiles(hybrid):
     assert s.hours_unmet == 0 and s.unmet_mwh == 0
     assert 0.20 <= hybrid.extras["capacity_factor"]["solar_pv"] <= 0.30
     assert hybrid.extras["curtailment_share"] < 0.10
-    assert 100 <= s.battery_cycles <= 400  # brief target is >= 150 (see grid charging)
+    assert 150 <= s.battery_cycles <= 400  # brief: >= 150 equivalent cycles/yr
 
 
 def test_solar_peaks_at_noon_pst(hybrid):
@@ -122,6 +122,20 @@ def test_islanded_campus_never_imports():
     sim = simulate(sc, CATALOG)
     assert max(sim.hourly.imports_mw) == 0 and max(sim.hourly.exports_mw) == 0
     assert sim.summary.hours_unmet > 0  # 600 MW of gas can't carry a 900 MW night alone
+
+
+def test_grid_charging_pays_for_itself_and_can_be_turned_off(hybrid):
+    off = simulate(_variant(PRESETS["hybrid"], options={"grid_charging": False}), CATALOG)
+    assert off.extras["battery_grid_charge_mwh"] == 0
+    assert hybrid.extras["battery_grid_charge_mwh"] > 0
+    assert hybrid.summary.battery_cycles > off.summary.battery_cycles
+
+    def energy_cost(sim):
+        h, mc = sim.hourly, sim.extras["marginal_cost_usd_per_mwh"]
+        imports = _arr(h.imports_mw) @ (_arr(h.price_usd_per_mwh) + PRESETS["hybrid"].assumptions.import_adder_usd_per_mwh)
+        return imports + mc["gas_cc"] * _arr(h.generation_mw["gas_cc"]).sum()
+
+    assert energy_cost(hybrid) < energy_cost(off)
 
 
 def test_flat_price_source():

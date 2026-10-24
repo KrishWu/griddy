@@ -84,22 +84,31 @@ def assert_invariants(fleet: Fleet, drv: Drivers, d: Dispatch) -> None:
     # Order rules.
     net = drv.demand_mw - g["solar_pv"] - g["onshore_wind"]
     storage = fleet.batt_mw > 0 and fleet.batt_mwh > 0
-    firm = g["gas_cc"] + g["gas_ct"] + d.imports_mw
-    assert (d.charge_mw[net >= 0] <= TOL).all(), "battery charges only from renewable surplus"
-    assert (firm[net <= 0] <= TOL).all(), "no gas or imports in a surplus hour"
+    grid = np.zeros(n) if d.grid_charge_mw is None else d.grid_charge_mw
+    firm = g["gas_cc"] + g["gas_ct"] + d.imports_mw - grid  # firm supply serving demand
     assert (d.exports_mw[drv.export_price_usd_per_mwh < 0] <= TOL).all(), "never export at a negative price"
+    if not fleet.grid_charging:
+        assert (grid <= TOL).all()
+        assert (d.charge_mw[net >= 0] <= TOL).all(), "battery charges only from renewable surplus"
+    else:  # rule 6
+        assert (grid <= d.charge_mw + TOL).all() and (grid <= d.imports_mw + TOL).all()
+        assert (grid[d.exports_mw + d.curtailed_mw > TOL] <= TOL).all(), "never import to charge while spilling"
+        assert (d.charge_mw[net >= 0] <= grid[net >= 0] + TOL).all(), "deficit-hour charging comes from imports"
+    assert (firm[net <= 0] <= TOL).all(), "no gas or imports serving demand in a surplus hour"
+    assert (g["gas_cc"][net <= 0] + g["gas_ct"][net <= 0] <= TOL).all(), "gas never charges the battery"
     if storage:
         max_charge = np.minimum(fleet.batt_mw, (fleet.batt_mwh - prev) / eta)
         max_discharge = np.minimum(fleet.batt_mw, prev * eta)
         spilled = d.exports_mw + d.curtailed_mw > TOL
         assert (d.charge_mw[spilled] >= max_charge[spilled] - TOL).all(), "charge before export/curtail"
-        short = firm + d.unmet_mw > TOL
-        assert (d.discharge_mw[short] >= max_discharge[short] - TOL).all(), "discharge before firm"
+        short = (firm + d.unmet_mw > TOL) if not fleet.grid_charging else (d.unmet_mw > TOL)
+        assert (d.discharge_mw[short] >= max_discharge[short] - TOL).all(), "discharge before firm (always before unmet)"
     curtail_ok = (d.curtailed_mw > TOL) & (drv.export_price_usd_per_mwh >= 0)
     assert (d.exports_mw[curtail_ok] >= fleet.export_limit_mw - TOL).all(), "export before curtail"
 
     cc_full = g["gas_cc"] >= cc_avail - TOL
     ct_full = g["gas_ct"] >= ct_avail - TOL
+    serving = d.imports_mw - grid  # imports serving demand (rule 6 charging rides on top)
     imp_full = d.imports_mw >= fleet.import_limit_mw - TOL
     assert cc_full[g["gas_ct"] > TOL].all(), "gas CC before gas CT"
     unmet = d.unmet_mw > TOL
@@ -109,8 +118,8 @@ def assert_invariants(fleet: Fleet, drv: Drivers, d: Dispatch) -> None:
     imp_cost = drv.import_cost_usd_per_mwh
     assert imp_full[(g["gas_cc"] > TOL) & (imp_cost < cc_cost)].all(), "cheaper imports before CC"
     assert imp_full[(g["gas_ct"] > TOL) & (imp_cost < ct_cost)].all(), "cheaper imports before CT"
-    assert cc_full[(d.imports_mw > TOL) & (imp_cost >= cc_cost)].all(), "CC before dearer imports"
-    assert ct_full[(d.imports_mw > TOL) & (imp_cost >= ct_cost)].all(), "CT before dearer imports"
+    assert cc_full[(serving > TOL) & (imp_cost >= cc_cost)].all(), "CC before dearer imports"
+    assert ct_full[(serving > TOL) & (imp_cost >= ct_cost)].all(), "CT before dearer imports"
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +421,7 @@ def test_invalid_inputs_raise(fleet: Fleet, drv: Drivers, frac):
 # ---------------------------------------------------------------------------
 
 
-def _random_case(seed: int, n: int = 500) -> tuple[Fleet, Drivers, float | None]:
+def _random_case(seed: int, n: int = 500, grid_charging: bool = False) -> tuple[Fleet, Drivers, float | None]:
     rng = np.random.default_rng(seed)
     hour = np.arange(n) % 24
     sun = np.clip(np.sin(np.pi * (hour - 6) / 12), 0, None)
@@ -429,6 +438,7 @@ def _random_case(seed: int, n: int = 500) -> tuple[Fleet, Drivers, float | None]
         rte=rng.uniform(0.7, 1.0),
         import_limit_mw=rng.uniform(0, 500) if rng.uniform() > 0.2 else 0.0,
         export_limit_mw=rng.uniform(0, 500) if rng.uniform() > 0.3 else 0.0,
+        grid_charging=grid_charging,
     )
     drv = Drivers(
         demand_mw=rng.uniform(0, 1500, n),
@@ -450,6 +460,83 @@ def test_random_dispatch_invariants(seed: int):
     assert_invariants(fleet, drv, d)
     if frac is not None:
         assert d.initial_soc_mwh == pytest.approx(frac * fleet.batt_mwh)
+
+
+@pytest.mark.parametrize("seed", range(60))
+def test_random_dispatch_invariants_with_grid_charging(seed: int):
+    fleet, drv, frac = _random_case(seed, grid_charging=True)
+    assert_invariants(fleet, drv, dispatch(fleet, drv, initial_soc_frac=frac))
+
+
+# ---------------------------------------------------------------------------
+# Rule 6: price-aware grid charging
+# ---------------------------------------------------------------------------
+
+
+def _arbitrage_day(**fleet_kw) -> tuple[Fleet, Drivers]:
+    """Flat 100 MW load, no renewables, 60 MW of CC at $20. Imports: $25 overnight (CC
+    serves first, leaving 60 MW of import capacity spare), $30 by day, $200 at 18-22 h."""
+    cost = np.full(24, 30.0)
+    cost[:6] = 25.0
+    cost[18:22] = 200.0
+    fleet = Fleet(gas_cc_mw=60.0, batt_mw=50.0, batt_mwh=100.0, rte=0.81, import_limit_mw=100.0, grid_charging=True)
+    for k, v in fleet_kw.items():
+        setattr(fleet, k, v)
+    return fleet, drivers(np.full(24, 100.0), import_cost=cost, cc_cost=20.0)
+
+
+def _energy_cost(d: Dispatch, drv: Drivers) -> float:
+    return float((d.imports_mw * drv.import_cost_usd_per_mwh).sum() + drv.gas_cc_cost_usd_per_mwh * d.generation_mw["gas_cc"].sum())
+
+
+def test_grid_charging_buys_cheap_and_displaces_dear_imports():
+    fleet, drv = _arbitrage_day()
+    d = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert_invariants(fleet, drv, d)
+    assert d.grid_charge_mw[:6].sum() > 0  # charged from the 40 MW of spare imports overnight
+    assert d.discharge_mw[18:22].sum() > 0  # ... and spent in the $200 hours
+    # Stored energy costs $25 / 0.81 = $30.9 delivered: not worth spending on $30 hours.
+    assert d.discharge_mw[6:18].sum() == pytest.approx(0, abs=TOL)
+    off = dispatch(Fleet(**{**fleet.__dict__, "grid_charging": False}), drv, initial_soc_frac=0.0)
+    assert _energy_cost(d, drv) < _energy_cost(off, drv)
+
+
+def test_no_grid_charging_without_a_profitable_spread():
+    fleet, drv = _arbitrage_day()
+    drv.import_cost_usd_per_mwh[18:22] = 30.0  # no dear hours ahead: $25 / 0.81 + spread > $30
+    d = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert_invariants(fleet, drv, d)
+    assert d.grid_charge_mw.sum() == pytest.approx(0, abs=TOL)
+
+
+def test_grid_charged_energy_never_displaces_cheaper_gas():
+    fleet, drv = _arbitrage_day(gas_cc_mw=100.0)  # CC ($20) can carry the whole load
+    d = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert_invariants(fleet, drv, d)
+    # Imports never serve load here (CC is cheaper and big enough), so anything the battery
+    # discharges would displace $20 gas with ~$31 energy: it must not.
+    assert d.discharge_mw.sum() == pytest.approx(0, abs=TOL)
+
+
+def test_grid_charging_leaves_room_for_free_solar():
+    n = 48
+    hour = np.arange(n) % 24
+    solar = np.where((hour >= 9) & (hour < 15), 1.0, 0.0)
+    cost = np.where(hour < 6, 10.0, np.where((hour >= 18) & (hour < 22), 200.0, 40.0))
+    fleet = Fleet(solar_mw=200.0, gas_cc_mw=100.0, batt_mw=50.0, batt_mwh=100.0, rte=0.81, import_limit_mw=100.0, grid_charging=True)
+    drv = drivers(np.full(n, 100.0), solar_cf=solar, import_cost=cost)
+    d = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert_invariants(fleet, drv, d)
+    assert d.grid_charge_mw.sum() == pytest.approx(0, abs=TOL)  # 6 h x 100 MW surplus fills it for free
+    assert d.curtailed_mw.sum() > 0 and d.charge_mw[9:15].sum() > 0
+
+
+def test_grid_charging_needs_spare_import_capacity():
+    fleet, drv = _arbitrage_day(gas_cc_mw=0.0)  # all 100 MW of import capacity serves the load
+    d = dispatch(fleet, drv, initial_soc_frac=0.0)
+    assert_invariants(fleet, drv, d)
+    assert d.grid_charge_mw.sum() == pytest.approx(0, abs=TOL)
+    assert d.imports_mw.max() <= fleet.import_limit_mw + TOL
 
 
 def test_dispatch_is_deterministic():

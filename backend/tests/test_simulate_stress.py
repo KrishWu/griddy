@@ -89,6 +89,12 @@ def test_explore_failure_never_breaks_the_screen(monkeypatch):
         stress._poi_kv_from_explore.cache_clear()
 
 
+def test_community_feeder_is_a_distribution_interconnection():
+    f = _run(PRESETS["community_microgrid"])
+    assert f["poi_voltage"].severity == "info" and f["poi_voltage"].needs_utility_study
+    assert "Rule 21" in f["interconnection_unverified"].detail
+
+
 def test_islanded_campus_skips_grid_checks():
     f = _run(_grid(PRESETS["hybrid"], connected=False))
     assert "poi_voltage" not in f and "import_headroom" not in f and "interconnection_unverified" not in f

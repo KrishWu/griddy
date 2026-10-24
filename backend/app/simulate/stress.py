@@ -33,6 +33,9 @@ MIN_DEFICIT_HOURS = 4.0
 
 # Rough single-circuit transfer capability by point-of-interconnection voltage (low, high MW).
 POI_CAPABILITY_MW = ((69, 50, 100), (115, 100, 200), (138, 150, 300), (230, 400, 600), (345, 800, 1200), (500, 1500, 2000))
+# At or below this, a tie without a new substation is a distribution interconnection
+# (utility Rule 21 / WDAT process), not a CAISO transmission study.
+DISTRIBUTION_MAX_MW = 50.0
 
 # Gas units: how an asset's capacity splits into units for N-1 (assumption).
 UNIT_SIZE_MW = {"gas_cc": 400.0, "gas_ct": 100.0}
@@ -223,6 +226,10 @@ def _poi_kv_from_explore(lon: float, lat: float) -> float | None:
         return None
 
 
+def _distribution_scale(scenario: Scenario, transfer_mw: float) -> bool:
+    return not scenario.grid.new_substation and transfer_mw <= DISTRIBUTION_MAX_MW
+
+
 def _poi_voltage(scenario: Scenario, sim: SimulationResult) -> Finding | None:
     g = scenario.grid
     if not g.connected:
@@ -230,6 +237,17 @@ def _poi_voltage(scenario: Scenario, sim: SimulationResult) -> Finding | None:
     transfer = max(g.import_limit_mw, g.export_limit_mw, sim.summary.peak_import_mw)
     if transfer <= 0:
         return None
+    if _distribution_scale(scenario, transfer):
+        return _f(
+            "poi_voltage",
+            "info",
+            f"Distribution-scale tie ({transfer:,.0f} MW)",
+            f"{transfer:,.0f} MW on an existing feeder is a distribution interconnection; feeder and substation "
+            "hosting capacity need the utility's Rule 21 / WDAT review.",
+            metric=transfer,
+            threshold=DISTRIBUTION_MAX_MW,
+            needs_utility_study=True,
+        )
     kv, source = g.poi_voltage_kv, "scenario"
     if kv is None:
         loc = scenario.site.location
@@ -500,7 +518,12 @@ def stress_test(scenario: Scenario, sim: SimulationResult) -> list[Finding]:
                 "interconnection_unverified",
                 "warn",
                 "Interconnection capacity not verified",
-                "Import/export limits are planning assumptions. Real capacity and cost need a CAISO interconnection study.",
+                "Import/export limits are planning assumptions. Real capacity and cost need "
+                + (
+                    "the utility's distribution interconnection review (Rule 21 / WDAT)."
+                    if _distribution_scale(scenario, max(scenario.grid.import_limit_mw, scenario.grid.export_limit_mw))
+                    else "a CAISO interconnection study."
+                ),
                 needs_utility_study=True,
             )
         )
