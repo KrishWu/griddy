@@ -10,6 +10,8 @@ import {
   CONTEXT_COLOR,
   FUEL_COLOR,
   FUELS,
+  QUEUE_FILL_OPACITY,
+  QUEUE_RAMP,
   SITE_COLOR,
   UNKNOWN_VOLTAGE,
   UTILITY_TYPE_COLOR,
@@ -19,7 +21,8 @@ import {
 type CircleLayer = Extract<AddLayerObject, { type: "circle" }>;
 type LineLayer = Extract<AddLayerObject, { type: "line" }>;
 type FillLayer = Extract<AddLayerObject, { type: "fill" }>;
-export type LayerSpec = CircleLayer | LineLayer | FillLayer;
+type FillExtrusionLayer = Extract<AddLayerObject, { type: "fill-extrusion" }>;
+export type LayerSpec = CircleLayer | LineLayer | FillLayer | FillExtrusionLayer;
 /** MapLibre's ExpressionSpecification (not re-exported by maplibre-gl). */
 export type Expr = Extract<NonNullable<NonNullable<CircleLayer["paint"]>["circle-radius"]>, unknown[]>;
 export type StyleSpec = Exclude<MapOptions["style"], string | undefined>;
@@ -39,17 +42,19 @@ export const DATA_KEYS = ["plants", "transmission", "substations", "boundaries",
 export type DataKey = (typeof DATA_KEYS)[number];
 
 /** Sources we compute client-side. */
-export const LOCAL_SOURCES = ["site-context", "assets", "site"] as const;
+export const LOCAL_SOURCES = ["site-context", "assets", "site", "footprints"] as const;
 export type LocalSource = (typeof LOCAL_SOURCES)[number];
 
 /** Toggleable groups (checkboxes) -> their layer ids. */
-export type LayerGroup = "plants" | "transmission" | "substations" | "boundaries" | "utilities";
+export type LayerGroup = "plants" | "transmission" | "substations" | "boundaries" | "utilities" | "queue" | "footprints";
 export const GROUP_LABEL: Record<LayerGroup, string> = {
   plants: "Power plants",
   transmission: "Transmission lines",
   substations: "Substations",
   boundaries: "Counties",
   utilities: "Utility territories",
+  queue: "Interconnection queue",
+  footprints: "Asset footprints (2.5D)",
 };
 export const DEFAULT_VISIBLE: Record<LayerGroup, boolean> = {
   plants: true,
@@ -57,6 +62,8 @@ export const DEFAULT_VISIBLE: Record<LayerGroup, boolean> = {
   substations: true,
   boundaries: true,
   utilities: false,
+  queue: false,
+  footprints: false,
 };
 
 const KV: Expr = ["to-number", ["get", "voltage_kv"], 0];
@@ -104,6 +111,24 @@ const ASSET_COLOR = matchColor(
   FUEL_COLOR.other,
 );
 
+/** Active requested MW per county (properties added by the backend from LBNL Queued Up; absent -> 0). */
+const QUEUE_MW: Expr = ["to-number", ["get", "queue_active_mw"], 0];
+const QUEUE_COLOR = ["interpolate", ["linear"], QUEUE_MW, ...QUEUE_RAMP.flat()] as unknown as Expr;
+
+/** Footprint heights are schematic: height_m (solar 20, battery 40, gas 60, wind 8) times an
+ *  exaggeration that doubles per zoom level out, so blocks keep a legible on-screen height
+ *  (solar about 12 px) at the zoom that frames a whole portfolio; close to true heights from zoom 16. */
+const FOOTPRINT_EXAGGERATION_Z10 = 75;
+const FOOTPRINT_H: Expr = ["to-number", ["get", "height_m"], 20];
+const FOOTPRINT_HEIGHT = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  ...[4, 6, 8, 10, 12, 14, 16].flatMap((z) => [z, ["*", FOOTPRINT_H, Math.max(1, FOOTPRINT_EXAGGERATION_Z10 * 2 ** (10 - z))]]),
+] as unknown as Expr;
+export const FOOTPRINT_OPACITY = 0.75;
+export const FOOTPRINT_WIND_OPACITY = 0.35; // wind "land" is turbine spacing; most of it stays usable
+
 /** Our layers, bottom -> top. Overlays from other modules are inserted below the first of these. */
 export interface MapLayer {
   spec: LayerSpec;
@@ -122,6 +147,20 @@ export const LAYERS: MapLayer[] = [
       paint: {
         "fill-color": ["match", ["get", "utility_type"], "IOU", UTILITY_TYPE_COLOR.IOU, "POU", UTILITY_TYPE_COLOR.POU, "#94A3B8"],
         "fill-opacity": 0.08,
+      },
+    },
+  },
+  {
+    // Above the utility fill, below every grid line / point layer; county outlines stay on top.
+    group: "queue",
+    clickable: true,
+    spec: {
+      id: "queue-fill",
+      type: "fill",
+      source: "boundaries",
+      paint: {
+        "fill-color": QUEUE_COLOR,
+        "fill-opacity": ["case", [">", QUEUE_MW, 0], QUEUE_FILL_OPACITY, 0],
       },
     },
   },
@@ -264,6 +303,28 @@ export const LAYERS: MapLayer[] = [
     },
   },
   {
+    group: "footprints",
+    clickable: true,
+    spec: {
+      id: "footprints-wind",
+      type: "fill-extrusion",
+      source: "footprints",
+      filter: ["==", ["get", "kind"], "onshore_wind"],
+      paint: { "fill-extrusion-color": ASSET_COLOR, "fill-extrusion-height": FOOTPRINT_HEIGHT, "fill-extrusion-opacity": FOOTPRINT_WIND_OPACITY },
+    },
+  },
+  {
+    group: "footprints",
+    clickable: true,
+    spec: {
+      id: "footprints",
+      type: "fill-extrusion",
+      source: "footprints",
+      filter: ["!=", ["get", "kind"], "onshore_wind"],
+      paint: { "fill-extrusion-color": ASSET_COLOR, "fill-extrusion-height": FOOTPRINT_HEIGHT, "fill-extrusion-opacity": FOOTPRINT_OPACITY },
+    },
+  },
+  {
     clickable: true,
     spec: {
       id: "assets",
@@ -326,6 +387,8 @@ function plantPaint(): CircleLayer["paint"] {
 
 export const LAYER_IDS = LAYERS.map((l) => l.spec.id);
 export const CLICKABLE_LAYER_IDS = LAYERS.filter((l) => l.clickable).map((l) => l.spec.id);
+/** Clickable area fills: a click on them still selects a site, then shows the area's popup. */
+export const AREA_LAYER_IDS: readonly string[] = ["queue-fill", "utilities-fill"];
 
 export function groupLayerIds(group: LayerGroup): string[] {
   return LAYERS.filter((l) => l.group === group).map((l) => l.spec.id);

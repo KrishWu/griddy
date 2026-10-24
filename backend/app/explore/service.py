@@ -25,6 +25,9 @@ Screening choices beyond the brief (documented so judges can audit them):
   in an enclosed bay (SF, San Pablo, San Diego Bay) takes the nearest county.
 - Nearby generation mix: each plant's generator-level fuel mix, so a solar + storage plant counts
   its battery MW as battery, not as solar.
+- Interconnection queue: LBNL lists a county per request but no coordinates, so the queue is joined
+  by county name (the site's county, and queue_* properties on the boundaries layer). It is
+  requested capacity, not a build forecast.
 """
 
 from __future__ import annotations
@@ -32,8 +35,10 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import copy
 import logging
 import math
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -55,6 +60,11 @@ LAYERS = ("plants", "transmission", "substations", "boundaries", "utilities")
 EXPLORE_DIR = DATA_DIR / "explore"
 POPULATION_FILE = "population_bg_ca.csv"
 FALLBACK_STYLE_FILE = "basemap_fallback.json"
+QUEUE_FILE = "queue_ca_by_county.json"
+QUEUE_SOURCE = "LBNL Queued Up 2026 Edition (CC BY 4.0)"
+QUEUE_PAGE_URL = "https://emp.lbl.gov/queues"
+QUEUE_WARN_MW = 10_000.0  # a county with this much active requested capacity: warn
+QUEUE_SUCCESS_SHARE = "~13%"  # LBNL: share of capacity requested 2000-2020 that reached commercial operation
 
 FUELS = ("solar", "wind", "gas", "hydro", "geothermal", "battery", "nuclear", "other")
 HV_KV = 220.0  # "high voltage" for interconnecting a ~1 GW site: the 230 kV class, incl. SCE's 220 kV system
@@ -138,6 +148,14 @@ _DATASETS: dict[str, dict[str, Any]] = {
         "attribution": "US Census Bureau",
         "updated": "2020",
     },
+    "queue": {
+        "file": QUEUE_FILE,
+        "label": "Interconnection queue (active requests by county)",
+        "source": QUEUE_SOURCE,
+        "license": "CC BY 4.0",
+        "url": QUEUE_PAGE_URL,
+        "attribution": "Lawrence Berkeley National Laboratory and GridTracker",
+    },
 }
 
 
@@ -172,6 +190,140 @@ def _collection(name: str) -> dict[str, Any]:
     return fc
 
 
+@dataclass(frozen=True)
+class _Queue:
+    raw: dict[str, Any]  # the parsed file, served as-is at /api/explore/queue
+    counties: dict[str, dict[str, Any]]  # county name -> normalized record (plain numbers) incl. rank
+    statewide_active_mw: float
+    source: str
+    as_of: str | None
+    url: str
+
+
+def _mw(value: Any) -> float:
+    n = _num(value)
+    return round(n, 1) if n is not None and n > 0 else 0.0
+
+
+def _whole(value: Any) -> int:
+    n = _num(value)
+    return int(n) if n is not None and n > 0 else 0
+
+
+def _text(value: Any) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+# Words kept upper-case when an ALL-CAPS project name is title-cased.
+_KEEP_UPPER = {"LLC", "LP", "BESS", "ESS", "PV", "CA", "US", "USA", "II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII"}
+
+
+def _readable(name: str) -> str:
+    """Title-case an ALL-CAPS project name ("SANBORN HYBRID 3" -> "Sanborn Hybrid 3"); others unchanged."""
+    if not any(c.isalpha() for c in name) or name != name.upper():
+        return name
+    return re.sub(r"[A-Za-z]+(?:'[A-Za-z]+)?", lambda m: m[0] if m[0] in _KEEP_UPPER else m[0].capitalize(), name)
+
+
+def _queue_project(p: dict[str, Any]) -> dict[str, Any]:
+    raw_name = _text(p.get("name"))
+    year = _num(p.get("queue_year"))
+    return {
+        "name": _readable(raw_name) if raw_name else None,
+        "name_raw": raw_name,
+        "type": _text(p.get("type")),
+        "tech": _text(p.get("tech")),
+        "mw": _mw(p.get("mw")),
+        "queue_year": int(year) if year is not None else None,
+        "phase": _text(p.get("phase")),
+        "entity": _text(p.get("entity")),
+        "poi": _text(p.get("poi")),
+    }
+
+
+def _queue_record(rec: dict[str, Any]) -> dict[str, Any]:
+    by_type = rec.get("by_type_mw")
+    largest = rec.get("largest")
+    projects = [_queue_project(p) for p in (largest if isinstance(largest, list) else []) if isinstance(p, dict)]
+    return {
+        "active_projects": _whole(rec.get("active_projects")),
+        "active_mw": _mw(rec.get("active_mw")),
+        "generation_mw": _mw(rec.get("generation_mw")),
+        "storage_mw": _mw(rec.get("storage_mw")),
+        "ia_executed_projects": _whole(rec.get("ia_executed_projects")),
+        "ia_executed_mw": _mw(rec.get("ia_executed_mw")),
+        "by_type_mw": {str(k): _mw(v) for k, v in by_type.items()} if isinstance(by_type, dict) else {},
+        "largest": sorted(projects, key=lambda p: -p["mw"])[:3],
+    }
+
+
+@lru_cache(maxsize=1)
+def _queue() -> _Queue | None:
+    """LBNL interconnection queue aggregated by county, or None if the file is missing or malformed."""
+    path = EXPLORE_DIR / QUEUE_FILE
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"), parse_constant=_reject_constant)
+    except FileNotFoundError:
+        log.warning("Explore data file missing: %s (interconnection queue unavailable)", path)
+        return None
+    except (OSError, ValueError, RecursionError) as exc:
+        log.error("Explore data file unreadable: %s (%s)", path, exc)
+        return None
+    counties_raw = raw.get("counties") if isinstance(raw, dict) else None
+    if not isinstance(counties_raw, dict):
+        log.error("Interconnection-queue file has no 'counties' object: %s", path)
+        return None
+    counties = {name: _queue_record(rec) for name, rec in counties_raw.items() if isinstance(name, str) and isinstance(rec, dict)}
+    if not counties:
+        log.error("Interconnection-queue file lists no counties: %s", path)
+        return None
+    mws = [rec["active_mw"] for rec in counties.values()]
+    for rec in counties.values():
+        rec["rank"] = 1 + sum(1 for mw in mws if mw > rec["active_mw"])  # 1 = most active MW; ties share a rank
+    statewide = raw.get("statewide")
+    total = _num(statewide.get("active_mw")) if isinstance(statewide, dict) else None
+    return _Queue(
+        raw=raw,
+        counties=counties,
+        statewide_active_mw=round(total if total is not None and total >= 0 else sum(mws), 1),
+        source=_text(raw.get("source")) or QUEUE_SOURCE,
+        as_of=_text(raw.get("as_of")),
+        url=_text(raw.get("page_url")) or QUEUE_PAGE_URL,
+    )
+
+
+def _with_queue(fc: dict[str, Any]) -> dict[str, Any]:
+    """Counties FeatureCollection with queue_active_mw / queue_active_projects / queue_ia_executed_mw
+    joined by name (0 for counties the queue file does not list); unchanged if the queue is unavailable."""
+    queue = _queue()
+    if queue is None:
+        return fc
+
+    def joined(f: dict[str, Any]) -> dict[str, Any]:
+        props = f.get("properties")
+        if not isinstance(props, dict):
+            return f
+        rec = queue.counties.get(str(props.get("name")), {})
+        return {
+            **f,
+            "properties": {
+                **props,
+                "queue_active_mw": float(rec.get("active_mw", 0.0)),
+                "queue_active_projects": int(rec.get("active_projects", 0)),
+                "queue_ia_executed_mw": float(rec.get("ia_executed_mw", 0.0)),
+            },
+        }
+
+    return {**fc, "features": [joined(f) for f in fc["features"]]}
+
+
+@lru_cache(maxsize=None)
+def _served(layer: str) -> dict[str, Any]:
+    """A layer as served: the file's FeatureCollection, plus the queue join for boundaries (built once)."""
+    fc = _collection(layer)
+    return _with_queue(fc) if layer == "boundaries" else fc
+
+
 def get_layer(layer: str) -> dict[str, Any]:
     """GeoJSON FeatureCollection for one of LAYERS ("boundaries" = CA counties).
 
@@ -180,7 +332,7 @@ def get_layer(layer: str) -> dict[str, Any]:
     """
     if layer not in LAYERS:
         return _empty_fc()
-    return _collection(layer)
+    return _served(layer)
 
 
 @lru_cache(maxsize=None)
@@ -211,7 +363,21 @@ def fallback_style_path() -> Path | None:
     return path if path.is_file() else None
 
 
+@lru_cache(maxsize=1)
+def queue_payload() -> tuple[bytes, bytes, str] | None:
+    """(compact JSON, gzip, weak ETag) of the interconnection-queue file, or None if unavailable."""
+    queue = _queue()
+    if queue is None:
+        return None
+    raw = json.dumps(queue.raw, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+    etag = 'W/"' + hashlib.blake2b(raw, digest_size=12).hexdigest() + '"'
+    return raw, gzip.compress(raw, compresslevel=6, mtime=0), etag
+
+
 def _updated(name: str) -> str | None:
+    if name == "queue":
+        queue = _queue()
+        return queue.as_of if queue else None
     meta = _DATASETS[name]
     key = meta.get("updated_key")
     if key:
@@ -222,8 +388,13 @@ def _updated(name: str) -> str | None:
 
 
 def _count(name: str) -> int:
-    """Features (rows for population) loaded for a dataset; 0 when its file is missing."""
-    return len(_population().pop) if name == "population" else len(_collection(name)["features"])
+    """Features (rows for population, counties for the queue) loaded for a dataset; 0 when its file is missing."""
+    if name == "population":
+        return len(_population().pop)
+    if name == "queue":
+        queue = _queue()
+        return len(queue.counties) if queue else 0
+    return len(_collection(name)["features"])
 
 
 def layer_info() -> dict[str, dict[str, Any]]:
@@ -251,7 +422,21 @@ def layer_info() -> dict[str, dict[str, Any]]:
 
 def clear_caches() -> None:
     """Drop every loaded file, index and cached summary (after re-running a prep script)."""
-    for fn in (_collection, _encoded, _plants, _substations, _line_sets, _polygons, _california, _population, _substation_coverage, _summary):
+    for fn in (
+        _collection,
+        _queue,
+        _served,
+        _encoded,
+        queue_payload,
+        _plants,
+        _substations,
+        _line_sets,
+        _polygons,
+        _california,
+        _population,
+        _substation_coverage,
+        _summary,
+    ):
         fn.cache_clear()
 
 
@@ -737,13 +922,155 @@ def _population_finding(pop: int) -> Finding:
     )
 
 
+def _power(mw: float) -> str:
+    return f"{mw / 1000:.1f} GW" if mw >= 1000 else f"{mw:,.0f} MW"
+
+
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _words(text: str | None) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+# Leading words too generic to identify a substation on their own ("San Luis", "North Gila").
+_GENERIC_LEAD = {
+    "san", "santa", "los", "las", "el", "la", "del", "de", "north", "south", "east", "west", "new", "old",
+    "mount", "mt", "lake", "port", "point", "big", "little", "upper", "lower", "fort", "st", "saint", "the",
+}  # fmt: skip
+_GENERIC_TAIL = {"substation", "sub", "switchyard", "switching", "station", "kv"}
+
+
+def _substation_key(name: str | None) -> str | None:
+    """The identifying first word of a substation name ("Midway Substation" -> "midway"), or two words
+    when the first is generic ("Los Banos Substation" -> "los banos"); None for unnamed ones."""
+    words = [w for w in _words(name) if not re.fullmatch(r"\d+|\d*kv", w)]  # voltage tokens identify nothing
+    if not words or words[0] in ("unnamed", *_GENERIC_TAIL):
+        return None
+    key = words[:2] if words[0] in _GENERIC_LEAD and len(words) > 1 and words[1] not in _GENERIC_TAIL else words[:1]
+    joined = " ".join(key)
+    return joined if len(joined) >= 3 else None
+
+
+def _poi_matches(poi: str | None, key: str) -> bool:
+    return re.search(rf"\b{re.escape(key)}\b", " ".join(_words(poi))) is not None
+
+
+def _poi_is_line(poi: str, station: str | None = None) -> bool:
+    if re.search(r"\bline\b|\btap\b|#\s*\d|\bno\.?\s*\d", poi, flags=re.IGNORECASE):
+        return True
+    ends = re.split(r"\s*-\s*", poi.strip())
+    if len(ends) < 2 or not all(ends):
+        return False
+    # A two-ended "A-B" name with no kV bus is a line ("DELEVAN-CORTINA").
+    if re.search(r"\d\s*kv", poi, re.IGNORECASE) is None:
+        return True
+    # With a kV it is one substation's bus ("Vaca-Dixon 230 kV") unless the matched substation names only
+    # one end: "Westly-Quinto 230 kV" or "QUINTO SW STA- FINK SW STA 230 kV" run between two stations.
+    keys = [k for k in (_substation_key(e) for e in ends) if k]
+    return station is not None and len(keys) >= 2 and not all(_poi_matches(station, k) for k in keys)
+
+
+def _project_label(p: dict[str, Any], with_tech: bool) -> str:
+    tech = (p.get("tech") or p.get("type") or "").replace("+", " + ").lower()
+    if not p.get("name"):
+        return f"an unnamed {tech + ' ' if tech else ''}request ({p['mw']:,.0f} MW)"
+    return f"{p['name']} ({p['mw']:,.0f} MW{' ' + tech if with_tech and tech else ''})"
+
+
+def _queue_finding(qc: dict[str, Any], hv: dict[str, Any] | None) -> Finding:
+    """Interconnection-queue context for the site's county (LBNL Queued Up)."""
+    fid, county, n, mw = "interconnection_queue", qc["county"], qc["active_projects"], qc["active_mw"]
+    as_of = f" (through {qc['as_of']})" if qc.get("as_of") else ""
+    if n == 0:
+        return _finding(
+            fid,
+            "info",
+            f"No active interconnection requests in {county} County",
+            f"LBNL's interconnection-queue data{as_of} lists no active transmission-level generation or storage request in "
+            f"{county} County, so there is less local competition for transmission headroom. Projects queued in neighboring "
+            "counties can still use the same lines and substations.",
+            metric=0.0,
+            threshold=QUEUE_WARN_MW,
+        )
+    ia_n, ia_mw = qc["ia_executed_projects"], qc["ia_executed_mw"]
+    parts = [
+        f"{ia_n} of the {n} ({_power(ia_mw)}) {'has a signed interconnection agreement' if ia_n == 1 else 'have signed interconnection agreements'}."
+        if ia_n
+        else "None has a signed interconnection agreement yet."
+    ]
+    largest: list[dict[str, Any]] = qc.get("largest") or []
+    key = _substation_key(hv["name"]) if hv else None
+    at_hv = [p for p in largest if key and p.get("poi") and _poi_matches(p["poi"], key)]
+    at_hv_ids = {id(p) for p in at_hv}
+    named_hv = False  # the nearest-substation clause goes on the first matching request only
+
+    def where(p: dict[str, Any]) -> str:
+        nonlocal named_hv
+        if not p.get("poi"):
+            return ""
+        if id(p) in at_hv_ids and hv is not None:
+            if named_hv:
+                return f", also {'on the' if _poi_is_line(p['poi'], hv['name']) else 'at'} {p['poi']}"
+            named_hv = True
+            nearest = f"the site's nearest 220 kV+ substation ({hv['distance_km']:.1f} km away)"
+            if _poi_is_line(p["poi"], hv["name"]):
+                return f" on the {p['poi']}, which runs to {hv['name']}, {nearest}"
+            return f" at {p['poi']}, {nearest}"
+        return f" at {p['poi']}"
+
+    if largest:
+        top = largest[0]
+        parts.append(f"Largest: {_project_label(top, True)}{where(top)}.")
+        others = [p for p in at_hv if p is not top]
+        if others:
+            listed = " and ".join(f"{_project_label(p, False)}{where(p)}" for p in others)
+            total = sum(p["mw"] for p in largest)
+            parts.append(f"The {len(largest)} largest requests total {_power(total)}, including {listed}.")
+    parts.append(
+        f"{county} ranks {_ordinal(qc['rank'])} of {qc['counties_ranked']} California counties by requested capacity "
+        f"({_power(mw)} of {_power(qc['statewide_active_mw'])} statewide)."
+    )
+    parts.append(
+        "Queued projects compete for the same transmission headroom a new large load would use, while only "
+        f"{QUEUE_SUCCESS_SHARE} of requested capacity has historically reached commercial operation (LBNL)."
+    )
+    return _finding(
+        fid,
+        "warn" if mw >= QUEUE_WARN_MW else "info",
+        f"{county} County: {n} active interconnection {'request' if n == 1 else 'requests'} ({_power(mw)})",
+        " ".join(parts),
+        metric=float(mw),
+        threshold=QUEUE_WARN_MW,
+    )
+
+
+def _queue_county(queue: _Queue | None, county: str | None) -> dict[str, Any] | None:
+    """extras.queue_county: the county's queue aggregate with its rank and source, or None."""
+    rec = queue.counties.get(county) if queue and county else None
+    if rec is None or queue is None:
+        return None
+    return {
+        "county": county,
+        **copy.deepcopy(rec),
+        "counties_ranked": len(queue.counties),
+        "statewide_active_mw": queue.statewide_active_mw,
+        "source": queue.source,
+        "as_of": queue.as_of,
+        "url": queue.url,
+    }
+
+
 def _observed(name: str, note: str | None = None) -> Provenance:
     meta = _DATASETS[name]
     return Provenance(kind="observed", source=meta["source"], url=meta["url"], note=note)
 
 
-def _provenance(available: set[str]) -> list[Provenance]:
-    """One Provenance per dataset that loaded, plus the inferred distance method."""
+def _provenance(available: set[str], queue_used: _Queue | None = None) -> list[Provenance]:
+    """One Provenance per dataset that loaded (the queue only when the summary used it), plus the
+    inferred distance method."""
     notes: dict[str, str | None] = {
         "plants": (
             "Operating generators summed to nameplate MW per plant (plants >= 1 MW); status as of end of 2024. "
@@ -774,6 +1101,16 @@ def _provenance(available: set[str]) -> list[Provenance]:
             "220 kV+ includes SCE's 220 kV substations."
         )
     out = [_observed(name, note) for name, note in notes.items() if name in available]
+    if queue_used is not None:
+        out.append(
+            Provenance(
+                kind="observed",
+                source=QUEUE_SOURCE,
+                url=queue_used.url,
+                note=f"Active requests through {queue_used.as_of or 'end of 2025'}, aggregated by county; "
+                "requested capacity, not a build forecast.",
+            )
+        )
     out.append(
         Provenance(
             kind="inferred",
@@ -867,6 +1204,10 @@ def _summary(lon: float, lat: float) -> SiteSummary:
         )
     if "plants" in available:
         findings.append(_generation_finding(plant_stats, largest, in_california))
+    queue = _queue()
+    queue_county = _queue_county(queue, county_name)
+    if queue_county is not None:
+        findings.append(_queue_finding(queue_county, hv_sub))
     if population is not None:
         findings.append(_population_finding(population))
 
@@ -885,6 +1226,7 @@ def _summary(lon: float, lat: float) -> SiteSummary:
         "in_california": in_california,
         "distance_method": DISTANCE_METHOD,
         "missing_data": sorted(set(_DATASETS) - available),
+        "queue_county": queue_county,
     }
     return SiteSummary(
         site=site,
@@ -894,6 +1236,6 @@ def _summary(lon: float, lat: float) -> SiteSummary:
         nearest_line_km=hv_line["distance_km"] if hv_line else None,
         population_within_10km=population,
         findings=findings,
-        provenance=_provenance(available),
+        provenance=_provenance(available, queue if queue_county is not None else None),
         extras=extras,
     )
