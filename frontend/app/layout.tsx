@@ -23,8 +23,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head><script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('griddy:theme');document.documentElement.dataset.theme=t==='light'||t==='dark'?t:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}` }} /></head>
       <body className="min-h-full flex flex-col">
         {/* In the layout (not the page) so state survives navigation, e.g. to /report. */}
         <GridForgeProvider>{children}</GridForgeProvider>

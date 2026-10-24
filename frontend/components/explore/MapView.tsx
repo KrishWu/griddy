@@ -42,6 +42,9 @@ import {
   type LocalSource,
 } from "./mapStyle";
 import { demandCard, popupContent, recSiteCard, type DemandInfo } from "./popup";
+import { ProjectMapTools } from "./ProjectMapTools";
+import { MapSearch } from "./MapSearch";
+import { useTheme } from "@/components/builder/ThemeToggle";
 import { readSummary, trackSiteSelection, useSiteSummary } from "./useSiteSummary";
 
 type FC = GeoJSON.FeatureCollection;
@@ -237,9 +240,13 @@ function contextFC(p: LngLat | undefined, summary: SiteSummary | null): FC {
   return { type: "FeatureCollection", features };
 }
 
-export function MapView() {
+export function MapView({ advanced = true }: { advanced?: boolean }) {
+  const theme = useTheme();
+  const themeRef = useRef(theme);
+  const appliedTheme = useRef(theme);
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
+  const areaClick = useRef<((p: LngLat) => void) | null>(null);
   const { scenario, selectSite, overlays } = useGridForge();
   const { summary } = useSiteSummary();
   // Phase 2: the forecast and site recommendation for the drawer's current what-if (shared state).
@@ -260,6 +267,13 @@ export function MapView() {
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
   const retryBasemap = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    themeRef.current = theme;
+    if (appliedTheme.current !== theme) {
+      appliedTheme.current = theme;
+      retryBasemap.current?.();
+    }
+  }, [theme]);
   // Map size, so the layers card can stop above D's floating Site cards when the map is narrow, and the
   // forecast drawer can size itself.
   const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
@@ -346,7 +360,7 @@ export function MapView() {
       maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs"); // copied to public/ by npm postinstall
       const m = new maplibregl.Map({
         container: el.current,
-        style: BASEMAP,
+        style: themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP,
         bounds: CA_BOUNDS,
         fitBoundsOptions: { padding: 24 },
         attributionControl: { compact: true },
@@ -385,13 +399,15 @@ export function MapView() {
         drawn.current.clear();
         setStyleGen(0);
         setFallback(true);
-        m.setStyle(fetched ?? INLINE_FALLBACK_STYLE, { diff: false }); // full rebuild -> 'style.load'
+        const fallbackStyle = fetched ?? INLINE_FALLBACK_STYLE;
+        m.setStyle(themeRef.current === "dark" ? { ...fallbackStyle, layers: [{ id: "background", type: "background", paint: { "background-color": "#0c182a" } }] } : fallbackStyle, { diff: false });
       };
       // Slow is not down (venue Wi-Fi, a busy laptop): after the timeout, fall back only if the
       // basemap's style URL is actually unreachable. Real load errors fall back right away (below).
       const probeThenSwap = async () => {
         if (styleLoaded) return;
-        const reachable = await fetch(BASEMAP, { signal: AbortSignal.timeout(STYLE_PROBE_MS) }).then((r) => r.ok, () => false);
+        const url = themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP;
+        const reachable = await fetch(url, { signal: AbortSignal.timeout(STYLE_PROBE_MS) }).then((r) => r.ok, () => false);
         if (!reachable && !styleLoaded) void swapToFallback(`basemap unreachable after ${STYLE_TIMEOUT_MS / 1000} s`);
       };
       const armFallbackTimer = () => {
@@ -406,7 +422,7 @@ export function MapView() {
         drawn.current.clear();
         setStyleGen(0);
         setFallback(false);
-        m.setStyle(BASEMAP, { diff: false }); // errors or a dead URL land back on the fallback
+        m.setStyle(themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP, { diff: false });
         armFallbackTimer();
       };
 
@@ -463,12 +479,19 @@ export function MapView() {
         clearTimeout(selectTimer);
         popup?.remove();
         popup = null;
+        if (areaClick.current) {
+          const ll = e.lngLat.wrap();
+          areaClick.current({ lon: ll.lng, lat: ll.lat });
+          return;
+        }
         const hits = hitsAt(e.point, CLICKABLE_LAYER_IDS); // topmost first
         const feature = hits.find((f) => !AREA_LAYER_IDS.includes(f.layer.id));
         if (feature) {
           popup = openPopup(feature, e.lngLat);
           return;
         }
+        const zone = hitsAt(e.point, ["zoning-fill"])[0];
+        if (zone) { popup = openPopup(zone, e.lngLat); return; }
         if (e.originalEvent.detail > 1) return; // 2nd click of a double-click: the map zooms instead
         // Empty map (or only an area fill): select a site here, unless a double-click follows, then
         // show the topmost area's popup (a queue county above a utility territory).
@@ -490,7 +513,7 @@ export function MapView() {
         raf = requestAnimationFrame(() => {
           raf = 0;
           if (map.current !== m) return;
-          m.getCanvas().style.cursor = hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "";
+          m.getCanvas().style.cursor = areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "";
         });
       });
       m.on("mouseout", () => {
@@ -744,10 +767,11 @@ export function MapView() {
     "px-2.5 py-1 font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full overflow-hidden">
       <div ref={el} className="h-full w-full" />
-      {/* Top-left: view buttons and the basemap notice (D's Site cards float over the bottom-left). */}
+      {/* Top-left: search, view controls, highlighted-area zoning and basemap notices. */}
       <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+        <MapSearch mapRef={map} ready={ready} onNavigate={() => { userMoved.current = true; }} />
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
             California
@@ -765,6 +789,7 @@ export function MapView() {
             Forecast
           </button>
         </div>
+        <ProjectMapTools mapRef={map} styleGen={styleGen} clickHandlerRef={areaClick} />
         {fallback && (
           <span className="pointer-events-auto rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 shadow ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800">
             Basemap offline: showing grid layers on a plain background ·{" "}
@@ -777,7 +802,7 @@ export function MapView() {
       {/* Top-right, below MapLibre's zoom/compass control (10 px margin + 3 x 29 px buttons): layers + legend,
           capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right),
           and of the floating Site cards on narrow maps (layersMaxHeight). */}
-      <div
+      {advanced && <div
         className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end transition-[right] duration-150 ease-out"
         style={{ ...(layersMaxH !== null ? { maxHeight: layersMaxH } : {}), ...(shift ? { right: shift + LAYERS_CARD.right } : {}) }}
       >
@@ -791,7 +816,7 @@ export function MapView() {
           onToggleOverlay={toggleOverlay}
           demandCaption={demandCaption}
         />
-      </div>
+      </div>}
       {drawerOpen && (
         <aside
           className="absolute inset-y-0 right-0 z-30 flex max-w-full flex-col border-l border-zinc-200 bg-white text-zinc-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"

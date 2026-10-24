@@ -468,7 +468,7 @@ def evaluate(scenario: Scenario, sim: SimulationResult, catalog: Catalog) -> Eva
     extras["provenance"] = _headline_provenance(scenario, lines, res, emissions, extras, fl)
     extras["methodology"] = _methodology(scenario, res, tier["kv"], shaped, a.carbon_price_usd_per_t)
 
-    return EvaluationResult(
+    result = EvaluationResult(
         economics=Economics(
             financial_boundary=FINANCIAL_BOUNDARY,
             capex_total_usd=res.capex_usd,
@@ -481,6 +481,9 @@ def evaluate(scenario: Scenario, sim: SimulationResult, catalog: Catalog) -> Eva
         emissions=emissions,
         extras=_json_safe(extras),
     )
+    from app.evaluate.project import project_metrics
+    result.extras["project"] = project_metrics(scenario, sim, catalog, result.economics, result.emissions, extras["land_acres_total"])
+    return result
 
 
 def _headline_provenance(
