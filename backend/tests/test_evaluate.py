@@ -336,7 +336,8 @@ def test_presets_bom(preset_results):
         for b in bom:
             assert b.basis.strip() and b.item.startswith(groups) and b.quantity >= 0, b
         items = {b.item.split(" (")[0]: b for b in bom}
-        assert "Electrical: Data-center service transformers" in items  # data_center demand
+        has_dc_items = "Electrical: Data-center service transformers" in items
+        assert has_dc_items == (p.demand.kind == "data_center")
         if any(a.kind == "solar_pv" for a in p.assets):
             mwac = sum(a.capacity_mw for a in p.assets if a.kind == "solar_pv")
             mods = next(b for b in bom if b.item.startswith("Generation: PV modules"))
