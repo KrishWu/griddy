@@ -1,0 +1,24 @@
+{
+  "_comment": "Illustrative growth assumptions (per year, compounding from the base year), not an official forecast. Calibrate against the CEC 2025 IEPR demand forecast by adding \"calibration_csv\" to a scenario (see scenarios.py). data_center_mw: new data-center peak load by 5-digit county FIPS, modeled flat at peak x data_center_load_factor.",
+  "low": {
+    "population_growth": 0.002,
+    "electrification_growth": 0.008,
+    "efficiency_offset": 0.007,
+    "data_center_mw": {},
+    "note": "Slow electrification, efficiency keeps pace, no new data centers"
+  },
+  "mid": {
+    "population_growth": 0.004,
+    "electrification_growth": 0.015,
+    "efficiency_offset": 0.007,
+    "data_center_mw": {"06029": 1000, "06085": 500},
+    "note": "Steady EV/heat-pump adoption; a 1 GW AI campus in Kern (the Griddy demo site) and 500 MW in Santa Clara"
+  },
+  "high": {
+    "population_growth": 0.006,
+    "electrification_growth": 0.025,
+    "efficiency_offset": 0.005,
+    "data_center_mw": {"06029": 2000, "06085": 1000, "06019": 500, "06025": 500},
+    "note": "Fast electrification and an AI data-center build-out in Kern, Santa Clara, Fresno and Imperial"
+  }
+}

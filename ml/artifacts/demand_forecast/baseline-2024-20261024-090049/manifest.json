@@ -1,0 +1,37 @@
+{
+  "artifact_id": "baseline-2024-20261024-090049",
+  "kind": "baseline",
+  "base_year": 2024,
+  "years": [
+    2024
+  ],
+  "scenarios": {
+    "base": {
+      "kind": "observed"
+    }
+  },
+  "created_utc": "2026-10-24T09:00:49+00:00",
+  "producer": {
+    "package": "ml.demand_forecast"
+  },
+  "data_vintage": {
+    "eia930": "2024 six-month files",
+    "population": "Census 2020 block groups"
+  },
+  "metrics": {},
+  "provenance": [
+    {
+      "kind": "observed",
+      "source": "EIA-930 hourly demand (CAISO sub-regions PGAE/SCE/SDGE; LDWP, BANC, IID, TIDC)",
+      "url": "https://www.eia.gov/electricity/gridmonitor/",
+      "note": null
+    },
+    {
+      "kind": "inferred",
+      "source": "Downscaled to counties by 2020 Census block-group population within each load region",
+      "url": "https://www2.census.gov/geo/docs/reference/cenpop2020/blkgrp/",
+      "note": "County demand is an estimate, not metered load. Regions from CEC balancing-authority and utility territories (data/explore)."
+    }
+  ],
+  "schema_version": "1.0"
+}
