@@ -16,6 +16,7 @@ import { carbFactorText, type EvalExtras, type ProvenanceMetric } from "./extras
 import { DASH, finite, tonsFine } from "./fmt";
 import { ProvenanceTip } from "./ProvenanceTip";
 import { StatTip } from "./StatTip";
+import { CarbonLedger } from "./CarbonLedger";
 
 const SOURCE_LABEL: Record<string, string> = {
   gas_cc: "On-site gas CC",
@@ -177,7 +178,9 @@ export function EmissionsBreakdown({
   const gasMwh = (finite(gen.gas_cc) ?? 0) + (finite(gen.gas_ct) ?? 0);
   let honest: string;
   if (gasMwh <= 0) {
-    honest = "No on-site combustion: all CO2e here comes from grid imports" + (base.upstream_methane ? " and upstream methane." : ".");
+    honest = (total ?? 0) === 0
+      ? "No modeled operational emissions: no on-site combustion or emissions from grid imports in this run. Construction carbon is a separate estimate below."
+      : "No on-site combustion: annual operational CO2e comes from grid imports. Solar and wind produce no direct operating CO2; imports can supply demand and charge batteries when renewables fall short.";
   } else if ((gasCc ?? gasCt) !== undefined && gridMean !== undefined) {
     const gasI = (gasCc ?? gasCt) as number;
     const dirtier = gasI > gridMean;
@@ -197,7 +200,7 @@ export function EmissionsBreakdown({
     <section className={`${CHART_VARS} space-y-3`} aria-labelledby={headingId}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id={headingId} className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-          Emissions
+          Annual operational emissions
         </h3>
         {carb && (
           <div role="group" aria-label="Import accounting method" className="flex rounded border border-zinc-200 p-0.5 text-[10px] dark:border-zinc-700">
@@ -320,7 +323,8 @@ export function EmissionsBreakdown({
         </div>
       )}
 
-      <p className="text-[10px] text-zinc-500">Battery charging and exports carry no direct emissions and earn no credit.</p>
+      <p className="text-[10px] text-zinc-500">Charging has no direct on-site emissions; emissions from charging electricity are included in gas or imports. Exports earn no avoided-emissions credit. Construction carbon is excluded from the annual figure.</p>
+      <CarbonLedger result={result} />
     </section>
   );
 }

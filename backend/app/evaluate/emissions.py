@@ -1,4 +1,4 @@
-"""Annual CO2e, import accounting, upstream methane, NOx and PM2.5.  OWNER: workstream C (Evaluate).
+"""Annual operational CO2e, import accounting, upstream methane, NOx and PM2.5.
 
 Direct CO2 (t)  = gas MMBtu x 53.06 kg/MMBtu / 1000 (40 CFR 98 Table C-1), per gas kind.
 Imports (t)     = sum_h imports_h x grid CO2_h / 1000 (B's hourly CAISO average intensity; primary).
@@ -64,6 +64,8 @@ def compute_emissions(
     co2 = ref("co2_kg_per_mmbtu_natural_gas")
     import_weighted = hourly_t * 1000 / imports_mwh if imports_mwh > 0 else None
     provenance = [
+        Provenance(kind="assumption", source="Annual operational boundary",
+                   note="Counts on-site fuel combustion and all hourly grid imports, including battery charging. Solar, wind and storage have zero direct operational CO2. Construction/manufacturing is separate in extras.project.carbon; exports earn no avoided-emissions credit."),
         Provenance(kind="observed", source=f"EPA 40 CFR 98 Subpart C Table C-1: natural gas {co2['value']} kg CO2/MMBtu", url=co2["url"],
                    note="On-site combustion CO2 = gas MMBtu (ATB full-load heat rate x simulated MWh) x factor. Combustion CH4/N2O (<0.1% of CO2e) omitted."),
         Provenance(kind="simulated", source="Griddy hourly simulation: imports x hourly CAISO average grid CO2 intensity",

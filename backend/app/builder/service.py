@@ -1,6 +1,6 @@
 """Scenario presets + report export.  OWNER: workstream D (Build + Report + UI shell).
 
-The three presets compare on the same 1 GW data-center demand (~900 MW average)
+The three large-project presets compare on the same 1 GW demand (~900 MW average)
 and site. They are illustrative configurations, not engineered designs, sized
 relative to average load so each one tells its story:
   Hybrid: PV ~1.4x load (a midday surplus charges the battery), gas + imports
@@ -52,7 +52,7 @@ def _base(
         mode=mode,
         preset=id_,
         site=site,
-        demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.2, profile="flat"),
+        demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.0, profile="flat"),
         assets=assets,
         # Starts at the default site's nearest 230 kV tie; A's nearest-line data replaces these after a map click.
         grid=grid
@@ -66,7 +66,7 @@ def list_presets(site: Site | None = None) -> list[Scenario]:
         _base("grid_connected", "Grid-connected", [], 1100, site),
         _base(
             "hybrid",
-            "Hybrid power campus",
+            "Hybrid power portfolio",
             [
                 Asset(id="solar-1", kind="solar_pv", capacity_mw=1300),
                 Asset(id="gas-1", kind="gas_cc", capacity_mw=700),
@@ -119,7 +119,7 @@ def report_csv(result: ScenarioResult) -> str:
     w.writerow(["summary", "annual_opex", round(e.annual_opex_usd), "USD/yr", ""])
     w.writerow(["summary", "npc", round(e.npc_usd), "USD", ""])
     w.writerow(["summary", "lcoe", round(e.lcoe_usd_per_mwh, 2), "USD/MWh", ""])
-    w.writerow(["summary", "emissions", round(em.annual_t_co2e), "t CO2e/yr", ""])
+    w.writerow(["summary", "emissions", round(em.annual_t_co2e), "t CO2e/yr", "Annual operations: on-site combustion + grid imports + optional upstream methane; excludes construction"])
     w.writerow(["summary", "carbon_intensity", round(em.intensity_kg_per_mwh, 1), "kg CO2e/MWh", ""])
     w.writerow(["summary", "onsite_clean_share", round(s.onsite_clean_share, 4), "fraction", ""])
     w.writerow(["summary", "unmet_hours", s.hours_unmet, "h", ""])
@@ -131,8 +131,9 @@ def report_csv(result: ScenarioResult) -> str:
     w.writerow(["site", "utility_territory", sc.site.utility_territory or "", "", ""])
 
     w.writerow(["design", "mode", sc.mode, "", ""])
-    w.writerow(["design", "peak_demand", sc.demand.peak_mw, "MW", "facility peak at the meter = IT load x PUE"])
-    if sc.mode != "community":
+    data_center = sc.options.get("demand_use") == "data_center" or sc.demand.profile in ("ai_training", "ai_inference")
+    w.writerow(["design", "peak_demand", sc.demand.peak_mw, "MW", "Peak demand to serve, including any customer overhead"])
+    if data_center:
         w.writerow(["design", "it_load", round(sc.demand.peak_mw / sc.demand.pue, 1), "MW", "peak_demand / PUE"])
     w.writerow(["design", "load_factor", sc.demand.load_factor, "", ""])
     w.writerow(["design", "pue", sc.demand.pue, "", ""])

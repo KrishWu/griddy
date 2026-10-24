@@ -96,7 +96,7 @@ export function AppShell() {
       id: "plan",
       label: "Plan",
       icon: <PlanIcon className={ICON} />,
-      hint: "Plan a project: design, demand, highlighted area",
+      hint: "Plan power plants and grid infrastructure for the selected area's demand",
       content: (
         <>
           <PanelGuard name="Recommended sites"><RecommendedSites /></PanelGuard>
@@ -223,7 +223,7 @@ export function AppShell() {
             <GriddyMark className="h-6 w-6 text-emerald-700 dark:text-cyan-300" />
             Griddy
           </h1>
-          <span className="hidden text-sm text-zinc-500 xl:inline dark:text-zinc-400">Energy infrastructure planning</span>
+          <span className="hidden text-sm text-zinc-500 xl:inline dark:text-zinc-400">Power plants &amp; grid planning</span>
           <Toggle label="Detail" value={detailMode} onChange={setDetailMode} options={[{ value: "basic", label: "Basic" }, { value: "advanced", label: "Advanced" }]} />
           <Toggle<View>
             label="View"
@@ -239,7 +239,7 @@ export function AppShell() {
             value={mode}
             onChange={setMode}
             options={[
-              { value: "industrial", label: <><span className="sm:hidden">Industrial</span><span className="hidden sm:inline">Industrial / AI campus</span></> },
+              { value: "industrial", label: "Power plants & grid" },
               { value: "community", label: "Community" },
             ]}
           />

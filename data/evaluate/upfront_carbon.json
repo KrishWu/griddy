@@ -1,0 +1,23 @@
+{
+  "solar_pv": {
+    "factor": 1007.0,
+    "unit": "kg CO2e/kWdc",
+    "source": "NREL 2024, NREL/TP-7A40-87372, Table B5, imported weighted-average supply chain",
+    "url": "https://www.osti.gov/servlets/purl/2331420",
+    "basis": "Sum of manufacture, BOS and installation rows: 1+59+230+100+18+68+220+130+38+30+13 = 1007 kg CO2e/kWdc. Excludes Use/O&M and EOL rows. Convert modeled MWac using the same ATB DC/AC ratio as the bill of materials. A reference silicon PV system, not a supplier declaration."
+  },
+  "onshore_wind": {
+    "factor": 674.52,
+    "unit": "kg CO2e/kW",
+    "source": "NREL 2021 lifecycle factors, EF_Table_FINAL.xlsx, Land-based wind, one-time upstream median (cell E32)",
+    "url": "https://data.nlr.gov/submissions/171",
+    "basis": "11 g CO2e/kWh one-time upstream median converted using an illustrative reference 35% capacity factor and 20-year life: 11 × 8760 × 0.35 × 20 / 1000 = 674.52 kg/kW. This conversion is an assumption, not an observed capacity footprint. Independent of this scenario's weather and dispatch."
+  },
+  "battery": {
+    "factor": 172.7218530063873,
+    "unit": "kg CO2e/kWh capacity",
+    "source": "NREL 2021 lifecycle factors, EF_Table_FINAL.xlsx, Li-Ion Battery Storage, one-time upstream median (cell E60)",
+    "url": "https://data.nlr.gov/submissions/171",
+    "basis": "31.547370412125535 g CO2e/kWh discharged converted using an illustrative reference 365 equivalent full discharge cycles/year for 15 years: factor × 365 × 15 / 1000 = 172.72 kg/kWh capacity. A screening conversion, not chemistry- or supplier-specific. Charging electricity is excluded here and counted in the hourly operational model."
+  }
+}
