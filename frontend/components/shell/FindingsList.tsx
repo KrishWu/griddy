@@ -1,5 +1,6 @@
 // Renders Finding[] from any module. SHARED (foundation).
 import { Term } from "@/components/glossary/Term";
+import { shortDescription } from "@/lib/description";
 import type { Finding } from "@/lib/contract";
 
 const COLOR: Record<Finding["severity"], string> = {
@@ -25,7 +26,7 @@ export function FindingsList({ findings }: { findings: Finding[] }) {
                 </span>
               )}
             </div>
-            <div className="text-zinc-500">{f.detail}</div>
+            <div className="text-zinc-500">{shortDescription(f.detail)}</div>
           </div>
         </li>
       ))}

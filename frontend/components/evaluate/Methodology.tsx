@@ -2,6 +2,7 @@
 // Methodology footnotes from extras.methodology, in the spec's topic order. The
 // contract's financial boundary is always shown under the panel, so it isn't repeated
 // here unless the backend wrote its own "boundary" note. OWNER: workstream C (Evaluate).
+import { shortDescription } from "@/lib/description";
 import { METHODOLOGY_TOPICS } from "./extras";
 
 export function Methodology({ methodology }: { methodology: Record<string, string> }) {
@@ -17,7 +18,7 @@ export function Methodology({ methodology }: { methodology: Record<string, strin
     <ol className="list-decimal space-y-1.5 pl-4 text-[11px] leading-snug text-zinc-600 marker:text-zinc-400 dark:text-zinc-400">
       {notes.map((n) => (
         <li key={n.key}>
-          <span className="font-medium text-zinc-800 dark:text-zinc-200">{n.title}.</span> <span className="whitespace-pre-line">{n.text}</span>
+          <span className="font-medium text-zinc-800 dark:text-zinc-200">{n.title}.</span> <span className="whitespace-pre-line">{shortDescription(n.text)}</span>
         </li>
       ))}
       {notes.length === 0 && (

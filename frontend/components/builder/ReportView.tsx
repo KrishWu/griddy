@@ -7,6 +7,7 @@ import { projectOf, resilienceOf } from "@/components/evaluate/project";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { GLOSSARY, type GlossaryEntry } from "@/lib/glossary";
 import { Term } from "@/components/glossary/Term";
 import type { Finding, Provenance, ScenarioResult, SiteIntel, SiteSummary } from "@/lib/contract";
 import { mw, mwh, pct, tons, usd } from "@/lib/format";
@@ -281,12 +282,32 @@ export function ReportView() {
           <FindingList findings={result.findings} />
         </Section>
 
+        <Section title="Methodology">
+          <dl className="space-y-3 text-xs">
+            {Object.entries((result.evaluation.extras?.methodology ?? {}) as Record<string, string>).map(([topic, note]) => (
+              <div key={topic}><dt className="font-semibold capitalize">{topic.replaceAll("_", " ")}</dt><dd className="mt-1 whitespace-pre-line">{note}</dd></div>
+            ))}
+          </dl>
+        </Section>
+
+        <Section title="Definitions">
+          <dl className="space-y-3 text-xs">
+            {Array.from(new Map((Object.values(GLOSSARY) as GlossaryEntry[]).map(entry => [entry.term, entry])).values()).map(entry => (
+              <div key={entry.term} className="break-inside-avoid">
+                <dt className="font-semibold">{entry.term}{entry.long ? ` · ${entry.long}` : ""}</dt>
+                <dd className="mt-1">{entry.def}{entry.why ? ` ${entry.why}` : ""}{entry.unit ? ` Unit: ${entry.unit}.` : ""}</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+
         <Section title="Sources">
           <ul className="space-y-0.5 text-xs text-zinc-600">
             {sources.map((p) => (
               <li key={`${p.kind}|${p.source}|${p.url ?? ""}`}>
                 <span className="font-medium">{p.kind}</span>: {p.source}
                 {p.url && <span className="text-zinc-400"> ({p.url})</span>}
+                {p.note && <p className="mt-1 whitespace-pre-line">{p.note}</p>}
               </li>
             ))}
           </ul>

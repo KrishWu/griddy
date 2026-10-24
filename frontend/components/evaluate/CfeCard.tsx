@@ -82,7 +82,7 @@ export function CfeCard({ ex, provenance }: { ex: EvalExtras; provenance: Proven
             cover all demand in that hour. Exact score: {pct1(score)}.
           </ProvenanceTip>
         </div>
-        <p className="pb-0.5 text-[11px] leading-snug text-zinc-500">of hours fully matched by clean supply (hourly matching, not annual netting)</p>
+        <p className="pb-0.5 text-[11px] leading-snug text-zinc-500">of hours are fully supplied by clean energy.</p>
       </div>
 
       {(energy !== undefined || netting !== undefined) && (
@@ -99,8 +99,7 @@ export function CfeCard({ ex, provenance }: { ex: EvalExtras; provenance: Proven
 
       {noneMatched && (
         <p className="rounded bg-zinc-50 px-2 py-1.5 text-[11px] leading-snug text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-          No hour of the year is fully met by clean supply, so the hour-of-day and monthly profiles are empty.
-          {energy !== undefined && energy > 0 && ` Clean energy still covers ${pct(energy)} of demand on an hourly basis.`}
+          No hour is fully supplied by clean energy.
         </p>
       )}
 
