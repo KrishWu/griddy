@@ -3,13 +3,23 @@
 // above every other card, with the details one click away.  OWNER: workstream E (Site Intelligence).
 // AppShell mounts it first (above A's Site card) and passes <SiteIntelPanel showGrade={false} />;
 // without that, SiteIntelPanel mounts it at the top of E's cards.
+// The number is B's site-location model score (GET /api/sites/grade: 1-100, one decimal, 100 = the
+// best cell in California); E's feasibility heuristic stays in the details as the site checks, and
+// stands in for the number only where the model has no score (outside its coverage, or unavailable).
 import { useEffect, useId, useRef, useState } from "react";
+
+import { mlScore, useMlGrade } from "@/components/sites/useMlGrade";
 
 import { GriddyGradeDetails } from "./GriddyGradeDetails";
 import { useGriddyGrade } from "./useGriddyGrade";
 
+/** At most one decimal: 95.6, 100, 1. */
+const fmtScore = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
 export function GriddyGradeCard() {
   const g = useGriddyGrade();
+  const ml = useMlGrade(g.location);
+  const modelScore = mlScore(ml.grade);
   const detailsId = useId();
   const ref = useRef<HTMLElement>(null);
   const [openFor, setOpenFor] = useState<string | null>(null);
@@ -25,6 +35,8 @@ export function GriddyGradeCard() {
   if (!key) return null;
   const r = g.result;
   const open = openFor === key; // every newly dropped site starts collapsed: just the number
+  const heuristicOnly = modelScore === null && !ml.loading && r !== null;
+  const shown = modelScore ?? (heuristicOnly && r ? r.overallScore : null);
   const alerts = r ? r.seriousConstraints.length + (r.completenessLabel === "Low" ? 1 : 0) : 0;
 
   return (
@@ -35,12 +47,17 @@ export function GriddyGradeCard() {
             GriddyGrade
             {r && g.intelPending && <span className="ml-2 text-[10px] font-normal normal-case tracking-normal text-zinc-400">updating…</span>}
           </h2>
-          {r ? (
+          {shown !== null ? (
             <p className="mt-1 text-7xl font-bold leading-none tracking-tight tabular-nums">
-              {r.overallScore}
+              {fmtScore(shown)}
               <span className="sr-only"> out of 100</span>
+              {heuristicOnly && (
+                <span className="ml-2 align-middle text-[10px] font-normal tracking-normal text-zinc-500" title={ml.grade?.note ?? ml.error ?? undefined}>
+                  site checks
+                </span>
+              )}
             </p>
-          ) : g.loading ? (
+          ) : g.loading || ml.loading ? (
             <div aria-busy="true" aria-label="Grading this site" className="mt-1 h-[72px] w-28 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
           ) : g.error ? (
             <p className="mt-1 text-sm text-red-600">Could not grade this site: the site summary failed to load ({g.error}).</p>
@@ -71,7 +88,7 @@ export function GriddyGradeCard() {
       <div id={detailsId}>
         {r && open && (
           <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-            <GriddyGradeDetails grade={g} result={r} />
+            <GriddyGradeDetails grade={g} result={r} ml={ml.grade} />
           </div>
         )}
       </div>
