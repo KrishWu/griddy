@@ -8,6 +8,9 @@ relative to average load so each one tells its story:
   Renewable-heavy: deliberately thin on firm capacity, so the stress test has an
   honest "needs firming" finding to show.
 Re-tune with B and C once real profiles land.
+
+Mode B ("community") has one preset: a ~20 MW neighborhood microgrid with rooftop-scale
+solar, a community battery and a grid tie sized to cover the evening peak.
 """
 
 from __future__ import annotations
@@ -26,15 +29,25 @@ DEFAULT_SITE = Site(
 )
 
 
-def _base(id_: str, name: str, assets: list[Asset], import_limit_mw: float, site: Site) -> Scenario:
+def _base(
+    id_: str,
+    name: str,
+    assets: list[Asset],
+    import_limit_mw: float,
+    site: Site,
+    demand: DemandSpec | None = None,
+    mode: str = "industrial",
+    grid: GridConnection | None = None,
+) -> Scenario:
     return Scenario(
         id=id_,
         name=name,
+        mode=mode,
         preset=id_,
         site=site,
-        demand=DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.2, profile="flat"),
+        demand=demand or DemandSpec(peak_mw=1000, load_factor=0.9, pue=1.2, profile="flat"),
         assets=assets,
-        grid=GridConnection(import_limit_mw=import_limit_mw, export_limit_mw=0, interconnection_km=15),
+        grid=grid or GridConnection(import_limit_mw=import_limit_mw, export_limit_mw=0, interconnection_km=15),
     )
 
 
@@ -64,6 +77,20 @@ def list_presets(site: Site | None = None) -> list[Scenario]:
             ],
             400,
             site,
+        ),
+        _base(
+            "community_microgrid",
+            "Community microgrid",
+            [
+                Asset(id="solar-1", kind="solar_pv", capacity_mw=30),
+                Asset(id="batt-1", kind="battery", capacity_mw=8, duration_h=4),
+            ],
+            20,
+            site,
+            demand=DemandSpec(kind="community", peak_mw=20, load_factor=0.55, pue=1.0, profile="community"),
+            mode="community",
+            # Ties into existing distribution: a short feeder, no new transmission substation.
+            grid=GridConnection(import_limit_mw=20, export_limit_mw=0, interconnection_km=1, new_substation=False),
         ),
     ]
 
