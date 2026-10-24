@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { shortDescription } from "@/lib/description";
 import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import { useGridForge } from "@/lib/store";
@@ -30,24 +32,26 @@ export function ProjectSummary() {
     <p className="mt-3 text-xs text-zinc-500">{em.intensity_kg_per_mwh.toFixed(0)} <Term k="co2_intensity">kg CO₂e/MWh</Term> · {pct(s.onsite_clean_share)} <Term k="onsite_clean_share">on-site clean energy</Term></p>
     <div className={`mt-3 rounded border p-2 text-xs ${s.hours_unmet ? "border-red-200 text-red-700 dark:text-red-300" : "border-emerald-200 text-emerald-800 dark:text-emerald-300"}`}>
       <p className="font-semibold">{s.hours_unmet ? <>{s.hours_unmet.toLocaleString()} hours with <Term k="unmet">unmet demand</Term></> : "Demand met every hour in the simulated year"}</p>
-      <p className="mt-1">{issues.length} feasibility warning{issues.length === 1 ? "" : "s"} or failing check{issues.length === 1 ? "" : "s"}. Utility review required.</p>
+      <p className="mt-1">{issues.length} feasibility check{issues.length === 1 ? " is" : "s are"} flagged for review.</p>
     </div>
     {r && <div className="mt-3 text-xs">
       <p className="font-semibold">Resilience screening</p>
       <p className="mt-1">{pct(r.critical_energy_served_share)} of critical energy supplied during a {r.outage_hours} h grid outage.</p>
-      <p>{r.hours_before_shortfall} h before first shortfall · sustained <Term k="n_minus_1">N-1</Term> coverage {r.n_minus_1_coverage === null ? "—" : pct(r.n_minus_1_coverage)}.</p>
-      <p className="mt-1 text-[11px] text-zinc-500">Assumes islanding controls and continuous gas supply. N-1 removes the largest grid tie or gas unit; excludes energy-limited storage.</p>
     </div>}
     <details className="mt-3 text-xs"><summary className="cursor-pointer">Key feasibility findings</summary>
-      <ul className="mt-2 space-y-2">{issues.map(f => <li key={`${f.module}-${f.id}`}><span className="font-medium">{f.title}</span><p className="text-zinc-500">{f.detail}</p></li>)}</ul>
+      <ul className="mt-2 space-y-2">{issues.map(f => <li key={`${f.module}-${f.id}`}><span className="font-medium">{f.title}</span><p className="text-zinc-500">{shortDescription(f.detail)}</p></li>)}</ul>
     </details>
-    <p className="mt-3 text-[10px] text-zinc-500">Source: hourly dispatch with the cited cost and emissions assumptions. Screening estimates; see Advanced mode or the report for sources and all metrics.</p>
+    <p className="mt-3 text-[10px] text-zinc-500">See the report for assumptions and sources.</p>
   </Panel>;
 }
 
 export function ProjectDetails({ result, expanded = false }: { result: ScenarioResult; expanded?: boolean }) {
   const p = projectOf(result), r = resilienceOf(result);
   if (!p) return null;
+  if (!expanded) return <Panel title="Project impacts">
+    <p className="text-xs text-zinc-500">See the report for jobs, land use and contract estimates.</p>
+    <Link href="/report" className="mt-2 inline-block text-xs underline">Open full report</Link>
+  </Panel>;
   // Third element: the glossary entry that explains the label.
   const rows: [string, string, GlossaryKey?][] = [
     ["Demand projected", `${p.projection.projected_peak_mw.toFixed(1)} MW peak in ${p.projection.years} years (${pct(p.projection.annual_growth)}/yr)`],

@@ -8,6 +8,7 @@
 // OWNER: workstream C (Evaluate).
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
+import { shortDescription } from "@/lib/description";
 import type { Provenance, ProvenanceKind } from "@/lib/contract";
 
 import { isPlaceholder } from "./extras";
@@ -52,7 +53,6 @@ interface Pos {
 export function ProvenanceTip({
   label,
   provenance,
-  children,
 }: {
   /** What the number is, e.g. "CAPEX" (used for the button's accessible name). */
   label: string;
@@ -175,7 +175,7 @@ export function ProvenanceTip({
         >
           <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{label} · source</span>
           {items.length === 0 && <span className="block text-zinc-500">No provenance reported for this value.</span>}
-          {items.map((p, i) => {
+          {items.slice(0, 1).map((p, i) => {
             const url = safeUrl(p.url);
             return (
               <span key={i} className={`block ${i > 0 ? "mt-2 border-t border-zinc-100 pt-2 dark:border-zinc-800" : ""}`}>
@@ -183,7 +183,7 @@ export function ProvenanceTip({
                   <KindBadge kind={p.kind} />
                   <span className="font-medium text-zinc-900 dark:text-zinc-100">{p.source}</span>
                 </span>
-                {p.note && <span className="mt-1 block whitespace-pre-line text-zinc-600 dark:text-zinc-400">{p.note}</span>}
+                {p.note && <span className="mt-1 block whitespace-pre-line text-zinc-600 dark:text-zinc-400">{shortDescription(p.note)}</span>}
                 {url && (
                   <a
                     href={url}
@@ -202,9 +202,7 @@ export function ProvenanceTip({
               Placeholder value: not yet traced to a primary source.
             </span>
           )}
-          {children && (
-            <span className="mt-2 block border-t border-zinc-100 pt-2 text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">{children}</span>
-          )}
+
         </span>
       )}
     </span>

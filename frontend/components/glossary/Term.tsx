@@ -175,18 +175,7 @@ function TermTip({ entry, className, children }: { entry: GlossaryEntry; classNa
         {entry.term}
         {entry.long && <span className="font-normal text-zinc-500 dark:text-zinc-400"> · {entry.long}</span>}
       </span>
-      <span className="mt-1 block">{entry.def}</span>
-      {entry.why && (
-        <span className="mt-1.5 block text-zinc-600 dark:text-zinc-400">
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">Why it matters: </span>
-          {entry.why}
-        </span>
-      )}
-      {entry.unit && (
-        <span className="mt-1.5 block text-[10px] text-zinc-500 dark:text-zinc-400">
-          <span className="uppercase tracking-wide">Unit</span> {entry.unit}
-        </span>
-      )}
+      <span className="mt-1 block">{entry.summary}</span>
     </span>
   );
 

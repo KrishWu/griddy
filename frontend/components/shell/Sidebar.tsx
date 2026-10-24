@@ -115,7 +115,7 @@ export function Sidebar(props: {
     >
       {/* Tab strip: always when expanded; when collapsed only below lg (lg shows the rail instead). */}
       <div className={`items-center gap-1 border-b border-zinc-200 px-2 pt-1.5 dark:border-zinc-800 ${collapsed ? "flex lg:hidden" : "flex"} ${left ? "" : "flex-row-reverse"}`}>
-        <div role="tablist" aria-label={`${label} tabs`} aria-orientation="horizontal" onKeyDown={onKeyDown} className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto">
+        <div role="tablist" aria-label={`${label} tabs`} aria-orientation="horizontal" onKeyDown={onKeyDown} className="flex min-w-0 flex-1 flex-wrap gap-0.5">
           {tabs.map((t) => {
             const selected = t.id === current;
             return (
@@ -131,7 +131,7 @@ export function Sidebar(props: {
                 aria-controls={visited.has(t.id) ? panelId(t.id) : undefined}
                 tabIndex={selected ? 0 : -1}
                 onClick={() => open(t.id)}
-                className={`-mb-px shrink-0 rounded-t-md border-b-2 px-2.5 py-1.5 text-sm font-medium ${FOCUS} ${
+                className={`min-w-[3.5em] flex-1 basis-0 rounded-t-md border-b-2 px-1.5 py-1.5 text-sm font-medium [overflow-wrap:anywhere] ${FOCUS} ${
                   selected
                     ? "border-emerald-700 text-zinc-900 dark:border-cyan-300 dark:text-white"
                     : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100"
