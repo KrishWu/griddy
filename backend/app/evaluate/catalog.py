@@ -9,7 +9,7 @@ Built from the committed, cited JSON in data/evaluate/ (see data/evaluate/README
 
 Every catalog dollar is real 2024 USD: ATB 2023$ x CPI-U 2023->2024, PTO cost-guide 2025$ x
 CPI-U 2025->2024. ATB CAPEX is used net of ATB's generic grid-connection cost (GCC), because
-GridForge costs each site's interconnection explicitly (line km + substation).
+Griddy costs each site's interconnection explicitly (line km + substation).
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ def _provenance(kind: AssetKind, spec: dict[str, Any]) -> Provenance:
         f"ATB {sel['technology']} '{sel['techdetail']}' ({sel['techdetail2']}), scenario {sel['scenario']}, case {sel['core_metric_case']}, "
         f"COD {sel['cod_year']}, crpyears {sel['crpyears']}, no tax credits, {atb['source']['dollar_year']} USD: {params}.",
         f"CAPEX used = {der['formula']} = {_num(der['capex_ex_gcc_usd_per_kw'])} $/kW: ATB's generic grid-connection cost (GCC) and its "
-        "share of construction finance are removed because GridForge costs the site's line and substation explicitly "
+        "share of construction finance are removed because Griddy costs the site's line and substation explicitly "
         "(avoids double counting).",
     ]
     if kind == "battery":

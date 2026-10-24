@@ -1,8 +1,13 @@
-# GridForge — team rules for every coding agent
+# Griddy — team rules for every coding agent
 
-Five people build GridForge in parallel, each with their own agent, each on their own
+Five people build Griddy in parallel, each with their own agent, each on their own
 branch, each merging their own PR into `main`. These rules keep the five PRs from
 colliding. Follow them even if a task seems to need an exception; ask your human instead.
+
+The product was renamed from GridForge to Griddy on 2026-10-24. Use "Griddy" in anything a
+user or judge sees. Code identifiers keep the old name on purpose (`useGridForge`,
+`GridForgeProvider`, `GRIDFORGE_API_ORIGIN`, the `gridforge:scenario` storage key); don't
+rename them mid-hackathon.
 
 ## 1. Know your workstream
 

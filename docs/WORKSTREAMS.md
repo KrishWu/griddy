@@ -1,4 +1,4 @@
-# GridForge: how the five of us split the work
+# Griddy: how the five of us split the work
 
 **Build window:** Fri Oct 23, 5 PM → Sat Oct 24, 5 PM PDT · **Feature freeze:** Sat 2 PM · **Submit:** before 5 PM
 
@@ -34,7 +34,7 @@ gh pr create --draft --fill           # open your draft PR right away
 
 Then give your Claude Code this prompt (replace the letter):
 
-> I'm workstream **B** on GridForge. Read `CLAUDE.md`, `docs/WORKSTREAMS.md`, and
+> I'm workstream **B** on Griddy. Read `CLAUDE.md`, `docs/WORKSTREAMS.md`, and
 > `docs/workstreams/B-simulate.md`, then work through the P0 list in order. Only edit
 > files workstream B owns (`ownership.json`). Run the tests and
 > `python3 scripts/check_ownership.py B` before each commit.

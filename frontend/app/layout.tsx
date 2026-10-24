@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GridForge",
+  title: "Griddy",
   description: "Interactive energy infrastructure planning",
 };
 

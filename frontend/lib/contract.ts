@@ -1,4 +1,4 @@
-// GridForge shared contract — TypeScript mirror of backend/app/contract.py.
+// Griddy shared contract — TypeScript mirror of backend/app/contract.py.
 // Never edit inside a feature PR: changes go in a tiny "contract:" PR to main together
 // with contract.py and contracts/*.json (see the docstring in contract.py).
 // backend/tests/test_contract.py fails if a field here doesn't match contract.py.

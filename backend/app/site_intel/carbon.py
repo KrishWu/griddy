@@ -274,7 +274,7 @@ def carbon_aware(req: CarbonAwareRequest) -> CarbonAwareResult:
         best_window=best_window(marginal, start, day, req.window_h, location),
         notes=notes,
         provenance=[
-            Provenance(kind="simulated", source="GridForge hourly dispatch (workstream B) + carbon-aware shift (workstream E)", note=notes[2]),
+            Provenance(kind="simulated", source="Griddy hourly dispatch (workstream B) + carbon-aware shift (workstream E)", note=notes[2]),
             *(SCI_PROV if sci_before is not None else []),
         ],
     )

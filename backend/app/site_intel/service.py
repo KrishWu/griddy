@@ -61,7 +61,7 @@ def site_intel(location: LngLat) -> SiteIntel:
         return SiteIntel(
             location=location,
             findings=[_finding("site_intel_error", "warn", "Site screening unavailable", str(exc)[:200])],
-            provenance=[Provenance(kind="assumption", source="GridForge site screening (error fallback)")],
+            provenance=[Provenance(kind="assumption", source="Griddy site screening (error fallback)")],
         )
 
 
@@ -93,7 +93,7 @@ def _site_intel(loc: LngLat) -> SiteIntel:
         }
         findings += land_findings(stats)
         provenance += stats.sources
-        provenance.append(Provenance(kind="inferred", source="GridForge screening thresholds (app/site_intel/screening.py)", note=LAND_TIER_NOTE.get(tier)))
+        provenance.append(Provenance(kind="inferred", source="Griddy screening thresholds (app/site_intel/screening.py)", note=LAND_TIER_NOTE.get(tier)))
         overlays = [*overlays, _buffer_overlay(center)]
     else:
         findings.append(

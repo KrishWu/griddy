@@ -50,7 +50,7 @@
       "verified": true,
       "verification_note": "Verified 2026-10-23: Found verbatim on the Definitions page. The CSV agrees: GCC = 104.12 $/kW for LandbasedWind, NaturalGas_FE and battery rows (2027 COD), and 162.4031 $/kW for UtilityPV."
     },
-    "note": "ATB 2025 publishes no 'Market' case. The Expanded Cost Drivers case ('Exp', R&D improvements plus market and supply-chain conditions) is a pilot published only for PV, land-based and distributed wind (not offshore), and battery storage. It is used where published. R&D is used for NaturalGas_FE, the only case ATB publishes for fossil plants. No '+ TC' (tax credit) case is used: GridForge defaults to no incentives. crpyears is ATB's cost recovery period, which drives only its LCOE/CRF/FCR. CAPEX, O&M and CF rows are identical for 20 and 30. Rows with scenario '*' are scenario-independent. Values are 2023 USD. capex_ex_gcc removes ATB's generic grid-connection cost (GCC) and GCC's share of construction finance (CFC), because GridForge costs each site's interconnection explicitly. This avoids counting it twice."
+    "note": "ATB 2025 publishes no 'Market' case. The Expanded Cost Drivers case ('Exp', R&D improvements plus market and supply-chain conditions) is a pilot published only for PV, land-based and distributed wind (not offshore), and battery storage. It is used where published. R&D is used for NaturalGas_FE, the only case ATB publishes for fossil plants. No '+ TC' (tax credit) case is used: Griddy defaults to no incentives. crpyears is ATB's cost recovery period, which drives only its LCOE/CRF/FCR. CAPEX, O&M and CF rows are identical for 20 and 30. Rows with scenario '*' are scenario-independent. Values are 2023 USD. capex_ex_gcc removes ATB's generic grid-connection cost (GCC) and GCC's share of construction finance (CFC), because Griddy costs each site's interconnection explicitly. This avoids counting it twice."
   },
   "techs": {
     "solar_pv": {
@@ -159,7 +159,7 @@
         "verified": true,
         "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim."
       },
-      "class_rationale": "ATB bins utility PV by mean GHI. The Kern County site (lat 35.4, lon -119.47) has GHI 5.53 kWh/m2/day in NLR's NSRDB PSM V3 TMY (PVWatts v8, horizontal array), inside the Class 2 bin (5.5-5.75 kWh/m2/day). It sits near the lower edge, and the legacy Perez-SUNY 2012 model gives 5.33 (Class 3). ATB itself bins whole counties by county-mean GHI; this is the site's point value, and the Kern County mean was not computed. ATB 2025 CAPEX and O&M are identical across PV classes, so the class only sets the reference capacity factor. GridForge's simulation uses hourly weather, not this CF.",
+      "class_rationale": "ATB bins utility PV by mean GHI. The Kern County site (lat 35.4, lon -119.47) has GHI 5.53 kWh/m2/day in NLR's NSRDB PSM V3 TMY (PVWatts v8, horizontal array), inside the Class 2 bin (5.5-5.75 kWh/m2/day). It sits near the lower edge, and the legacy Perez-SUNY 2012 model gives 5.33 (Class 3). ATB itself bins whole counties by county-mean GHI; this is the site's point value, and the Kern County mean was not computed. ATB 2025 CAPEX and O&M are identical across PV classes, so the class only sets the reference capacity factor. Griddy's simulation uses hourly weather, not this CF.",
       "class_evidence": {
         "site_ghi_kwh_m2_day": 5.53,
         "class_bin_kwh_m2_day": [
@@ -292,7 +292,7 @@
         "verified": true,
         "verification_note": "Verified 2026-10-23: 'Technical Lifetimes for Technologies' on the Definitions page lists Land-based wind 30, Solar: Utility-scale PV 30, Natural gas* 30 and Utility-scale battery storage* 15. The battery page's 15-year sentence was found verbatim."
       },
-      "class_rationale": "ATB bins land-based wind by mean wind speed at 110 m. 312 NLR WIND Toolkit sites in the Tehachapi area of Kern County average 8.252 m/s at 100 m (2007-2013; median 8.295). ATB's 0.14 shear exponent scales that to 8.36 m/s at 110 m, inside the Class 4 bin (8.35-8.57 m/s). Class 4 is also ATB's representative class. The value is at the Class 4/5 edge: the capacity-weighted mean gives 8.33 m/s (Class 5). In 2027, ATB CAPEX and O&M are identical for Classes 1-7, so the class only sets the reference capacity factor. GridForge's simulation uses hourly weather, not this CF.",
+      "class_rationale": "ATB bins land-based wind by mean wind speed at 110 m. 312 NLR WIND Toolkit sites in the Tehachapi area of Kern County average 8.252 m/s at 100 m (2007-2013; median 8.295). ATB's 0.14 shear exponent scales that to 8.36 m/s at 110 m, inside the Class 4 bin (8.35-8.57 m/s). Class 4 is also ATB's representative class. The value is at the Class 4/5 edge: the capacity-weighted mean gives 8.33 m/s (Class 5). In 2027, ATB CAPEX and O&M are identical for Classes 1-7, so the class only sets the reference capacity factor. Griddy's simulation uses hourly weather, not this CF.",
       "class_evidence": {
         "area_mean_wind_speed_100m_m_s": 8.252,
         "area_median_wind_speed_100m_m_s": 8.295,
@@ -316,7 +316,7 @@
         "wind_speed_url": "https://nrel-pds-wtk.s3.amazonaws.com/wtk-techno-economic/pywtk-data/wtk_site_metadata.csv",
         "wind_speed_doc_url": "https://www.nlr.gov/grid/wind-toolkit",
         "wind_speed_doc_quote": "calculated turbine power for more than 126,000 sites in the continental United States for the years 2007–2013. ... The power dataset was created using wind data at 100-meter hub height ... Techno-Economic Summary and Index This 10-MB subset contains summarized statistics for 120,000 points within the continental U.S. selected for their wind resource.",
-        "wind_speed_note": "The WTK page does not define the metadata columns. wind_speed is read as the 2007-2013 mean at the dataset's 100 m hub height (inferred). WTK sites were 'selected for their wind resource', so the sample leans toward windy cells. The site box is a GridForge choice, not an official resource-area boundary. The spread is wide: ridgeline sites exceed 9 m/s (Class 1), and sites on the pass floor fall in Classes 7-9.",
+        "wind_speed_note": "The WTK page does not define the metadata columns. wind_speed is read as the 2007-2013 mean at the dataset's 100 m hub height (inferred). WTK sites were 'selected for their wind resource', so the sample leans toward windy cells. The site box is a Griddy choice, not an official resource-area boundary. The spread is wide: ridgeline sites exceed 9 m/s (Class 1), and sites on the pass floor fall in Classes 7-9.",
         "bins_source": "NLR ATB 2025, Land-Based Wind page, table 'Land-Based Wind Resource and Technology Classes'",
         "bins_url": "https://atb.nlr.gov/electricity/2025/land-based_wind",
         "bins_quote": "| 4 | T1 | 8.45 | 8.35 | 8.57 | 0.22 | 4%–8% | 5 | T1 | 8.20 | 8.07 | 8.35 | 0.28 | 8%–16% ... Values are for wind speeds 110 meters above the ground.",
@@ -334,8 +334,8 @@
         "url": "https://atb.nlr.gov/electricity/2025/land-based_wind",
         "quote": "| Turbine rating (MW) | 3.4 | 6 | 8.3 | 3.3 | 6 ... Turbine characteristics in the Base Year (2023) correspond to a 2023 market average turbine across all wind classes (1–10) ... Future projections assume distinct wind turbine technologies will become market standards by 2035",
         "verified": true,
-        "verification_note": "Verified 2026-10-23: The 'Representative Wind Turbine and Plant Characteristics' table on the Land-Based Wind page gives the 2023 market-average turbine as 3.4 MW, 134 m rotor, 103 m hub, 200 MW plant (58 turbines), and T1 as 6 MW, 170 m rotor, 115 m hub. The class table assigns T1 to Classes 1-7. Using 3.4 MW for a 2027 COD is a GridForge choice, not an ATB value.",
-        "note": "ATB publishes no turbine rating for a 2027 COD: its 2027 costs interpolate between the 2023 market-average turbine (3.4 MW) and T1 in 2035 (6 MW). GridForge uses 3.4 MW, the documented market turbine, for turbine counts. Using T1 would cut the count by about 43%."
+        "verification_note": "Verified 2026-10-23: The 'Representative Wind Turbine and Plant Characteristics' table on the Land-Based Wind page gives the 2023 market-average turbine as 3.4 MW, 134 m rotor, 103 m hub, 200 MW plant (58 turbines), and T1 as 6 MW, 170 m rotor, 115 m hub. The class table assigns T1 to Classes 1-7. Using 3.4 MW for a 2027 COD is a Griddy choice, not an ATB value.",
+        "note": "ATB publishes no turbine rating for a 2027 COD: its 2027 costs interpolate between the 2023 market-average turbine (3.4 MW) and T1 in 2035 (6 MW). Griddy uses 3.4 MW, the documented market turbine, for turbine counts. Using T1 would cut the count by about 43%."
       }
     },
     "gas_cc": {

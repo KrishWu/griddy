@@ -88,7 +88,7 @@ export function ReportView() {
   if (!result) {
     return (
       <main className="mx-auto max-w-2xl space-y-3 p-8">
-        <h1 className="text-xl font-bold">GridForge report</h1>
+        <h1 className="text-xl font-bold">Griddy report</h1>
         <p className="text-sm text-zinc-600">No scenario has been run in this tab yet (reloading the page clears results).</p>
         <Link href="/" className="inline-block rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white">
           Back to the planner
@@ -126,7 +126,7 @@ export function ReportView() {
         </div>
 
         <header className="space-y-1">
-          <p className="text-xs uppercase tracking-wide text-zinc-500">GridForge scenario report</p>
+          <p className="text-xs uppercase tracking-wide text-zinc-500">Griddy scenario report</p>
           <h1 className="text-2xl font-bold">{sc.name}</h1>
           <p className="text-sm text-zinc-600">
             {sc.site.name} · {sc.site.location.lat.toFixed(3)}, {sc.site.location.lon.toFixed(3)}

@@ -1,4 +1,4 @@
-# data/evaluate: the cited numbers behind GridForge's costs, emissions and BOM
+# data/evaluate: the cited numbers behind Griddy's costs, emissions and BOM
 
 Workstream C (Evaluate) owns this folder. Every number that `backend/app/evaluate/` uses to turn a
 simulated year into CAPEX, OPEX, net present cost (NPC), LCOE, CO2e, NOx, 24/7 CFE, land and a
@@ -34,15 +34,15 @@ independently verified on 2026-10-23 (`verified: true`; see each `verification_n
 ## Technology catalog (atb_2025_catalog.json, via catalog.py)
 
 Selection: ATB 2025 v1.0.0, scenario **Moderate**, COD **2027**, `crpyears` "30", no tax credits.
-ATB 2025 publishes no "Market" case, so GridForge uses the **Expanded Cost Drivers (Exp)** case
+ATB 2025 publishes no "Market" case, so Griddy uses the **Expanded Cost Drivers (Exp)** case
 where ATB publishes it (PV, land-based wind, battery) and the **R&D** case for natural gas, the only
-case ATB publishes for fossil plants. It never uses a `+ TC` (tax credit) case: GridForge defaults to
+case ATB publishes for fossil plants. It never uses a `+ TC` (tax credit) case: Griddy defaults to
 no incentives. CSV: <https://oedi-data-lake.s3.amazonaws.com/ATB/electricity/csv/2025/v1.0.0/ATBe.csv>;
 docs: <https://atb.nlr.gov/electricity/2025/data>.
 
 **GCC removal (avoids double counting).** ATB's `CAPEX = OCC + GCC + CFC` includes a generic
 grid-connection cost (GCC: $104/kW, or $162/kW for PV) and construction finance (CFC, in $/kW).
-GridForge costs each site's interconnection explicitly (line km + substation), so the catalog uses
+Griddy costs each site's interconnection explicitly (line km + substation), so the catalog uses
 `capex_ex_gcc = OCC + CFC x OCC / (OCC + GCC)`, which drops GCC and GCC's share of CFC.
 
 **Dollar year.** ATB is 2023 USD. `catalog.py` multiplies by `deflator_2023_to_2024` = 1.029494
@@ -58,7 +58,7 @@ GridForge costs each site's interconnection explicitly (line km + substation), s
 
 - **Battery split.** A least-squares fit of `capex_ex_gcc(d) = power + energy x d` over the ATB 2, 4,
   6, 8 and 10 h rows is exact (R^2 = 1.0000). ATB's fixed O&M also splits exactly into $/kW-yr and
-  $/kWh-yr parts (R^2 = 1.0). GridForge costs battery fixed O&M as `kW x 14.35 + kWh x 8.44`.
+  $/kWh-yr parts (R^2 = 1.0). Griddy costs battery fixed O&M as `kW x 14.35 + kWh x 8.44`.
   `TechSpec.fixed_om_usd_per_kw_yr` shows the 4 h equivalent, and an asset override of that field
   is applied as `override x kW`.
 - **Class choice.** PV Class 2: the Kern County site's NSRDB PSM V3 GHI is 5.53 kWh/m2/day, inside
@@ -80,7 +80,7 @@ GridForge costs each site's interconnection explicitly (line km + substation), s
 | Gas combined cycle | 30 | Same table ("Natural gas* \| 30"; footnote: design technical life included for comparison), <https://atb.nlr.gov/electricity/2025/definitions> |
 | Gas combustion turbine | 30 | Same table ("Natural gas* \| 30"), <https://atb.nlr.gov/electricity/2025/definitions> |
 | Utility-scale battery | 15 | Same table ("Utility-scale battery storage* \| 15"), plus the ATB battery page: "The FOM costs include battery augmentation costs, which enables the system to operate at its rated capacity throughout its 15-year lifetime." <https://atb.nlr.gov/electricity/2025/utility-scale_battery_storage> |
-| Interconnection line + substation | 47 | PG&E 2027 General Rate Case (CPUC A.25-05-009), Exhibit PG&E-10, depreciation study workpapers: FERC account 353.01 Station Equipment, "The recommendation is to use the 47-R2 survivor curve". Towers (354) use 75-R4 and overhead conductors (356) 65-R1.5. GridForge uses the shortest major component, which gives the least salvage credit. <https://docs.cpuc.ca.gov/PublishedDocs/SupDoc/A2505009/9142/604921261.pdf> |
+| Interconnection line + substation | 47 | PG&E 2027 General Rate Case (CPUC A.25-05-009), Exhibit PG&E-10, depreciation study workpapers: FERC account 353.01 Station Equipment, "The recommendation is to use the 47-R2 survivor curve". Towers (354) use 75-R4 and overhead conductors (356) 65-R1.5. Griddy uses the shortest major component, which gives the least salvage credit. <https://docs.cpuc.ca.gov/PublishedDocs/SupDoc/A2505009/9142/604921261.pdf> |
 
 `TechSpec.lifetime_years` is checked against `atb_2025_catalog.json` in `backend/tests/test_evaluate.py`,
 and every TechSpec provenance note cites the ATB lifetimes table. Asset overrides may change
@@ -157,7 +157,7 @@ turbine 3.4 MW (2023 market average; ATB's 2035 T1 turbine is 6 MW); CC block 1,
 ## Horizon method (finance.py)
 
 The analysis runs N = `analysis_years` (default 20), while PV, wind and gas last 30 years, batteries 15
-and the interconnection 47. GridForge uses **explicit cash flows**, in real dollars at a real discount
+and the interconnection 47. Griddy uses **explicit cash flows**, in real dollars at a real discount
 rate r (default 7%):
 
 ```

@@ -1,4 +1,4 @@
-"""GridForge API.  SHARED (foundation): every workstream's router is already
+"""Griddy API.  SHARED (foundation): every workstream's router is already
 registered here, so feature branches should not need to edit this file.
 
 Run:  backend/.venv/bin/uvicorn app.main:app --reload --port 8000  (from backend/)
@@ -14,7 +14,7 @@ from app.pipeline import run_scenario
 from app.simulate.router import router as simulate_router
 from app.site_intel.router import router as site_intel_router
 
-app = FastAPI(title="GridForge API", version=SCHEMA_VERSION)
+app = FastAPI(title="Griddy API", version=SCHEMA_VERSION)
 
 for r in (explore_router, simulate_router, evaluate_router, builder_router, site_intel_router):
     app.include_router(r)

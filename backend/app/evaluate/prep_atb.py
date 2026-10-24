@@ -14,7 +14,7 @@ Selection rules:
   NaturalGas_FE, the only case ATB publishes for fossil plants.
 - Values stay in ATB's 2023 USD. catalog.py converts them to 2024 USD.
 - capex_ex_gcc = OCC + CFC * OCC / (OCC + GCC). ATB's CAPEX = OCC + GCC + CFC includes a
-  generic grid-connection cost (GCC) and construction financing (CFC) on top of it. GridForge
+  generic grid-connection cost (GCC) and construction financing (CFC) on top of it. Griddy
   costs each site's interconnection explicitly (line km + substation), so the catalog removes
   GCC and GCC's share of CFC to avoid double counting.
 - Battery: capex_ex_gcc(d) = power_usd_per_kw + energy_usd_per_kwh * d, fit by least squares
@@ -209,7 +209,7 @@ DOC_FACTS: dict[str, dict[str, Any]] = {
         "note": (
             "The WTK page does not define the metadata columns. wind_speed is read as the 2007-2013 mean at "
             "the dataset's 100 m hub height (inferred). WTK sites were 'selected for their wind resource', so "
-            "the sample leans toward windy cells. The site box is a GridForge choice, not an official "
+            "the sample leans toward windy cells. The site box is a Griddy choice, not an official "
             "resource-area boundary. The spread is wide: ridgeline sites exceed 9 m/s (Class 1), and sites "
             "on the pass floor fall in Classes 7-9."
         ),
@@ -257,7 +257,7 @@ DOC_FACTS: dict[str, dict[str, Any]] = {
         ),
         "note": (
             "ATB publishes no turbine rating for a 2027 COD: its 2027 costs interpolate between the 2023 "
-            "market-average turbine (3.4 MW) and T1 in 2035 (6 MW). GridForge uses 3.4 MW, the documented "
+            "market-average turbine (3.4 MW) and T1 in 2035 (6 MW). Griddy uses 3.4 MW, the documented "
             "market turbine, for turbine counts. Using T1 would cut the count by about 43%."
         ),
     },
@@ -351,7 +351,7 @@ DOC_FACTS_VERIFICATION: dict[str, str] = {
         "The 'Representative Wind Turbine and Plant Characteristics' table on the Land-Based Wind page gives "
         "the 2023 market-average turbine as 3.4 MW, 134 m rotor, 103 m hub, 200 MW plant (58 turbines), and "
         "T1 as 6 MW, 170 m rotor, 115 m hub. The class table assigns T1 to Classes 1-7. Using 3.4 MW for a "
-        "2027 COD is a GridForge choice, not an ATB value."
+        "2027 COD is a Griddy choice, not an ATB value."
     ),
     "gas_cc_block": (
         "Found verbatim on the Fossil Energy Technologies page: a 2x1 configuration with two CT/HRSG trains "
@@ -536,7 +536,7 @@ def pv_class_choice() -> tuple[int, str, dict[str, Any]]:
         f"Perez-SUNY 2012 model gives {ghi['cross_check_value']} (Class {alt}). ATB itself bins whole "
         f"counties by county-mean GHI; this is the site's point value, and the Kern County mean was not "
         f"computed. ATB 2025 CAPEX and O&M are "
-        f"identical across PV classes, so the class only sets the reference capacity factor. GridForge's "
+        f"identical across PV classes, so the class only sets the reference capacity factor. Griddy's "
         f"simulation uses hourly weather, not this CF."
     )
     evidence = {
@@ -567,7 +567,7 @@ def wind_class_choice() -> tuple[int, str, dict[str, Any]]:
         f"Class {cls} bin ({lo}-{hi} m/s). Class 4 is also ATB's representative class. The value is at the "
         f"Class 4/5 edge: the capacity-weighted mean gives {ws['capacity_weighted_mean'] * shear:.2f} m/s "
         f"(Class {alt}). In 2027, ATB CAPEX and O&M are identical for Classes 1-7, so the class only sets "
-        f"the reference capacity factor. GridForge's simulation uses hourly weather, not this CF."
+        f"the reference capacity factor. Griddy's simulation uses hourly weather, not this CF."
     )
     evidence = {
         "area_mean_wind_speed_100m_m_s": ws["value"],
@@ -737,11 +737,11 @@ def build_catalog(df: pd.DataFrame) -> dict[str, Any]:
         "ATB 2025 publishes no 'Market' case. The Expanded Cost Drivers case ('Exp', R&D improvements plus "
         "market and supply-chain conditions) is a pilot published only for PV, land-based and distributed "
         "wind (not offshore), and battery storage. It is used where published. R&D is used for NaturalGas_FE, the only case ATB publishes for fossil plants. No '+ TC' "
-        "(tax credit) case is used: GridForge defaults to no incentives. crpyears is ATB's cost recovery "
+        "(tax credit) case is used: Griddy defaults to no incentives. crpyears is ATB's cost recovery "
         "period, which drives only its LCOE/CRF/FCR. CAPEX, O&M and CF rows are identical for 20 and 30. "
         "Rows with scenario '*' are scenario-independent. Values are 2023 USD. capex_ex_gcc removes ATB's "
         "generic grid-connection cost (GCC) and GCC's share of construction finance (CFC), because "
-        "GridForge costs each site's interconnection explicitly. This avoids counting it twice."
+        "Griddy costs each site's interconnection explicitly. This avoids counting it twice."
     )
     return {
         "source": {

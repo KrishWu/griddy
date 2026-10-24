@@ -811,7 +811,7 @@
           "usd": 132326018.9735,
           "provenance": {
             "kind": "simulated",
-            "source": "GridForge hourly simulation",
+            "source": "Griddy hourly simulation",
             "url": null,
             "note": null
           }

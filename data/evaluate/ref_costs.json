@@ -20,7 +20,7 @@
     "kind": "inferred",
     "source": "U.S. BLS, Consumer Price Index for All Urban Consumers (CPI-U), U.S. city average, All items, not seasonally adjusted, series CUUR0000SA0, annual averages",
     "url": "https://api.bls.gov/publicAPI/v2/timeseries/data/CUUR0000SA0?startyear=2023&endyear=2025&annualaverage=true",
-    "note": "BLS API rows (period M13 = 'Annual'), the same facts as deflator_2023_to_2024's note: 2024 annual = 313.689, 2025 annual = 321.943 (1982-84 = 100). Ratio 313.689 / 321.943 = 0.974362. Multiply 2025 USD by this to get 2024 USD. GridForge applies it to the 2025 PG&E and SCE generator interconnection unit cost guides (transmission_line_*_usd_per_km and substation_*_usd) in backend/app/evaluate/catalog.py.",
+    "note": "BLS API rows (period M13 = 'Annual'), the same facts as deflator_2023_to_2024's note: 2024 annual = 313.689, 2025 annual = 321.943 (1982-84 = 100). Ratio 313.689 / 321.943 = 0.974362. Multiply 2025 USD by this to get 2024 USD. Griddy applies it to the 2025 PG&E and SCE generator interconnection unit cost guides (transmission_line_*_usd_per_km and substation_*_usd) in backend/app/evaluate/catalog.py.",
     "retrieved": "2026-10-23",
     "verified": true,
     "verification_note": "Index values from deflator_2023_to_2024's verification_note (BLS API v2 CUUR0000SA0, startyear=2023, endyear=2025: 2024 = 313.689, 2025 = 321.943); 313.689 / 321.943 = 0.9743619 recomputed."
