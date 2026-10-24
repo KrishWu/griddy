@@ -4,14 +4,21 @@
 // CEC utility territories, LBNL interconnection queue by county), 2.5D footprints of the
 // scenario's assets, popups, click-to-select-site, overlays from other modules,
 // layer toggles + legend, and a bundled fallback basemap if the tile provider is down.
+// Phase 2: a "Forecast & sites" drawer (ForecastView) over the right of the map, a county
+// demand-growth choropleth and recommended-site markers, all from the shared Phase 2 state.
 // Our sources/layers are (re)added on every 'style.load', so a basemap swap keeps them.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, LngLat as MLLngLat, Map as MLMap, MapGeoJSONFeature, Popup } from "maplibre-gl";
 
+import { countyByGeoid, scenarioLabel } from "@/components/forecast/forecastData";
+import { ForecastView } from "@/components/forecast/ForecastView";
+import { forecastAdjusted, usePhase2 } from "@/components/forecast/usePhase2";
+import { PanelGuard } from "@/components/shell/PanelGuard";
 import { api, request } from "@/lib/api";
-import type { Asset, Catalog, LngLat, SiteSummary } from "@/lib/contract";
+import type { Asset, Catalog, DemandForecast, LngLat, SiteRecommendation, SiteSummary } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
 
+import { closeForecastDrawer, isForecastDrawerOpen, subscribeForecastDrawer, toggleForecastDrawer, useForecastDrawer } from "./forecastDrawer";
 import { footprintBounds, footprintsFC, loadCatalog } from "./footprints";
 import { CA_BOUNDS, EMPTY_FC, circleRing, locKey, num } from "./geo";
 import { LayerControl, type LayerStatus } from "./LayerControl";
@@ -21,18 +28,23 @@ import {
   CLICKABLE_LAYER_IDS,
   DATA_KEYS,
   DEFAULT_VISIBLE,
+  EXCLUSIVE_GROUPS,
   INLINE_FALLBACK_STYLE,
   LAYERS,
   LAYER_IDS,
   LOCAL_SOURCES,
   SOURCE_ATTRIBUTION,
   asStyle,
+  demandPaint,
   groupLayerIds,
   type DataKey,
   type LayerGroup,
   type LocalSource,
 } from "./mapStyle";
-import { popupContent } from "./popup";
+import { demandCard, popupContent, recSiteCard, type DemandInfo } from "./popup";
+import { ProjectMapTools } from "./ProjectMapTools";
+import { MapSearch } from "./MapSearch";
+import { useTheme } from "@/components/builder/ThemeToggle";
 import { readSummary, trackSiteSelection, useSiteSummary } from "./useSiteSummary";
 
 type FC = GeoJSON.FeatureCollection;
@@ -62,6 +74,16 @@ const FLOATING_CARDS_QUERY = "(min-width: 1024px)";
 const CARDS = { left: 12, width: 320, bottom: 32, maxShare: 0.55 };
 // The layers card wrapper below: right-2.5 top-[106px], holding the w-56 LayerControl.
 const LAYERS_CARD = { right: 10, top: 106, width: 224 };
+// "Forecast & sites" drawer over the right of the map; on a map too narrow to keep a useful strip
+// beside it, it takes the full width. While it is open, the layers card and MapLibre's controls move
+// to its left edge.
+const DRAWER_W = 420;
+const DRAWER_FULL_BELOW = 680;
+
+function drawerWidth(open: boolean, w: number | null): number {
+  if (!open) return 0;
+  return w !== null && w < DRAWER_FULL_BELOW ? w : DRAWER_W;
+}
 
 function siteCardsRect(h: number): { right: number; top: number } | null {
   if (typeof window === "undefined" || !window.matchMedia(FLOATING_CARDS_QUERY).matches) return null;
@@ -80,9 +102,14 @@ function layersMaxHeight(w: number, h: number): number {
 
 /** Camera padding for framing footprints: the largest clear rectangle of the map, away from the view
  *  buttons (top-left), the layers card (top-right), D's floating Site cards (bottom-left) and the scale bar.
- *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds. */
-function framePadding(m: MLMap): Padding {
-  const { clientWidth: w, clientHeight: h } = m.getContainer();
+ *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds.
+ *  `shift`: px on the right covered by the forecast drawer (the layers card sits at its left edge). */
+function framePadding(m: MLMap, shift = 0): Padding {
+  const p = framePaddingIn(m.getContainer().clientWidth - shift, m.getContainer().clientHeight);
+  return { ...p, right: p.right + shift };
+}
+
+function framePaddingIn(w: number, h: number): Padding {
   const cards = siteCardsRect(h);
   const layersLeft = w - LAYERS_CARD.right - LAYERS_CARD.width;
   const layersBottom = LAYERS_CARD.top + layersMaxHeight(w, h);
@@ -153,6 +180,46 @@ function assetsFC(assets: Asset[] | undefined): FC {
   return { type: "FeatureCollection", features };
 }
 
+/** Recommended sites (B's ranking) as points; empty when the recommendation is unavailable. */
+function recSitesFC(rec: SiteRecommendation | null): FC {
+  if (!rec?.available || !Array.isArray(rec.sites)) return EMPTY_FC;
+  const features: GeoJSON.Feature[] = [];
+  for (const s of rec.sites) {
+    const loc = s.location;
+    if (!loc || !Number.isFinite(loc.lon) || !Number.isFinite(loc.lat)) continue;
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [loc.lon, loc.lat] },
+      properties: {
+        id: s.id,
+        kind: s.kind,
+        mw: s.mw,
+        county: s.county ?? null,
+        region: s.region,
+        reason: s.reason,
+        capex_usd: s.capex_usd ?? null,
+        gen_tie_usd: s.gen_tie_usd ?? null,
+        d_line_hv_km: s.d_line_hv_km,
+        suitability: s.suitability,
+      },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+/** What the demand-growth popup shows for a county (by geoid) in the current forecast. */
+function demandInfo(f: DemandForecast | null, geoid: unknown): DemandInfo | null {
+  if (!f?.available) return null;
+  const county = countyByGeoid(f, typeof geoid === "string" ? geoid : null);
+  return {
+    county,
+    year: f.year,
+    baseYear: f.base_year ?? 2024,
+    scenario: `${scenarioLabel(f.scenario)}${forecastAdjusted(f) ? " (adjusted)" : ""}`,
+    regionName: county ? (f.regions?.find((r) => r.region === county.region)?.name ?? null) : null,
+  };
+}
+
 /** 25 km ring around the site plus dashed links to the nearest 220 kV+ substation and line. */
 function contextFC(p: LngLat | undefined, summary: SiteSummary | null): FC {
   if (!p) return EMPTY_FC;
@@ -173,11 +240,20 @@ function contextFC(p: LngLat | undefined, summary: SiteSummary | null): FC {
   return { type: "FeatureCollection", features };
 }
 
-export function MapView() {
+export function MapView({ advanced = true }: { advanced?: boolean }) {
+  const theme = useTheme();
+  const themeRef = useRef(theme);
+  const appliedTheme = useRef(theme);
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
+  const areaClick = useRef<((p: LngLat) => void) | null>(null);
   const { scenario, selectSite, overlays } = useGridForge();
   const { summary } = useSiteSummary();
+  // Phase 2: the forecast and site recommendation for the drawer's current what-if (shared state).
+  const forecast = usePhase2((s) => s.forecast);
+  const forecastStatus = usePhase2((s) => s.forecastStatus);
+  const recommendation = usePhase2((s) => s.recommendation);
+  const drawerOpen = useForecastDrawer();
   const center = scenario?.site.location;
   const siteName = scenario?.site.name;
   const assets = scenario?.assets;
@@ -191,22 +267,40 @@ export function MapView() {
   const [status, setStatus] = useState<LayerStatus>({});
   const [fallback, setFallback] = useState(false);
   const retryBasemap = useRef<(() => void) | null>(null);
-  // Map size, so the layers card can stop above D's floating Site cards when the map is narrow.
-  const [layersMaxH, setLayersMaxH] = useState<number | null>(null);
+  useEffect(() => {
+    themeRef.current = theme;
+    if (appliedTheme.current !== theme) {
+      appliedTheme.current = theme;
+      retryBasemap.current?.();
+    }
+  }, [theme]);
+  // Map size, so the layers card can stop above D's floating Site cards when the map is narrow, and the
+  // forecast drawer can size itself.
+  const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
   useEffect(() => {
     const node = el.current;
     if (!node) return;
-    const ro = new ResizeObserver(() => setLayersMaxH(Math.round(layersMaxHeight(node.clientWidth, node.clientHeight))));
+    const ro = new ResizeObserver(() => {
+      const w = node.clientWidth;
+      const h = node.clientHeight;
+      setMapSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+    });
     ro.observe(node);
     return () => ro.disconnect();
   }, []);
+  const drawerPx = drawerWidth(drawerOpen, mapSize?.w ?? null);
+  // Px on the right the drawer covers while a strip of map stays beside it (0 when closed or full width).
+  const shift = drawerOpen && (mapSize === null || drawerPx < mapSize.w) ? drawerPx : 0;
+  const layersMaxH = mapSize ? Math.round(layersMaxHeight(mapSize.w - shift, mapSize.h)) : null;
 
   // Latest values for map event handlers (they're registered once).
   const selectRef = useRef(selectSite);
   const visibleRef = useRef(visible);
   const hiddenOverlaysRef = useRef(hiddenOverlays);
   const layerData = useRef<Partial<Record<DataKey, FC>>>({});
-  const localData = useRef<Record<LocalSource, FC>>({ "site-context": EMPTY_FC, assets: EMPTY_FC, site: EMPTY_FC, footprints: EMPTY_FC });
+  const localData = useRef<Record<LocalSource, FC>>({ "site-context": EMPTY_FC, assets: EMPTY_FC, site: EMPTY_FC, footprints: EMPTY_FC, "rec-sites": EMPTY_FC });
+  const forecastRef = useRef<DemandForecast | null>(forecast);
+  const shiftRef = useRef(shift);
   const [catalog, setCatalog] = useState<Catalog | "error" | null>(null);
   // View state: ease to the site once, unless the user already moved the map.
   const userMoved = useRef(false);
@@ -217,6 +311,12 @@ export function MapView() {
   useEffect(() => {
     selectRef.current = selectSite;
   }, [selectSite]);
+  useEffect(() => {
+    forecastRef.current = forecast;
+  }, [forecast]);
+  useEffect(() => {
+    shiftRef.current = shift;
+  }, [shift]);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,7 +360,7 @@ export function MapView() {
       maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs"); // copied to public/ by npm postinstall
       const m = new maplibregl.Map({
         container: el.current,
-        style: BASEMAP,
+        style: themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP,
         bounds: CA_BOUNDS,
         fitBoundsOptions: { padding: 24 },
         attributionControl: { compact: true },
@@ -299,13 +399,15 @@ export function MapView() {
         drawn.current.clear();
         setStyleGen(0);
         setFallback(true);
-        m.setStyle(fetched ?? INLINE_FALLBACK_STYLE, { diff: false }); // full rebuild -> 'style.load'
+        const fallbackStyle = fetched ?? INLINE_FALLBACK_STYLE;
+        m.setStyle(themeRef.current === "dark" ? { ...fallbackStyle, layers: [{ id: "background", type: "background", paint: { "background-color": "#0c182a" } }] } : fallbackStyle, { diff: false });
       };
       // Slow is not down (venue Wi-Fi, a busy laptop): after the timeout, fall back only if the
       // basemap's style URL is actually unreachable. Real load errors fall back right away (below).
       const probeThenSwap = async () => {
         if (styleLoaded) return;
-        const reachable = await fetch(BASEMAP, { signal: AbortSignal.timeout(STYLE_PROBE_MS) }).then((r) => r.ok, () => false);
+        const url = themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP;
+        const reachable = await fetch(url, { signal: AbortSignal.timeout(STYLE_PROBE_MS) }).then((r) => r.ok, () => false);
         if (!reachable && !styleLoaded) void swapToFallback(`basemap unreachable after ${STYLE_TIMEOUT_MS / 1000} s`);
       };
       const armFallbackTimer = () => {
@@ -320,7 +422,7 @@ export function MapView() {
         drawn.current.clear();
         setStyleGen(0);
         setFallback(false);
-        m.setStyle(BASEMAP, { diff: false }); // errors or a dead URL land back on the fallback
+        m.setStyle(themeRef.current === "dark" ? "https://tiles.openfreemap.org/styles/dark" : BASEMAP, { diff: false });
         armFallbackTimer();
       };
 
@@ -347,13 +449,29 @@ export function MapView() {
           { layers: present },
         );
       };
+      // "Use this site" on a recommended site: make it the scenario site and fly there (beside the drawer).
+      const adoptSite = (p: LngLat) => {
+        userMoved.current = true;
+        clickedKey.current = locKey(p);
+        trackSiteSelection(p, selectRef.current(p));
+        m.flyTo({ center: [p.lon, p.lat], zoom: Math.max(m.getZoom(), SITE_ZOOM), offset: [-shiftRef.current / 2, 0], duration: 1200 });
+      };
+      const contentFor = (f: MapGeoJSONFeature, pop: Popup): HTMLElement => {
+        if (f.layer.id === "demand-fill") return demandCard(f.properties, demandInfo(forecastRef.current, f.properties?.geoid));
+        if (f.layer.id === "rec-sites" && f.geometry.type === "Point") {
+          const [lon, lat] = f.geometry.coordinates;
+          return recSiteCard(f.properties, () => {
+            pop.remove();
+            adoptSite({ lon, lat });
+          });
+        }
+        return popupContent(f.layer.id, f.properties);
+      };
       const openPopup = (f: MapGeoJSONFeature, at: MLLngLat): Popup => {
         const g = f.geometry;
         const anchor: [number, number] = g.type === "Point" ? [g.coordinates[0], g.coordinates[1]] : [at.lng, at.lat];
-        return new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8, className: "z-20" }) // above the z-10 layers card
-          .setLngLat(anchor)
-          .setDOMContent(popupContent(f.layer.id, f.properties))
-          .addTo(m);
+        const pop = new maplibregl.Popup({ closeOnClick: false, maxWidth: "280px", offset: 8, className: "z-20" }); // above the z-10 layers card
+        return pop.setLngLat(anchor).setDOMContent(contentFor(f, pop)).addTo(m);
       };
 
       m.on("click", (e) => {
@@ -361,12 +479,19 @@ export function MapView() {
         clearTimeout(selectTimer);
         popup?.remove();
         popup = null;
+        if (areaClick.current) {
+          const ll = e.lngLat.wrap();
+          areaClick.current({ lon: ll.lng, lat: ll.lat });
+          return;
+        }
         const hits = hitsAt(e.point, CLICKABLE_LAYER_IDS); // topmost first
         const feature = hits.find((f) => !AREA_LAYER_IDS.includes(f.layer.id));
         if (feature) {
           popup = openPopup(feature, e.lngLat);
           return;
         }
+        const zone = hitsAt(e.point, ["zoning-fill"])[0];
+        if (zone) { popup = openPopup(zone, e.lngLat); return; }
         if (e.originalEvent.detail > 1) return; // 2nd click of a double-click: the map zooms instead
         // Empty map (or only an area fill): select a site here, unless a double-click follows, then
         // show the topmost area's popup (a queue county above a utility territory).
@@ -388,7 +513,7 @@ export function MapView() {
         raf = requestAnimationFrame(() => {
           raf = 0;
           if (map.current !== m) return;
-          m.getCanvas().style.cursor = hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "";
+          m.getCanvas().style.cursor = areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "";
         });
       });
       m.on("mouseout", () => {
@@ -422,12 +547,63 @@ export function MapView() {
   const placed = useMemo(() => assetsFC(assets), [assets]);
   const context = useMemo(() => contextFC(center, summary), [center, summary]);
   const footprints = useMemo(() => (catalog && catalog !== "error" ? footprintsFC(assets, center, catalog) : EMPTY_FC), [assets, center, catalog]);
+  const recSites = useMemo(() => recSitesFC(recommendation), [recommendation]);
   useEffect(() => {
-    localData.current = { site, assets: placed, "site-context": context, footprints };
+    localData.current = { site, assets: placed, "site-context": context, footprints, "rec-sites": recSites };
     const m = map.current;
     if (!m) return;
     for (const id of LOCAL_SOURCES) m.getSource<GeoJSONSource>(id)?.setData(localData.current[id]);
-  }, [site, placed, context, footprints]);
+  }, [site, placed, context, footprints, recSites]);
+
+  // Demand-growth choropleth: recolor the counties for the current forecast (paint only, no geometry
+  // upload), again after every style load since install() re-adds the layer with its default paint.
+  const demand = useMemo(() => demandPaint(forecast?.available ? (forecast.counties ?? []) : []), [forecast]);
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !styleGen || !m.getLayer("demand-fill")) return;
+    m.setPaintProperty("demand-fill", "fill-color", demand.color);
+    m.setPaintProperty("demand-fill", "fill-opacity", demand.opacity);
+  }, [demand, styleGen]);
+
+  // Drawer open: MapLibre's zoom/compass (top-right) and scale/attribution (bottom-right) move to its left edge.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    for (const sel of [".maplibregl-ctrl-top-right", ".maplibregl-ctrl-bottom-right"]) {
+      const node = m.getContainer().querySelector<HTMLElement>(sel);
+      if (!node) continue;
+      node.style.transition = "right 150ms ease-out";
+      node.style.right = shift ? `${shift}px` : "";
+    }
+  }, [shift, styleGen]);
+
+  // The first time the drawer opens, show the demand-growth layer statewide beside it.
+  const autoDemand = useRef(false);
+  useEffect(
+    () =>
+      subscribeForecastDrawer(() => {
+        if (!isForecastDrawerOpen() || autoDemand.current) return;
+        autoDemand.current = true;
+        setVisible((v) => ({ ...v, demand: true, queue: false }));
+        const m = map.current;
+        const w = el.current?.clientWidth ?? 0;
+        const px = drawerWidth(true, w);
+        if (m && px < w) {
+          userMoved.current = true;
+          // Into the clear part of the map: beside the drawer and the layers card, above D's Site cards.
+          m.fitBounds(CA_BOUNDS, { padding: framePadding(m, px), pitch: 0, duration: 900 });
+        }
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeForecastDrawer();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
 
   // Camera: ease to the site the first time it is known (unless the user already moved);
   // later, follow it only if it changed without a map click and is off-screen (e.g. a preset switch).
@@ -508,7 +684,10 @@ export function MapView() {
 
   const fitCalifornia = useCallback(() => {
     userMoved.current = true; // an explicit view choice: don't auto-ease to the site afterwards
-    map.current?.fitBounds(CA_BOUNDS, { padding: 24, pitch: 0, duration: 900 });
+    const m = map.current;
+    if (!m) return;
+    const s = shiftRef.current; // drawer open: into the clear part of the map beside it
+    m.fitBounds(CA_BOUNDS, { padding: s ? framePadding(m, s) : 24, pitch: 0, duration: 900 });
   }, []);
   // Footprints on: tilt to 2.5D and frame them with the site; off: back to a flat map.
   const tiltForFootprints = useCallback(
@@ -521,7 +700,7 @@ export function MapView() {
         return;
       }
       const bounds = footprintBounds(localData.current.footprints, center);
-      if (bounds) m.fitBounds(bounds, { padding: framePadding(m), pitch: FOOTPRINT_PITCH, maxZoom: 14, duration: 1400 });
+      if (bounds) m.fitBounds(bounds, { padding: framePadding(m, shiftRef.current), pitch: FOOTPRINT_PITCH, maxZoom: 14, duration: 1400 });
       else m.easeTo({ pitch: FOOTPRINT_PITCH, duration: 900 });
     },
     [center],
@@ -552,12 +731,13 @@ export function MapView() {
   const flyToSite = useCallback(() => {
     if (!center) return;
     userMoved.current = true;
-    map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, duration: 1200 });
+    map.current?.flyTo({ center: [center.lon, center.lat], zoom: SITE_ZOOM, offset: [-shiftRef.current / 2, 0], duration: 1200 });
   }, [center]);
   const toggleGroup = useCallback(
     (g: LayerGroup) => {
       const on = !visibleRef.current[g];
-      setVisible((v) => ({ ...v, [g]: on }));
+      const other = EXCLUSIVE_GROUPS[g]; // two county choropleths would hide each other
+      setVisible((v) => ({ ...v, [g]: on, ...(on && other ? { [other]: false } : {}) }));
       if (g === "footprints") tiltForFootprints(on);
     },
     [tiltForFootprints],
@@ -577,15 +757,21 @@ export function MapView() {
   const groupStatus: LayerStatus = {
     ...status,
     footprints: catalog === "error" ? "unavailable" : catalog ? footprints.features.length : undefined,
+    demand: forecast?.available ? (forecast.counties?.length ?? 0) : forecast || forecastStatus === "error" ? "unavailable" : undefined,
+    sites: recommendation?.available ? recSites.features.length : undefined, // listed only when available
   };
+  const demandCaption = forecast?.available
+    ? `MW of new P90 peak by ${forecast.year} · ${scenarioLabel(forecast.scenario).toLowerCase()} scenario${forecastAdjusted(forecast) ? ", adjusted" : ""}`
+    : undefined;
   const button =
     "px-2.5 py-1 font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full overflow-hidden">
       <div ref={el} className="h-full w-full" />
-      {/* Top-left: view buttons and the basemap notice (D's Site cards float over the bottom-left). */}
+      {/* Top-left: search, view controls, highlighted-area zoning and basemap notices. */}
       <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+        <MapSearch mapRef={map} ready={ready} onNavigate={() => { userMoved.current = true; }} />
         <div className="pointer-events-auto flex divide-x divide-zinc-200 overflow-hidden rounded-md bg-white/95 text-xs shadow ring-1 ring-black/10 dark:divide-zinc-700 dark:bg-zinc-900/95 dark:ring-white/10">
           <button type="button" className={button} onClick={fitCalifornia} disabled={!ready} title="Fit California">
             California
@@ -593,7 +779,17 @@ export function MapView() {
           <button type="button" className={button} onClick={flyToSite} disabled={!ready || !center} title="Fly to the selected site">
             Site
           </button>
+          <button
+            type="button"
+            className={drawerOpen ? "bg-zinc-900 px-2.5 py-1 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300" : button}
+            onClick={toggleForecastDrawer}
+            aria-pressed={drawerOpen}
+            title="Demand forecast and where to build"
+          >
+            Forecast
+          </button>
         </div>
+        <ProjectMapTools mapRef={map} styleGen={styleGen} clickHandlerRef={areaClick} />
         {fallback && (
           <span className="pointer-events-auto rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 shadow ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800">
             Basemap offline: showing grid layers on a plain background ·{" "}
@@ -606,9 +802,9 @@ export function MapView() {
       {/* Top-right, below MapLibre's zoom/compass control (10 px margin + 3 x 29 px buttons): layers + legend,
           capped at ~45% of the map height and always clear of the scale bar and attribution (bottom-right),
           and of the floating Site cards on narrow maps (layersMaxHeight). */}
-      <div
-        className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end"
-        style={layersMaxH !== null ? { maxHeight: layersMaxH } : undefined}
+      {advanced && <div
+        className="pointer-events-none absolute right-2.5 top-[106px] z-10 flex max-h-[min(45%,calc(100%-11rem))] flex-col items-end transition-[right] duration-150 ease-out"
+        style={{ ...(layersMaxH !== null ? { maxHeight: layersMaxH } : {}), ...(shift ? { right: shift + LAYERS_CARD.right } : {}) }}
       >
         <LayerControl
           container={el}
@@ -618,8 +814,42 @@ export function MapView() {
           overlays={overlays.map((o) => ({ id: o.id, label: o.label }))}
           hiddenOverlays={hiddenOverlays}
           onToggleOverlay={toggleOverlay}
+          demandCaption={demandCaption}
         />
-      </div>
+      </div>}
+      {drawerOpen && (
+        <aside
+          className="absolute inset-y-0 right-0 z-30 flex max-w-full flex-col border-l border-zinc-200 bg-white text-zinc-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+          style={{ width: drawerPx }}
+          aria-label="Forecast and sites"
+        >
+          <header className="flex shrink-0 items-start justify-between gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold">Forecast &amp; sites</h2>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">California demand growth by scenario, and where to build for it</p>
+            </div>
+            <button
+              type="button"
+              onClick={closeForecastDrawer}
+              aria-label="Close the forecast"
+              title="Close (Esc)"
+              className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+              </svg>
+            </button>
+          </header>
+          {/* No top padding on the scroller itself: the forecast's sticky headline sticks to its very top. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-6">
+            <div className="pt-3">
+              <PanelGuard name="Forecast">
+                <ForecastView embedded />
+              </PanelGuard>
+            </div>
+          </div>
+        </aside>
+      )}
       {pending > 0 && (
         <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-xs text-zinc-600 shadow ring-1 ring-black/10 dark:bg-zinc-900/95 dark:text-zinc-300 dark:ring-white/10">
           Loading grid data… {DATA_KEYS.length - pending}/{DATA_KEYS.length}

@@ -4,6 +4,18 @@ Processed, committed layers behind the map and `summarize_site()`. Each file is 
 a prep script from public sources. Raw downloads are cached in `data/explore/raw/`, which is
 git-ignored.
 
+Map search also uses `places_ca.json`: 1,618 California place names and representative
+coordinates from the [2024 Census Gazetteer](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gazetteer/2024_gaz_place_06.txt).
+Rebuild with `python -m app.explore.prepare_places` from `backend/`. Search combines
+these places with county and named infrastructure layers; it makes no external
+geocoding requests and does not provide street-address lookup.
+
+Zoning is loaded only on request for a highlighted area of up to 100 km². The
+streaming endpoint returns processed pages incrementally, clips geometry to the
+selection, simplifies boundaries for screening and limits rendering complexity.
+Partial coverage and source outages are disclosed. Source zoning dates remain
+visible in popups; it does not establish current permitted land uses.
+
 ```bash
 cd backend
 .venv/bin/python -m app.explore.prepare_plants        # Windows: .venv/Scripts/python

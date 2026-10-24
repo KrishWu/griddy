@@ -1,0 +1,93 @@
+"""Demand-led plant sizing with a projected-demand hourly feasibility check."""
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field
+
+from app.contract import Asset, Model, Scenario
+from app.evaluate.catalog import get_catalog
+from app.evaluate.economics import evaluate
+from app.evaluate.project import ProjectOptions
+from app.simulate.engine import prepare, simulate
+from app.simulate.stress import stress_test
+
+
+class PlanRequest(Model):
+    scenario: Scenario
+    plant_type: Literal["solar_storage", "wind_storage", "hybrid", "gas_cc", "gas_ct"] = "hybrid"
+    renewable_energy_share: float = Field(default=0.7, ge=0, le=1)
+    storage_hours: float = Field(default=4, ge=0.5, le=48)
+    reserve_margin: float = Field(default=0.15, ge=0, le=1)
+    project: ProjectOptions = Field(default_factory=ProjectOptions)
+
+
+def plan_project(req: PlanRequest) -> dict:
+    sc = req.scenario.model_copy(deep=True)
+    if not 0 < sc.demand.peak_mw <= 20000:
+        raise ValueError("Peak demand must be greater than zero and at most 20,000 MW.")
+    factor = (1 + req.project.annual_demand_growth) ** req.project.projection_years
+    if sc.demand.peak_mw * factor > 50000:
+        raise ValueError("Projected peak exceeds the 50,000 MW planning limit.")
+    sc.preset = None
+    sc.name = f"{req.plant_type.replace('_', ' ').title()} project"
+    sc.options["project"] = req.project.model_dump()
+    projected = sc.model_copy(deep=True)
+    projected.demand.peak_mw *= factor
+    projected.assets = []  # size new assets at the selected site, independent of old asset locations
+    catalog = get_catalog()
+    prep = prepare(projected, catalog)
+    mean = float(prep.drivers.demand_mw.mean())
+    peak = max(projected.demand.peak_mw, float(prep.drivers.demand_mw.max()))
+    assets = []
+    renewable = req.plant_type in ("solar_storage", "wind_storage", "hybrid")
+    target = req.renewable_energy_share if renewable else 0
+    # Resource-specific CF uses the same cached weather as the simulation, not a fixed CA average.
+    weights = {"solar_pv": 1.0} if req.plant_type == "solar_storage" else {"onshore_wind": 1.0}
+    if req.plant_type == "hybrid":
+        weights = {"solar_pv": 0.6, "onshore_wind": 0.4}
+    if renewable:
+        for kind, share in weights.items():
+            cf = float(getattr(prep.drivers, "solar_cf" if kind == "solar_pv" else "wind_cf").mean())
+            if cf <= 0:
+                raise ValueError(f"No usable resource profile for {kind} at this site.")
+            assets.append(Asset(id=f"planned-{kind}", kind=kind, capacity_mw=mean * target * share / cf))
+        assets.append(Asset(id="planned-battery", kind="battery", capacity_mw=peak * max(target, 0.25), duration_h=req.storage_hours))
+    firm_target = peak * (1 + req.reserve_margin)
+    if req.plant_type in ("gas_cc", "gas_ct", "hybrid"):
+        kind = "gas_ct" if req.plant_type == "gas_ct" else "gas_cc"
+        grid = sc.grid.import_limit_mw if sc.grid.connected else 0
+        cap = max(0, firm_target - grid) / (0.92 if kind == "gas_ct" else 0.95)
+        if cap:
+            assets.append(Asset(id=f"planned-{kind}", kind=kind, capacity_mw=cap))
+    sc.assets = assets
+    projected.assets = [a.model_copy(deep=True) for a in assets]
+    sim = simulate(projected, catalog)
+    evaluation = evaluate(projected, sim, catalog)
+    findings = stress_test(projected, sim)
+    land = evaluation.extras["project"]["area"]
+    budget = evaluation.extras["project"]["budget"]
+    failures = []
+    if sim.summary.hours_unmet:
+        failures.append(f"Projected demand is unmet in {sim.summary.hours_unmet:,} hours.")
+    if budget["within_budget"] is False:
+        failures.append("Estimated capital cost exceeds the entered budget.")
+    if land["land_utilization"] is not None and land["land_utilization"] > 1:
+        failures.append("Estimated project land exceeds the selected footprint.")
+    if sim.extras["resilience"]["unserved_critical_mwh"] > 0.01:
+        failures.append("The design does not sustain the requested grid outage.")
+    if any(f.severity == "fail" for f in findings):
+        failures.append("Hourly stress screening contains failing findings.")
+    sc.options["sizing"] = {"plant_type": req.plant_type, "projected_peak_mw": projected.demand.peak_mw,
+        "basis": "Capacity sized for compound demand growth; renewable share is a gross energy sizing target before curtailment and storage losses. A heuristic candidate, not a least-cost optimum or a certified design."}
+    return {"scenario": sc, "projection": {"years": req.project.projection_years,
+        "peak_mw": projected.demand.peak_mw, "demand_mwh": sim.summary.demand_mwh,
+        "unmet_hours": sim.summary.hours_unmet, "unmet_mwh": sim.summary.unmet_mwh,
+        "capex_usd": evaluation.economics.capex_total_usd,
+        "annual_opex_usd": evaluation.economics.annual_opex_usd,
+        "lcoe_usd_per_mwh": evaluation.economics.lcoe_usd_per_mwh,
+        "annual_t_co2e": evaluation.emissions.annual_t_co2e,
+        "resilience": sim.extras["resilience"]},
+        "screening": {"meets_entered_checks": not failures, "issues": failures,
+            "needs_utility_study": True, "basis": sc.options["sizing"]["basis"]},
+        "findings": [f.model_dump() for f in findings]}

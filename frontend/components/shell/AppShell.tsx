@@ -2,13 +2,17 @@
 // Page layout. Every workstream's panel is already mounted here, so feature
 // branches edit their own components, not this file.  OWNER: workstream D.
 import Link from "next/link";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
+import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
+import { ThemeToggle } from "@/components/builder/ThemeToggle";
 import { CompareView } from "@/components/builder/CompareView";
 import { ReportPanel } from "@/components/builder/ReportPanel";
 import { EvaluatePanel } from "@/components/evaluate/EvaluatePanel";
+import { ProjectDetails, ProjectSummary } from "@/components/evaluate/ProjectSummary";
+import { AreaPanel } from "@/components/explore/AreaPanel";
 import { MapView } from "@/components/explore/MapView";
 import { SitePanel } from "@/components/explore/SitePanel";
 import { SimulatePanel } from "@/components/simulate/SimulatePanel";
@@ -33,7 +37,8 @@ function Toggle<T extends string>({ value, options, onChange }: { value: T; opti
         <button
           key={o.value}
           onClick={() => onChange(o.value)}
-          className={`rounded px-2 py-0.5 ${value === o.value ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black" : "text-zinc-600 dark:text-zinc-400"}`}
+          aria-pressed={value === o.value}
+          className={`rounded px-2 py-0.5 ${value === o.value ? "bg-emerald-800 text-white dark:bg-cyan-300 dark:text-slate-950" : "text-zinc-600 dark:text-zinc-400"}`}
         >
           {o.label}
         </button>
@@ -85,13 +90,16 @@ export function AppShell() {
   const { error, result, panelEpoch: v, running, view, setView, scenario, setMode, retry } = useGridForge();
   const placeholder = useMemo(() => usesPlaceholderData(result), [result]);
   const large = useIsLarge();
+  const [detailMode, setDetailMode] = useState<"basic" | "advanced">("basic");
+  const advanced = detailMode === "advanced";
   const mode: Mode = scenario?.mode ?? "industrial";
 
   return (
     <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
-      <header className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+      <header className="flex flex-wrap items-center gap-3 border-b border-zinc-200 bg-white/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/90">
         <h1 className="text-lg font-bold">Griddy</h1>
         <span className="hidden text-sm text-zinc-500 xl:inline">Energy infrastructure planning</span>
+        <Toggle value={detailMode} onChange={setDetailMode} options={[{ value: "basic", label: "Basic" }, { value: "advanced", label: "Advanced" }]} />
         <Toggle<View>
           value={view}
           onChange={setView}
@@ -109,6 +117,7 @@ export function AppShell() {
           ]}
         />
         <div className="ml-auto flex items-center gap-3 text-xs">
+          <ThemeToggle />
           {running && <span className="text-zinc-500">Simulating...</span>}
           {result && (
             <Link href="/report" className="rounded border border-zinc-300 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700">
@@ -133,42 +142,46 @@ export function AppShell() {
           </button>
         </div>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_1fr_420px] lg:overflow-hidden">
-        <aside className="space-y-3 border-r border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
-          {/* On small screens the GriddyGrade leads the page; on large screens it tops the cards over the map. */}
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_420px] lg:overflow-hidden">
+        <aside className="min-w-0 space-y-3 border-r border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
+          {/* On small screens the GriddyGrade leads the page in both modes; on large screens it tops the cards over the map. */}
           {!large && <GradeCard epoch={v} />}
-          <PanelGuard name="Build">
+          <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
+          <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>
+          {advanced && <><PanelGuard name="Build">
             <BuildPanel />
           </PanelGuard>
           <PanelGuard name="Assumptions">
             <AssumptionsPanel />
           </PanelGuard>
           {/* On small screens the site cards live here; on large screens they float over the map. */}
-          {!large && <SiteCards epoch={v} />}
+          {!large && <SiteCards epoch={v} />}</>}
         </aside>
         {view === "compare" ? (
-          <main className="min-h-0 lg:col-span-2 lg:overflow-y-auto">
+          <main className="min-h-0 min-w-0 lg:col-span-2 lg:overflow-y-auto">
             <PanelGuard name="Compare">
               <CompareView />
             </PanelGuard>
           </main>
         ) : (
           <>
-            <main className="relative h-[50vh] min-h-0 lg:h-auto">
+            <main className="relative h-[50vh] min-h-0 min-w-0 lg:h-auto">
               <PanelGuard name="Map">
-                <MapView />
+                <MapView advanced={advanced} />
               </PanelGuard>
               {/* Site results appear next to where you clicked, not three screens down the sidebar. */}
               {large && (
                 <div className="absolute bottom-8 left-3 z-10 max-h-[55%] w-80 space-y-2 overflow-y-auto">
                   <GradeCard epoch={v} />
-                  <SiteCards epoch={v} />
+                  {advanced && <SiteCards epoch={v} />}
                 </div>
               )}
             </main>
-            <aside className="space-y-3 border-l border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
+            <aside className="min-w-0 space-y-3 border-l border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
               {result ? (
                 <>
+                  {!advanced && <PanelGuard name="Project summary"><ProjectSummary /></PanelGuard>}
+                  {advanced && <>
                   <PanelGuard key={`sim-${v}`} name="Simulate">
                     <SimulatePanel />
                   </PanelGuard>
@@ -178,6 +191,8 @@ export function AppShell() {
                   <PanelGuard key={`stress-${v}`} name="Stress test">
                     <StressPanel />
                   </PanelGuard>
+                  </>}
+                  <PanelGuard name="Project impacts"><ProjectDetails result={result} /></PanelGuard>
                   <PanelGuard key={`report-${v}`} name="Report">
                     <ReportPanel />
                   </PanelGuard>
