@@ -12,17 +12,28 @@ import type { GlossaryKey } from "@/lib/glossary";
 import { pct, tons, usd } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
-import { ASSET_META } from "./assetMeta";
-
 const JULY_DAY = 196;
+// Same stack order and light/dark color steps as B's dispatch chart (simulate/DispatchChart.tsx
+// THEME), so a technology looks the same in Simulate and Compare and red only ever means unmet.
+const THEME = [
+  "[--gf-nuclear:#c2408f] dark:[--gf-nuclear:#e05fae]",
+  "[--gf-solar:#eda100] dark:[--gf-solar:#c98500]",
+  "[--gf-wind:#1baf7a] dark:[--gf-wind:#199e70]",
+  "[--gf-battery:#6250d6] dark:[--gf-battery:#9085e9]",
+  "[--gf-gascc:#eb6834] dark:[--gf-gascc:#e46a35]",
+  "[--gf-gasct:#a04a1c] dark:[--gf-gasct:#a3461c]",
+  "[--gf-grid:#2a78d6] dark:[--gf-grid:#3987e5]",
+  "[--gf-unmet:#e34948] dark:[--gf-unmet:#e66767]",
+].join(" ");
 const STACK = [
-  { key: "solar_pv", label: "Solar", color: ASSET_META.solar_pv.color },
-  { key: "onshore_wind", label: "Wind", color: ASSET_META.onshore_wind.color },
-  { key: "battery", label: "Battery", color: ASSET_META.battery.color },
-  { key: "nuclear", label: "Nuclear", color: ASSET_META.nuclear.color },
-  { key: "gas_cc", label: "Gas CC", color: ASSET_META.gas_cc.color },
-  { key: "gas_ct", label: "Gas CT", color: ASSET_META.gas_ct.color },
-  { key: "imports", label: "Grid imports", color: "#ef4444" },
+  { key: "nuclear", label: "Nuclear", color: "var(--gf-nuclear)" },
+  { key: "solar_pv", label: "Solar", color: "var(--gf-solar)" },
+  { key: "onshore_wind", label: "Wind", color: "var(--gf-wind)" },
+  { key: "battery", label: "Battery", color: "var(--gf-battery)" },
+  { key: "gas_cc", label: "Gas CC", color: "var(--gf-gascc)" },
+  { key: "gas_ct", label: "Gas CT", color: "var(--gf-gasct)" },
+  { key: "imports", label: "Grid imports", color: "var(--gf-grid)" },
+  { key: "unmet", label: "Unmet", color: "var(--gf-unmet)" },
 ] as const;
 
 /** Tallest stacked supply or demand on the July day across all results, so every thumbnail shares one scale. */
@@ -50,6 +61,7 @@ function dayData(r: ScenarioResult) {
       gas_cc: h.generation_mw.gas_cc?.[t] ?? 0,
       gas_ct: h.generation_mw.gas_ct?.[t] ?? 0,
       imports: h.imports_mw[t],
+      unmet: h.unmet_mw[t],
     };
   });
 }
@@ -118,6 +130,7 @@ export function CompareView() {
   const { compareResults, comparing, compareStale, runCompare, loadCompared, scenario, presets } = useGridForge();
   const tried = useRef<Scenario | null>(null);
   const yMax = compareResults ? sharedMax(compareResults) : null;
+  const canExport = compareResults?.some((r) => r.scenario.grid.connected !== false && (r.scenario.grid.export_limit_mw ?? 0) > 0);
 
   // Keep the comparison current while this view is open: run on arrival, and again shortly after an
   // edit (debounced, so typing doesn't fire a burst of /api/compare requests). Each scenario is tried
@@ -133,7 +146,7 @@ export function CompareView() {
   }, [scenario, presets.length, comparing, compareResults, compareStale, runCompare]);
 
   return (
-    <div className="space-y-3 p-3">
+    <div className={`space-y-3 p-3 ${THEME}`}>
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-base font-semibold">Compare scenarios</h2>
         <span className="text-xs text-zinc-500">Same site and demand · illustrative configurations</span>
@@ -166,6 +179,12 @@ export function CompareView() {
             <span className="flex items-center gap-1">
               <span className="h-0.5 w-3 bg-current" />
               Demand
+            </span>
+            {/* Stacked supply = demand + battery charge + exports + curtailment, so whatever rises above the line isn't serving the load. */}
+            <span>
+              Above the line isn&apos;t serving the load: it charges the battery{canExport ? ", is exported" : ""} or is{" "}
+              <Term k="curtailment">curtailed</Term>
+              {canExport ? "." : ", since none of these designs can export."}
             </span>
           </div>
           <Panel title="Side by side" owner="C · Evaluate">
