@@ -1,9 +1,9 @@
 "use client";
 // "Highlight area" map tool: click two corners to outline a rectangle; the Plan tab's area panel then
-// estimates people and demand in it, and zoning can be loaded for it. Compact on the map: one button,
-// with its help text and the zoning controls behind a disclosure (opened automatically after drawing,
-// since loading zoning is the next step).
+// estimates people and demand in it. Controls render inside that panel while drawing stays on the map.
 import { useEffect, useId, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { useAreaTools } from "./areaTools";
 import type { GeoJSONSource, Map as MLMap } from "maplibre-gl";
 import { showLeftTabFromMap } from "@/components/shell/sidebarTabs";
 import { SelectedZoning } from "./SelectedZoning";
@@ -17,6 +17,7 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
   mapRef: RefObject<MLMap | null>; styleGen: number; clickHandlerRef: RefObject<ClickHandler>;
 }) {
   const { scenario, updateScenario, selectSite } = useGridForge();
+  const { host } = useAreaTools();
   const [drawing, setDrawing] = useState(false);
   const [first, setFirst] = useState<LngLat | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +48,15 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
   }, [drawing, first, clickHandlerRef, selectSite, updateScenario]);
 
   useEffect(() => {
+    if (!drawing) return;
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setDrawing(false); setFirst(null); setError(null); }
+    };
+    window.addEventListener("keydown", cancel);
+    return () => window.removeEventListener("keydown", cancel);
+  }, [drawing]);
+
+  useEffect(() => {
     const m = mapRef.current;
     if (!m || !styleGen) return;
     const data: GeoJSON.FeatureCollection = footprint ? { type: "FeatureCollection", features: [
@@ -64,12 +74,16 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
     m.getSource<GeoJSONSource>("area-corner")?.setData(first ? { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [first.lon, first.lat] }, properties: {} }] } : EMPTY);
   }, [footprint, first, mapRef, styleGen]);
 
-  const chip = "pointer-events-auto rounded-md bg-white/95 text-xs text-zinc-800 shadow ring-1 ring-black/10 dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/10";
-  return <div className="flex flex-col items-start gap-1">
+  if (!host) return null;
+  const chip = "rounded-md border border-zinc-200 text-xs text-zinc-800 dark:border-zinc-700 dark:text-zinc-100";
+  return createPortal(<div className="flex flex-col items-start gap-1">
     <div className={`${chip} flex overflow-hidden`}>
       <button type="button" disabled={!styleGen} aria-pressed={drawing}
         className={`px-2.5 py-1 font-medium disabled:opacity-40 ${drawing ? "bg-emerald-700 text-white dark:bg-cyan-300 dark:text-slate-950" : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"}`}
-        onClick={() => { setDrawing(v => !v); setFirst(null); setError(null); }}>{drawing ? "Cancel selection" : "Highlight area"}</button>
+        onClick={() => {
+          if (!drawing) { mapRef.current?.getContainer().scrollIntoView({ block: "center" }); mapRef.current?.getCanvas().focus({ preventScroll: true }); }
+          setDrawing(v => !v); setFirst(null); setError(null);
+        }}>{drawing ? "Cancel selection" : "Highlight area"}</button>
       <button type="button" aria-expanded={expanded} aria-controls={detailsId}
         aria-label={expanded ? "Hide Highlight area help and zoning" : "Show Highlight area help and zoning"}
         title={expanded ? "Hide help and zoning" : "What is this? · zoning"}
@@ -85,9 +99,9 @@ export function ProjectMapTools({ mapRef, styleGen, clickHandlerRef }: {
     {/* Always mounted (hidden when folded): SelectedZoning owns the zoning layer and its loaded zones. */}
     <div id={detailsId} hidden={!expanded} className={`${chip} w-72 max-w-full p-2`}>
       <p className="text-[11px] leading-snug text-zinc-600 dark:text-zinc-300">
-        Click two opposite corners on the map to outline a rectangle. The Plan tab then estimates the residents, households and electricity demand inside it.
+        Click two opposite corners on the map to select an area.
       </p>
       <SelectedZoning mapRef={mapRef} styleGen={styleGen} footprint={footprint} />
     </div>
-  </div>;
+  </div>, host);
 }

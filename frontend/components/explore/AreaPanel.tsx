@@ -6,10 +6,12 @@ import { NumberField } from "@/components/builder/NumberField";
 import { Term } from "@/components/glossary/Term";
 import type { AreaStats } from "@/components/evaluate/project";
 import { post } from "@/lib/api";
+import { useAreaTools } from "./areaTools";
 import { useGridForge } from "@/lib/store";
 
 export function AreaPanel() {
-  const { scenario, updateScenario } = useGridForge();
+  const { scenario, updateScenario, view } = useGridForge();
+  const { setHost } = useAreaTools();
   const footprint = scenario?.site.footprint;
   const inputs = scenario?.options?.area as Record<string, number> | undefined;
   const persons = inputs?.persons_per_household ?? 2.9;
@@ -32,7 +34,9 @@ export function AreaPanel() {
   const stats = current?.stats;
   const set = (key: string, v: number) => updateScenario(s => ({ ...s, options: { ...s.options, area: { ...s.options?.area as object, [key]: v } } }));
   return <Panel title="People & demand in selected area">
-    {!footprint ? <p className="text-xs text-zinc-500">Use “Highlight area” on the map to estimate residents, households and residential electricity demand.</p> : <div className="space-y-2 text-xs">
+    <div ref={setHost} className="mb-3" />
+    {view === "compare" && <p className="mb-2 text-xs text-zinc-500">Open Single view to highlight an area.</p>}
+    {!footprint ? <p className="text-xs text-zinc-500">Highlight an area to estimate its residents and electricity demand.</p> : <div className="space-y-2 text-xs">
       {current?.error && <p role="alert" className="text-red-600">{current.error}</p>}
       {!current && <p className="text-zinc-500">Estimating selected area…</p>}
       {stats && <>

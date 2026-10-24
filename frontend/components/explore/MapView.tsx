@@ -99,7 +99,7 @@ function motion(): { animate: boolean; essential: true } {
 }
 
 /** Camera padding for framing footprints: the map minus the overlays that stay on it (search, view
- *  buttons and Highlight area at the top left, zoom/compass at the top right, scale bar and attribution
+ *  buttons at the top left, zoom/compass at the top right, scale bar and attribution
  *  at the bottom). The Site cards and layers card used to float here; they live in the sidebars now.
  *  Extra room at the bottom covers what the pitch and extrusions push below the fitted bounds.
  *  `shift`: px on the right covered by the forecast drawer. */
@@ -776,7 +776,7 @@ export function MapView() {
   return (
     <div className="relative h-full w-full overflow-hidden" style={mapFilter ? ({ "--map-filter": mapFilter } as CSSProperties) : undefined}>
       <div ref={el} className="h-full w-full" />
-      {/* Top-left: search, view controls, highlighted-area zoning and basemap notices. Kept clear of the
+      {/* Top-left: search, view controls and basemap notices. Kept clear of the
           zoom/compass (top-right) and, while it is open, of the forecast drawer, so on a narrow strip of
           map the search box narrows instead of sliding under them. */}
       <div
