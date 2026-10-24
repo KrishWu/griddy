@@ -1,0 +1,118 @@
+{
+  "artifact_id": "forecast-2024-20261024-105524",
+  "kind": "forecast",
+  "base_year": 2024,
+  "years": [
+    2024,
+    2030,
+    2035,
+    2040
+  ],
+  "scenarios": {
+    "base": {
+      "kind": "observed"
+    },
+    "low": {
+      "population_growth": 0.002,
+      "use_dof_population": true,
+      "electrification_growth": 0.008,
+      "efficiency_offset": 0.007,
+      "data_center_mw": {},
+      "data_center_load_factor": 0.9,
+      "data_center_flexible_share": 0.0,
+      "calibration_csv": null,
+      "note": "Slow electrification, efficiency keeps pace, no new data centers",
+      "kind": "assumption"
+    },
+    "mid": {
+      "population_growth": 0.004,
+      "use_dof_population": true,
+      "electrification_growth": 0.015,
+      "efficiency_offset": 0.007,
+      "data_center_mw": {
+        "06029": 1000,
+        "06085": 500
+      },
+      "data_center_load_factor": 0.9,
+      "data_center_flexible_share": 0.1,
+      "calibration_csv": null,
+      "note": "Steady EV/heat-pump adoption; a 1 GW AI campus in Kern (the Griddy demo site) and 500 MW in Santa Clara",
+      "kind": "assumption"
+    },
+    "high": {
+      "population_growth": 0.006,
+      "use_dof_population": true,
+      "electrification_growth": 0.025,
+      "efficiency_offset": 0.005,
+      "data_center_mw": {
+        "06029": 2000,
+        "06085": 1000,
+        "06019": 500,
+        "06025": 500
+      },
+      "data_center_load_factor": 0.9,
+      "data_center_flexible_share": 0.0,
+      "calibration_csv": null,
+      "note": "Fast electrification and an AI data-center build-out in Kern, Santa Clara, Fresno and Imperial",
+      "kind": "assumption"
+    }
+  },
+  "created_utc": "2026-10-24T10:55:24+00:00",
+  "producer": {
+    "package": "ml.demand_forecast",
+    "model_version": "demand-20261024-104738",
+    "git_sha": "1603109",
+    "xgboost": "3.4.1"
+  },
+  "data_vintage": {
+    "eia930": "2019-2026",
+    "weather": "Open-Meteo archive, replay years [2019, 2020, 2021, 2022, 2023, 2024]"
+  },
+  "metrics": {
+    "split": "test",
+    "mape_p50_pct": 8.675451745747106,
+    "mape_climatology_pct": 11.218686661816347,
+    "monthly_peak_error_pct": 5.968062481918376,
+    "p10_p90_coverage": 0.5003699880324859,
+    "note": "Hourly accuracy given the year's mean load; long-term level comes from scenario assumptions."
+  },
+  "provenance": [
+    {
+      "kind": "observed",
+      "source": "EIA-930 hourly demand (CAISO sub-regions PGAE/SCE/SDGE; LDWP, BANC, IID, TIDC)",
+      "url": "https://www.eia.gov/electricity/gridmonitor/",
+      "note": null
+    },
+    {
+      "kind": "inferred",
+      "source": "Downscaled to counties by 2020 Census block-group population within each load region",
+      "url": "https://www2.census.gov/geo/docs/reference/cenpop2020/blkgrp/",
+      "note": "County demand is an estimate, not metered load. Regions from CEC balancing-authority and utility territories (data/explore)."
+    },
+    {
+      "kind": "observed",
+      "source": "CA Department of Finance P-2A county population projections (2024 baseline)",
+      "url": "https://dof.ca.gov/forecasting/demographics/projections/",
+      "note": "County population growth in the scenarios; DOF's projection, not a Griddy estimate."
+    },
+    {
+      "kind": "observed",
+      "source": "Open-Meteo historical weather (ERA5 reanalysis)",
+      "url": "https://archive-api.open-meteo.com/v1/archive",
+      "note": "Replayed weather years [2019, 2020, 2021, 2022, 2023, 2024]"
+    },
+    {
+      "kind": "simulated",
+      "source": "Weather-adjusted hourly demand model (gradient-boosted quantiles)",
+      "url": null,
+      "note": "Load shape per region from weather and calendar"
+    },
+    {
+      "kind": "assumption",
+      "source": "Scenario growth rates and data-center loads",
+      "url": null,
+      "note": "From scenarios.json; see manifest scenarios"
+    }
+  ],
+  "schema_version": "1.1"
+}
