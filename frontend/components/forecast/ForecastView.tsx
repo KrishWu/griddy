@@ -38,6 +38,7 @@ import {
   resetToPreset,
   retryPhase2,
   selectScenario,
+  setSiteRequest,
   updateForecast,
   usePhase2,
   type EffectiveParams,
@@ -73,6 +74,8 @@ function ForecastBody() {
   const forecast = usePhase2((s) => s.forecast);
   const status = usePhase2((s) => s.forecastStatus);
   const siteRequest = usePhase2((s) => s.siteRequest);
+  const recommendation = usePhase2((s) => s.recommendation);
+  const sitesStatus = usePhase2((s) => s.sitesStatus);
 
   // Opened again after a failure (e.g. the backend restarted): try once more.
   useEffect(() => {
@@ -87,9 +90,8 @@ function ForecastBody() {
   return (
     <div className="space-y-5 text-sm">
       {main}
-      {/* TODO(after B's Sites panel merges): also pass recommendation={recommendation} (usePhase2((s) => s.recommendation)) and onRequestChange={setSiteRequest}. */}
       <PanelGuard name="Where to build">
-        <SitesPanel request={siteRequest} />
+        <SitesPanel request={siteRequest} recommendation={recommendation ?? (sitesStatus === "error" ? { available: false, mode: "unavailable", year: siteRequest.forecast?.year ?? DEFAULT_YEAR, scenario: siteRequest.forecast?.scenario ?? "mid" } : null)} onRequestChange={setSiteRequest} />
       </PanelGuard>
       {forecast?.available && <SourcesAndNotes forecast={forecast} />}
     </div>

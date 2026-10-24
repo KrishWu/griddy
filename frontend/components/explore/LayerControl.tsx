@@ -28,13 +28,12 @@ import {
   QUEUE_CREDIT,
   QUEUE_FILL_OPACITY,
   QUEUE_RAMP,
-  REC_SITE_RING,
   SITE_COLOR,
   UNKNOWN_VOLTAGE,
   UTILITY_TYPE_COLOR,
   VOLTAGE_CLASSES,
 } from "./palette";
-import { Dot, LineSwatch, Square } from "./Swatch";
+import { Dot, LineSwatch, Square, Star } from "./Swatch";
 
 export type { LayerStatus } from "./layerState";
 
@@ -151,7 +150,7 @@ function SitesKey() {
       <ul className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]">
         {SITE_KEYS.map((k) => (
           <li key={k.label} className="flex items-center gap-1">
-            <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: k.color, boxShadow: `0 0 0 1.5px #fff, 0 0 0 2.5px ${REC_SITE_RING}` }} />
+            <Star color={k.color} />
             {k.label}
           </li>
         ))}
