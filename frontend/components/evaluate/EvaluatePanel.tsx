@@ -6,9 +6,11 @@
 // missing (older backend) the panel degrades to the headline stats + cost-line table.
 import type { ReactNode } from "react";
 
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import type { Provenance, ScenarioResult } from "@/lib/contract";
 import { pct, tons, usd } from "@/lib/format";
+import type { GlossaryKey } from "@/lib/glossary";
 import { useGridForge } from "@/lib/store";
 
 import { BomTable } from "./BomTable";
@@ -31,11 +33,11 @@ export function EvaluatePanel() {
 
 const pctRate = (r: number) => `${(r * 100).toFixed(1).replace(/\.0$/, "")}%`;
 
-function Input({ label, children, provenance }: { label: string; children: ReactNode; provenance?: Provenance[] }) {
+function Input({ label, children, provenance, term }: { label: string; children: ReactNode; provenance?: Provenance[]; term?: GlossaryKey }) {
   return (
     <div className="flex items-baseline justify-between gap-2 border-t border-zinc-100 py-1 first:border-t-0 dark:border-zinc-800">
       <dt className="flex items-center gap-1 text-zinc-500">
-        {label}
+        {term ? <Term k={term}>{label}</Term> : label}
         {provenance && <ProvenanceTip label={label} provenance={provenance} />}
       </dt>
       <dd className="text-right tabular-nums text-zinc-800 dark:text-zinc-200">{children}</dd>
@@ -76,37 +78,62 @@ function EvaluateBody({ result }: { result: ScenarioResult }) {
   return (
     <Panel title="Evaluate" owner="C · Evaluate">
       <p className="-mt-1 mb-3 text-[10px] text-zinc-500">
-        {ex.dollar_year ? `Real ${ex.dollar_year} USD · ` : ""}
-        {a.years}-yr horizon · {pctRate(a.rate)} real discount rate
+        {ex.dollar_year ? (
+          <>
+            <Term k="real_dollars">Real {ex.dollar_year} USD</Term> ·{" "}
+          </>
+        ) : (
+          ""
+        )}
+        {a.years}-yr horizon · {pctRate(a.rate)} <Term k="discount_rate">real discount rate</Term>
       </p>
 
       <div className="@container">
         <div className="grid grid-cols-2 gap-3 @xs:grid-cols-3 @lg:grid-cols-4">
-          <StatTip label="CAPEX" value={capex !== undefined ? usd(capex) : DASH} provenance={prov.capex_total_usd} sub="year 0" />
-          <StatTip label="NPC" value={npc !== undefined ? usd(npc) : DASH} provenance={prov.npc_usd} sub={`${a.years}-yr present value`} />
+          <StatTip label="CAPEX" term="capex" value={capex !== undefined ? usd(capex) : DASH} provenance={prov.capex_total_usd} sub="year 0" />
+          <StatTip label="NPC" term="npc" value={npc !== undefined ? usd(npc) : DASH} provenance={prov.npc_usd} sub={`${a.years}-yr present value`} />
           <StatTip
             label="LCOE"
+            term="lcoe"
             value={lcoe !== undefined ? `$${lcoe.toFixed(0)}` : DASH}
             unit="/MWh"
             provenance={prov.lcoe_usd_per_mwh}
-            sub={ex.lcoe_crf_usd_per_mwh !== undefined ? `CRF check ${perMwh(ex.lcoe_crf_usd_per_mwh)}` : "NPC ÷ discounted MWh"}
+            sub={
+              ex.lcoe_crf_usd_per_mwh !== undefined ? (
+                <>
+                  <Term k="crf">CRF</Term> check {perMwh(ex.lcoe_crf_usd_per_mwh)}
+                </>
+              ) : (
+                "NPC ÷ discounted MWh"
+              )
+            }
             tipExtra={
               ex.lcoe_crf_usd_per_mwh !== undefined
                 ? `Cross-check: annualizing each asset's CAPEX with its own capital recovery factor gives ${perMwh(ex.lcoe_crf_usd_per_mwh)}.`
                 : undefined
             }
           />
-          <StatTip label="Annual OPEX" value={opex !== undefined ? usd(opex) : DASH} provenance={prov.annual_opex_usd} sub="year 1" />
-          <StatTip label="CO2e / yr" value={co2 !== undefined ? tons(co2) : DASH} provenance={prov.annual_t_co2e} sub="CAISO hourly imports" />
+          <StatTip label="Annual OPEX" term="opex" value={opex !== undefined ? usd(opex) : DASH} provenance={prov.annual_opex_usd} sub="year 1" />
+          <StatTip label="CO2e / yr" term="co2e" value={co2 !== undefined ? tons(co2) : DASH} provenance={prov.annual_t_co2e} sub="CAISO hourly imports" />
           <StatTip
             label="CO2 intensity"
+            term="co2_intensity"
             value={intensity !== undefined ? Math.round(intensity).toLocaleString() : DASH}
             unit="kg/MWh"
             provenance={prov.intensity_kg_per_mwh}
-            sub={served !== undefined ? `${(served / 1e6).toFixed(2)} TWh/yr served` : "per MWh served"}
+            sub={
+              served !== undefined ? (
+                <>
+                  {(served / 1e6).toFixed(2)} <Term k="twh">TWh</Term>/yr served
+                </>
+              ) : (
+                "per MWh served"
+              )
+            }
           />
           <StatTip
             label="24/7 CFE"
+            term="cfe_247"
             value={ex.cfe_score_24_7 !== undefined ? pct(ex.cfe_score_24_7) : DASH}
             provenance={prov.cfe_score_24_7}
             sub={ex.cfe_score_24_7 !== undefined ? "hours fully clean" : "not reported"}
@@ -147,7 +174,7 @@ function EvaluateBody({ result }: { result: ScenarioResult }) {
               },
             ]}
           >
-            ${a.gasPrice.toFixed(2)}/MMBtu avg
+            ${a.gasPrice.toFixed(2)}/<Term k="mmbtu">MMBtu</Term> avg
             {ex.fuel_effective_usd_per_mmbtu !== undefined && burnsGas && (
               <span className="text-zinc-500"> · burn-weighted ${ex.fuel_effective_usd_per_mmbtu.toFixed(2)}</span>
             )}
@@ -156,6 +183,7 @@ function EvaluateBody({ result }: { result: ScenarioResult }) {
           </Input>
           <Input
             label="Import delivery adder"
+            term="import_adder"
             provenance={[
               {
                 kind: "assumption",
@@ -168,6 +196,7 @@ function EvaluateBody({ result }: { result: ScenarioResult }) {
           </Input>
           <Input
             label="Carbon price"
+            term="carbon_price"
             provenance={[
               {
                 kind: "assumption",

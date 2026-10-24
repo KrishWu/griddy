@@ -3,14 +3,18 @@
 // D's compare view imports this; keep the props stable. Values that a result's
 // evaluation backend didn't report (extras missing) show "—". The best value in each
 // row is set in bold when at least two scenarios report it.
+import { Term } from "@/components/glossary/Term";
 import type { ScenarioResult } from "@/lib/contract";
 import { pct, usd } from "@/lib/format";
+import type { GlossaryKey } from "@/lib/glossary";
 
 import { evalExtras, landAcres, landAcresDirect, type EvalExtras } from "./extras";
 import { DASH, finite, perMwh } from "./fmt";
 
 interface Row {
   label: string;
+  /** Glossary entry explaining the row header. */
+  term?: GlossaryKey;
   unit?: string;
   get: (r: ScenarioResult, ex: EvalExtras) => number | undefined;
   /** `row` holds every value reported in this row, so a row can share one scale (e.g. all Mt). */
@@ -32,12 +36,12 @@ const smallTons = (v: number) => (v === 0 ? "0" : v >= 100 ? Math.round(v).toLoc
 const int = (v: number) => Math.round(v).toLocaleString();
 
 const ROWS: Row[] = [
-  { label: "CAPEX", get: (r) => finite(r.evaluation.economics.capex_total_usd), fmt: usd, better: "low" },
-  { label: "NPC", get: (r) => finite(r.evaluation.economics.npc_usd), fmt: usd, better: "low" },
-  { label: "LCOE", get: (r) => finite(r.evaluation.economics.lcoe_usd_per_mwh), fmt: perMwh, better: "low" },
-  { label: "CO2e / yr", get: (r) => finite(r.evaluation.emissions.annual_t_co2e), fmt: co2Row, better: "low" },
-  { label: "CO2 intensity", unit: "kg/MWh", get: (r) => finite(r.evaluation.emissions.intensity_kg_per_mwh), fmt: int, better: "low" },
-  { label: "Unmet hours", get: (r) => finite(r.simulation.summary.hours_unmet), fmt: int, better: "low" },
+  { label: "CAPEX", term: "capex", get: (r) => finite(r.evaluation.economics.capex_total_usd), fmt: usd, better: "low" },
+  { label: "NPC", term: "npc", get: (r) => finite(r.evaluation.economics.npc_usd), fmt: usd, better: "low" },
+  { label: "LCOE", term: "lcoe", get: (r) => finite(r.evaluation.economics.lcoe_usd_per_mwh), fmt: perMwh, better: "low" },
+  { label: "CO2e / yr", term: "co2e", get: (r) => finite(r.evaluation.emissions.annual_t_co2e), fmt: co2Row, better: "low" },
+  { label: "CO2 intensity", term: "co2_intensity", unit: "kg/MWh", get: (r) => finite(r.evaluation.emissions.intensity_kg_per_mwh), fmt: int, better: "low" },
+  { label: "Unmet hours", term: "unmet", get: (r) => finite(r.simulation.summary.hours_unmet), fmt: int, better: "low" },
   {
     label: "Land",
     unit: "acres",
@@ -55,8 +59,8 @@ const ROWS: Row[] = [
         : undefined;
     },
   },
-  { label: "24/7 CFE", get: (_r, ex) => ex.cfe_score_24_7, fmt: pct, better: "high" },
-  { label: "NOx", unit: "t/yr", get: (_r, ex) => ex.nox_t_per_yr, fmt: smallTons, better: "low" },
+  { label: "24/7 CFE", term: "cfe_247", get: (_r, ex) => ex.cfe_score_24_7, fmt: pct, better: "high" },
+  { label: "NOx", term: "nox", unit: "t/yr", get: (_r, ex) => ex.nox_t_per_yr, fmt: smallTons, better: "low" },
 ];
 
 export function ComparisonTable({ results }: { results: ScenarioResult[] }) {
@@ -87,7 +91,7 @@ export function ComparisonTable({ results }: { results: ScenarioResult[] }) {
             return (
               <tr key={row.label} className="border-t border-zinc-100 align-top dark:border-zinc-800">
                 <th scope="row" className="whitespace-nowrap py-1 pr-2 text-left font-normal text-zinc-500">
-                  {row.label}
+                  {row.term ? <Term k={row.term}>{row.label}</Term> : row.label}
                   {row.unit && <span className="ml-1 text-[10px] text-zinc-400 dark:text-zinc-500">{row.unit}</span>}
                 </th>
                 {values.map((v, i) => {

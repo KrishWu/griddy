@@ -7,6 +7,7 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { safeUrl } from "@/components/explore/geo";
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import { PanelGuard } from "@/components/shell/PanelGuard";
 import { SitesPanel } from "@/components/sites/SitesPanel";
@@ -117,7 +118,7 @@ function Unavailable() {
   );
 }
 
-function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Section({ title, action, children }: { title: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section>
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -187,7 +188,7 @@ function Slider(props: {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
+function Stat({ label, value, sub }: { label: ReactNode; value: string; sub: ReactNode }) {
   return (
     <div className="min-w-0">
       <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</div>
@@ -230,7 +231,7 @@ function ForecastContent({ forecast, request, status }: { forecast: DemandForeca
 
   return (
     <>
-      <Section title="Scenario" action={reset}>
+      <Section title={<Term k="forecast_scenario">Scenario</Term>} action={reset}>
         <div className="flex flex-wrap items-center gap-2">
           <Segmented value={scenarioId} options={options} onChange={selectScenario} label="Scenario preset" />
           {adjusted && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">adjusted</span>}
@@ -279,7 +280,11 @@ function ForecastContent({ forecast, request, status }: { forecast: DemandForeca
           <Stat
             label={`New peak demand by ${resultYear}`}
             value={signedMw(t.growthPeak)}
-            sub={`P90, ${signedPct(t.basePeak > 0 ? t.growthPeak / t.basePeak : null)} vs ${baseYear} · all regions`}
+            sub={
+              <>
+                <Term k="p50_p90">P90</Term>, {signedPct(t.basePeak > 0 ? t.growthPeak / t.basePeak : null)} vs {baseYear} · all regions
+              </>
+            }
           />
           <Stat
             label={`New annual energy by ${resultYear}`}
@@ -290,7 +295,13 @@ function ForecastContent({ forecast, request, status }: { forecast: DemandForeca
         </div>
       )}
 
-      <Section title="Peak demand by load region">
+      <Section
+        title={
+          <>
+            Peak demand by <Term k="load_region">load region</Term>
+          </>
+        }
+      >
         <RegionChart regions={regions} selected={region} onSelect={setRegionPick} baseYear={baseYear} />
       </Section>
 
@@ -415,7 +426,7 @@ function DataCenterControls({ params, forecast, geoid, countyLabel, fromSite }: 
         hint={fromSite ? undefined : "Select a site on the map to add load in its county."}
       />
       <Slider
-        label="Load factor"
+        label={<Term k="load_factor">Load factor</Term>}
         value={params.data_center_load_factor}
         min={0.5}
         max={1}
@@ -424,7 +435,11 @@ function DataCenterControls({ params, forecast, geoid, countyLabel, fromSite }: 
         onChange={(v) => updateForecast({ data_center_load_factor: v })}
       />
       <Slider
-        label="Carbon-aware flexible share"
+        label={
+          <>
+            Carbon-aware <Term k="flexible_load">flexible share</Term>
+          </>
+        }
         value={params.data_center_flexible_share}
         min={0}
         max={1}

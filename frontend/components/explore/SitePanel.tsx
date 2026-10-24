@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from "react";
 
 import { countyByName, scenarioLabel, signedMw } from "@/components/forecast/forecastData";
 import { forecastAdjusted, usePhase2 } from "@/components/forecast/usePhase2";
+import { Term } from "@/components/glossary/Term";
 import { FindingsList } from "@/components/shell/FindingsList";
 import { Panel } from "@/components/shell/Panel";
 import type { Provenance, SiteSummary } from "@/lib/contract";
@@ -82,7 +83,7 @@ function DemandOutlook({ county }: { county: string | null | undefined }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <section>
       <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{title}</h3>
@@ -92,7 +93,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** One label/value row of a two-column <dl>; long values wrap instead of truncating. */
-function Fact({ label, value, title }: { label: string; value: string | null; title?: string | null }) {
+function Fact({ label, value, title }: { label: ReactNode; value: string | null; title?: string | null }) {
   return (
     <>
       <dt className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</dt>
@@ -147,7 +148,7 @@ function QueueSection({ q }: { q: QueueView }) {
   const url = safeUrl(q.url);
   const n = q.activeProjects;
   return (
-    <Section title="Interconnection queue">
+    <Section title={<Term k="interconnection_queue">Interconnection queue</Term>}>
       {n > 0 ? (
         <>
           <p>
@@ -231,11 +232,17 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
 
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5">
         <Fact label="County" value={v.county} />
-        <Fact label="Utility" value={v.utility} title={v.utilityTitle} />
-        <Fact label="Balancing authority" value={v.balancingAuthority} title={v.balancingAuthorityTitle} />
+        <Fact label={<Term k="utility_territory">Utility</Term>} value={v.utility} title={v.utilityTitle} />
+        <Fact label={<Term k="balancing_authority">Balancing authority</Term>} value={v.balancingAuthority} title={v.balancingAuthorityTitle} />
       </dl>
 
-      <Section title="Nearest substations">
+      <Section
+        title={
+          <>
+            Nearest <Term k="substation">substations</Term>
+          </>
+        }
+      >
         {v.substations.length || hv ? (
           <ul className="space-y-1.5">
             {near.map((s) => (
@@ -248,7 +255,13 @@ function SiteDetails({ summary, v }: { summary: SiteSummary; v: SiteView }) {
         )}
       </Section>
 
-      <Section title="Nearest 220 kV+ line">
+      <Section
+        title={
+          <>
+            Nearest <Term k="transmission_line">220 kV+ line</Term>
+          </>
+        }
+      >
         {v.hvLine ? (
           <p className="flex items-center gap-2">
             <LineSwatch color={voltageClass(v.hvLine.voltage_kv).color} />

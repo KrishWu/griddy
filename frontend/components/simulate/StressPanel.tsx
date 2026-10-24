@@ -2,6 +2,7 @@
 // Feasibility findings from every module, grouped by severity.  OWNER: workstream B (Simulate + Stress Test).
 // Order fail > warn > info > pass, with a count per group; passing checks start collapsed.
 // A card's metric/threshold line shows only numbers its own text doesn't already state.
+import { Term } from "@/components/glossary/Term";
 import { Panel } from "@/components/shell/Panel";
 import type { Finding, Severity } from "@/lib/contract";
 import { useGridForge } from "@/lib/store";
@@ -72,7 +73,7 @@ export function StressPanel() {
         <div className="space-y-2">
           {study > 0 && (
             <p className="text-[11px] text-amber-700 dark:text-amber-500">
-              {study} finding{study === 1 ? "" : "s"} need{study === 1 ? "s" : ""} a utility interconnection study.
+              {study} finding{study === 1 ? "" : "s"} need{study === 1 ? "s" : ""} a utility <Term k="interconnection">interconnection</Term> study.
             </p>
           )}
           {ORDER.map((sev) => {

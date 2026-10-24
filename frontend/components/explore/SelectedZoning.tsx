@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { GeoJSONSource, Map as MLMap } from "maplibre-gl";
 
+import { Term } from "@/components/glossary/Term";
+
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 const COLORS = { Residential: "#fbbf24", Industrial: "#a78bfa", Commercial: "#f87171", Agricultural: "#86efac", "Open space": "#2dd4bf", Other: "#7dd3fc" };
 
@@ -83,7 +85,7 @@ export function SelectedZoning({ mapRef, styleGen, footprint }: { mapRef: RefObj
     }
   };
   return <div className="mt-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
-    <p className="mb-1.5 text-[11px] text-zinc-500">Highlight up to 100 km², then load zoning progressively. Moving the map keeps loaded zones.</p>
+    <p className="mb-1.5 text-[11px] text-zinc-500">Highlight up to 100 km², then load <Term k="zoning">zoning</Term> progressively. Moving the map keeps loaded zones.</p>
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={!footprint || !styleGen || current?.loading} onClick={() => void load()} className="rounded bg-emerald-700 px-2 py-1.5 font-medium text-white disabled:opacity-40 dark:bg-cyan-300 dark:text-slate-950">{current?.loading ? "Rendering zones…" : "Load zoning for area"}</button>
       {current?.loading && <button type="button" className="underline" onClick={() => { controller.current?.abort(); sequence.current++; setState(s => s ? { ...s, loading: false, message: `${s.data.features.length} zones kept · loading stopped.` } : s); }}>Stop</button>}
