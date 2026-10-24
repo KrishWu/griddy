@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
+import { RecommendedSites } from "@/components/sites/RecommendedSites";
 import { RunFeedback } from "@/components/builder/RunFeedback";
 import { AreaToolsProvider } from "@/components/explore/areaTools";
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
@@ -98,6 +99,7 @@ export function AppShell() {
       hint: "Plan a project: design, demand, highlighted area",
       content: (
         <>
+          <PanelGuard name="Recommended sites"><RecommendedSites /></PanelGuard>
           <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
           <PanelGuard name="Optimizer"><OptimizePanel advanced={advanced} onReveal={showPanel} /></PanelGuard>
           <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>

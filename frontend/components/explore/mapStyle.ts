@@ -1,6 +1,7 @@
 // MapLibre sources + layers for the Explore map (render order, paint expressions,
 // fallback basemap).  OWNER: workstream A.
 // Types only from maplibre-gl here: the runtime is imported dynamically inside MapView.
+import { STAR_ICON_PREFIX } from "./recommendationStars";
 import type { AddLayerObject, MapOptions } from "maplibre-gl";
 
 import {
@@ -14,7 +15,6 @@ import {
   FUELS,
   QUEUE_FILL_OPACITY,
   QUEUE_RAMP,
-  REC_SITE_RING,
   SITE_COLOR,
   UNKNOWN_VOLTAGE,
   UTILITY_TYPE_COLOR,
@@ -24,8 +24,9 @@ import {
 type CircleLayer = Extract<AddLayerObject, { type: "circle" }>;
 type LineLayer = Extract<AddLayerObject, { type: "line" }>;
 type FillLayer = Extract<AddLayerObject, { type: "fill" }>;
+type SymbolLayer = Extract<AddLayerObject, { type: "symbol" }>;
 type FillExtrusionLayer = Extract<AddLayerObject, { type: "fill-extrusion" }>;
-export type LayerSpec = CircleLayer | LineLayer | FillLayer | FillExtrusionLayer;
+export type LayerSpec = CircleLayer | LineLayer | FillLayer | SymbolLayer | FillExtrusionLayer;
 /** MapLibre's ExpressionSpecification (not re-exported by maplibre-gl). */
 export type Expr = Extract<NonNullable<NonNullable<CircleLayer["paint"]>["circle-radius"]>, unknown[]>;
 export type StyleSpec = Exclude<MapOptions["style"], string | undefined>;
@@ -69,7 +70,7 @@ export const DEFAULT_VISIBLE: Record<LayerGroup, boolean> = {
   utilities: false,
   queue: false,
   demand: false,
-  sites: false,
+  sites: true,
   footprints: false,
 };
 /** County choropleths that would hide each other: turning one on turns the other off. */
@@ -139,9 +140,9 @@ export const FOOTPRINT_OPACITY = 0.75;
 
 /** Recommended-site markers: area ~ MW, growing with zoom. */
 const REC_MW: Expr = ["max", ["to-number", ["get", "mw"], 0], 0];
-/** ["zoom"] must stay the input of the top-level interpolate, so the ring's extra radius goes inside each stop. */
-function recRadius(extra = 0): Expr {
-  return ["interpolate", ["linear"], ["zoom"], 4, ["+", 3 + extra, ["*", 0.12, ["sqrt", REC_MW]]], 10, ["+", 5 + extra, ["*", 0.25, ["sqrt", REC_MW]]]] as unknown as Expr;
+/** ["zoom"] must stay the input of the top-level interpolate, so capacity scaling stays inside each stop. */
+function recStarSize(): Expr {
+  return ["interpolate", ["linear"], ["zoom"], 4, ["/", ["+", 3, ["*", 0.12, ["sqrt", REC_MW]]], 12], 10, ["/", ["+", 5, ["*", 0.25, ["sqrt", REC_MW]]], 12]] as unknown as Expr;
 }
 export const FOOTPRINT_WIND_OPACITY = 0.35; // wind "land" is turbine spacing; most of it stays usable
 
@@ -353,35 +354,22 @@ export const LAYERS: MapLayer[] = [
   },
   {
     group: "sites",
-    spec: {
-      // Dark outer ring: recommended sites read apart from EIA-860 plants (white ring) and placed assets.
-      id: "rec-sites-ring",
-      type: "circle",
-      source: "rec-sites",
-      paint: {
-        "circle-radius": recRadius(2.5),
-        "circle-color": "rgba(0,0,0,0)",
-        "circle-stroke-color": REC_SITE_RING,
-        "circle-stroke-width": 1.5,
-        "circle-stroke-opacity": 0.85,
-      },
-    },
-  },
-  {
-    group: "sites",
     clickable: true,
     spec: {
       id: "rec-sites",
-      type: "circle",
+      type: "symbol",
       source: "rec-sites",
-      layout: { "circle-sort-key": ["-", 0, REC_MW] }, // small on top of large
-      paint: {
-        "circle-radius": recRadius(),
-        "circle-color": ASSET_COLOR,
-        "circle-opacity": 0.95,
-        "circle-stroke-color": "#FFFFFF",
-        "circle-stroke-width": 1.5,
+      layout: {
+        "icon-image": matchColor("kind", Object.keys(ASSET_FUEL).map((kind) => [kind, STAR_ICON_PREFIX + kind]), STAR_ICON_PREFIX + "other"),
+        "icon-size": recStarSize(),
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "icon-padding": 0,
+        "icon-pitch-alignment": "viewport",
+        "icon-rotation-alignment": "viewport",
+        "symbol-sort-key": ["-", 0, REC_MW],
       },
+      paint: { "icon-opacity": 0.95 },
     },
   },
   {

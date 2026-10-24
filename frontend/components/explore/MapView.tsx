@@ -46,6 +46,7 @@ import {
   type LocalSource,
 } from "./mapStyle";
 import { demandCard, popupContent, recSiteCard, type DemandInfo } from "./popup";
+import { installRecommendationStars } from "./recommendationStars";
 import { ProjectMapTools } from "./ProjectMapTools";
 import { MapSearch } from "./MapSearch";
 import { readSummary, trackSiteSelection, useSiteSummary } from "./useSiteSummary";
@@ -377,6 +378,7 @@ export function MapView() {
 
       // (Re)add our sources + layers; runs on every style load (initial basemap or fallback).
       const install = () => {
+        installRecommendationStars(m);
         for (const key of DATA_KEYS) {
           if (!m.getSource(key)) m.addSource(key, { type: "geojson", data: layerData.current[key] ?? emptyFC(), attribution: SOURCE_ATTRIBUTION[key] });
         }
