@@ -2,11 +2,14 @@
 // Satellite + environmental screening, then carbon-aware load.  OWNER: workstream E (Site Intelligence).
 import { FindingsList } from "@/components/shell/FindingsList";
 import { Panel, Stat } from "@/components/shell/Panel";
+import { PanelGuard } from "@/components/shell/PanelGuard";
 import type { Provenance, SiteIntel } from "@/lib/contract";
 import { pct } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
 import { CarbonAwarePanel } from "./CarbonAwarePanel";
+import { GriddyGradeBreakdown } from "./GriddyGradeBreakdown";
+import { GriddyGradeCard } from "./GriddyGradeCard";
 
 // ESA WorldCover's own legend colors, so the bar matches the dataset's maps.
 const LAND_COLOR: Record<string, string> = {
@@ -174,10 +177,21 @@ function Screening({ intel }: { intel: SiteIntel }) {
   );
 }
 
-export function SiteIntelPanel() {
+/** `showGrade={false}` when AppShell mounts <GriddyGradeCard /> itself, above A's Site card. */
+export function SiteIntelPanel({ showGrade = true }: { showGrade?: boolean }) {
   const { siteIntel } = useGridForge();
   return (
     <>
+      {/* The GriddyGrade headline first, then how it is built. Their own guards, so a scoring error
+          can't hide the screening below. */}
+      {showGrade && (
+        <PanelGuard name="GriddyGrade">
+          <GriddyGradeCard />
+        </PanelGuard>
+      )}
+      <PanelGuard name="GriddyGrade breakdown">
+        <GriddyGradeBreakdown />
+      </PanelGuard>
       <Panel title="Site intelligence" owner="E · Site intel">
         {siteIntel ? (
           <Screening intel={siteIntel} />
