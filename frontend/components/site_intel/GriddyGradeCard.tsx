@@ -3,8 +3,12 @@
 // California sites, shown above every other card, with the 0-100 grade and its details one
 // click away.  OWNER: workstream E (Site Intelligence).
 // AppShell mounts it first (above A's Site card) and passes <SiteIntelPanel showGrade={false} />;
-// without that, SiteIntelPanel mounts it at the top of E's cards.
+// without that, SiteIntelPanel mounts it at the top of E's cards. B's site-location model score
+// (GET /api/sites/grade) is fetched here, so it's ready when the details open, and shown there as
+// a second opinion; it is not the GriddyGrade.
 import { useEffect, useId, useRef, useState } from "react";
+
+import { useMlGrade } from "@/components/sites/useMlGrade";
 
 import { GriddyGradeDetails } from "./GriddyGradeDetails";
 import { dismissRegionNotice, useRefusedPlacement } from "./regionGuard";
@@ -26,6 +30,7 @@ function RegionNotice({ at }: { at: { lon: number; lat: number } }) {
 
 export function GriddyGradeCard() {
   const g = useGriddyGrade();
+  const ml = useMlGrade(g.location);
   const refused = useRefusedPlacement();
   const detailsId = useId();
   const ref = useRef<HTMLElement>(null);
@@ -104,7 +109,7 @@ export function GriddyGradeCard() {
       <div id={detailsId}>
         {r && open && (
           <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-            <GriddyGradeDetails grade={g} result={r} />
+            <GriddyGradeDetails grade={g} result={r} ml={ml} />
           </div>
         )}
       </div>

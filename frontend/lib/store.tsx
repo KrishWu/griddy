@@ -78,6 +78,25 @@ function readSavedScenario(): Scenario | null {
   }
 }
 
+/**
+ * The website always opens at the default site (Stanford): a saved design keeps its assets,
+ * demand and assumptions, but its site and that site's grid context come from the preset.
+ * /report keeps the saved site, since it reports that exact design.
+ */
+function startAtDefaultSite(saved: Scenario, preset: Scenario | undefined): Scenario {
+  if (!preset || typeof window === "undefined" || window.location.pathname.startsWith("/report")) return saved;
+  return {
+    ...saved,
+    site: preset.site,
+    grid: {
+      ...saved.grid,
+      poi_voltage_kv: preset.grid.poi_voltage_kv ?? null,
+      interconnection_km: preset.grid.interconnection_km,
+      substation_id: preset.grid.substation_id ?? null,
+    },
+  };
+}
+
 /** Multiply every asset and the grid limits by `factor` (no rounding, so repeated slider moves don't drift). */
 function scaleScenario(s: Scenario, factor: number): Scenario {
   return {
@@ -200,7 +219,9 @@ export function GridForgeProvider({ children }: { children: ReactNode }) {
     api
       .presets()
       .then((ps) => {
-        const initial = readSavedScenario() ?? ps.find((p) => p.id === DEFAULT_PRESET.industrial) ?? ps[0] ?? null;
+        const saved = readSavedScenario();
+        const preset = ps.find((p) => p.id === DEFAULT_PRESET[saved?.mode ?? "industrial"]) ?? ps[0];
+        const initial = saved ? startAtDefaultSite(saved, preset) : (preset ?? null);
         setPresets(ps);
         setError(null);
         setErrorSource(null);

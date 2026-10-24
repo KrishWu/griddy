@@ -2,10 +2,17 @@
 
 from fastapi import APIRouter, Query
 
-from app.contract import ForecastRequest, SiteRecommendation, SiteRequest
+from app.contract import ForecastRequest, LngLat, SiteRecommendation, SiteRequest
+from app.sites.grade import SiteGrade, grade
 from app.sites.service import recommend
 
 router = APIRouter(prefix="/api", tags=["sites"])
+
+
+@router.get("/sites/grade", response_model=SiteGrade)
+def get_grade(lon: float = Query(ge=-180, le=180), lat: float = Query(ge=-90, le=90)) -> SiteGrade:
+    """GriddyGrade: the site-location model's projected 1-100 data center feasibility score for one point."""
+    return grade(LngLat(lon=lon, lat=lat))
 
 
 @router.get("/sites", response_model=SiteRecommendation)

@@ -1,8 +1,11 @@
 "use client";
 // The GriddyGrade's details, shown when its card is expanded: percentile and raw grade, data
-// completeness, load, serious constraints, the five components, key considerations, method and limits.
+// completeness, load, serious constraints, the five components, B's site-location model score as
+// a second opinion (MlGradeDetails), key considerations, method and limits.
 // OWNER: workstream E (Site Intelligence).
 import { ProvenanceTip } from "@/components/evaluate/ProvenanceTip";
+import { MlGradeDetails } from "@/components/sites/MlGradeDetails";
+import type { MlGradeState } from "@/components/sites/useMlGrade";
 import type { Provenance } from "@/lib/contract";
 
 import {
@@ -26,8 +29,9 @@ const FILL: Record<ComponentStatus, string> = {
 
 /** Score bar on a 0-100 track. `bands` marks the category boundaries (20/40/60/80) as gaps. */
 function Meter({ value, status = "observed", label, bands = false }: { value: number; status?: ComponentStatus; label?: string; bands?: boolean }) {
+  const now = Math.round(value * 10) / 10; // spoken to the nearest tenth, as displayed
   const a11y = label
-    ? { role: "meter", "aria-label": label, "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.round(value) }
+    ? { role: "meter", "aria-label": label, "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": now, "aria-valuetext": now.toFixed(1) }
     : { "aria-hidden": true };
   return (
     <span {...a11y} className={`relative block w-full min-w-0 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 ${bands ? "h-3" : "h-1.5"}`}>
@@ -254,7 +258,35 @@ function PercentileHeader({ g, r }: { g: GriddyGrade; r: FeasibilityResult }) {
   );
 }
 
-export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade; result: FeasibilityResult }) {
+/** B's site-location model, kept beside the GriddyGrade as a second opinion (it is not part of it). */
+function ModelSecondOpinion({ ml }: { ml: MlGradeState }) {
+  return (
+    <section className="mt-4 rounded border border-zinc-200 p-2 dark:border-zinc-800">
+      <p className="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+        Second opinion, not part of the GriddyGrade: the site-location model averages solar, wind, battery and gas suitability and ranks this spot against
+        every 5 km cell in California.
+      </p>
+      {ml.grade ? (
+        <MlGradeDetails grade={ml.grade} />
+      ) : ml.error ? (
+        <p className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300">
+          <span className="min-w-0 flex-1">The model score failed to load ({ml.error}).</span>
+          <button
+            type="button"
+            onClick={ml.retry}
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-zinc-700 hover:border-zinc-400 focus-visible:outline-2 focus-visible:outline-sky-500 dark:border-zinc-700 dark:text-zinc-300"
+          >
+            Retry
+          </button>
+        </p>
+      ) : (
+        <p className="text-[11px] text-zinc-400">Loading the site-location model…</p>
+      )}
+    </section>
+  );
+}
+
+export function GriddyGradeDetails({ grade: g, result: r, ml }: { grade: GriddyGrade; result: FeasibilityResult; ml: MlGradeState }) {
   const load = g.scenarioLoad;
   return (
     <>
@@ -375,6 +407,8 @@ export function GriddyGradeDetails({ grade: g, result: r }: { grade: GriddyGrade
           {g.percentile && ` → ${g.percentile.display.toFixed(1)} percentile`}
         </p>
       </section>
+
+      <ModelSecondOpinion ml={ml} />
 
       <KeyConsiderations r={r} />
 
