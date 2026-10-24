@@ -243,8 +243,9 @@ export function AppShell() {
               { value: "community", label: "Community" },
             ]}
           />
-          <div className="ml-auto flex items-center gap-2 text-xs">
-            {(running || projectPlanning.busy) && <span className="text-zinc-500 dark:text-zinc-400" role="status">{projectPlanning.busy ? "Updating project…" : "Simulating..."}</span>}
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs">
+            <RunFeedback />
+            {projectPlanning.busy && <span className="text-zinc-500 dark:text-zinc-400" role="status">Updating project…</span>}
             {placeholder && (
               <span
                 className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
@@ -264,7 +265,6 @@ export function AppShell() {
             <SettingsButton />
           </div>
         </header>
-        <RunFeedback />
         {error && (
           <div data-chrome className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             <span className="truncate">{error}</span>
