@@ -69,7 +69,7 @@ const headerLink =
 export function AppShell() {
   // Panels are keyed on panelEpoch (deliberate actions only), never on every auto-run,
   // so panel-local state like B's selected day survives edits.
-  const { error, result, panelEpoch: v, running, view, setView, scenario, setMode, retry } = useGridForge();
+  const { error, result, panelEpoch: v, running, projectPlanning, view, setView, scenario, setMode, retry } = useGridForge();
   const placeholder = useMemo(() => usesPlaceholderData(result), [result]);
   const [detailMode, setDetailMode] = useState<"basic" | "advanced">("basic");
   const advanced = detailMode === "advanced";
@@ -242,7 +242,7 @@ export function AppShell() {
             ]}
           />
           <div className="ml-auto flex items-center gap-2 text-xs">
-            {running && <span className="text-zinc-500 dark:text-zinc-400" role="status">Simulating...</span>}
+            {(running || projectPlanning.busy) && <span className="text-zinc-500 dark:text-zinc-400" role="status">{projectPlanning.busy ? "Updating project…" : "Simulating..."}</span>}
             {placeholder && (
               <span
                 className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
