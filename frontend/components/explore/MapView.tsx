@@ -521,7 +521,9 @@ export function MapView() {
         raf = requestAnimationFrame(() => {
           raf = 0;
           if (map.current !== m) return;
-          m.getCanvas().style.cursor = areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "";
+          // ProjectMapTools sets data-area-cursor while the Highlight area box is being drawn or edited.
+          const canvas = m.getCanvas();
+          canvas.style.cursor = canvas.dataset.areaCursor || (areaClick.current ? "crosshair" : hitsAt(hoverPt, HOVER_LAYER_IDS).length ? "pointer" : "");
         });
       });
       m.on("mouseout", () => {
