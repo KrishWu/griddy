@@ -26,7 +26,9 @@ export function AssumptionsPanel() {
       <Panel title="Assumptions" owner="D · Build">
         <button className="w-full text-left text-xs text-zinc-600 dark:text-zinc-400" onClick={() => setOpen(true)}>
           Discount {((a.discount_rate ?? 0.07) * 100).toFixed(1)}% · Gas ${(a.gas_price_usd_per_mmbtu ?? 3.65).toFixed(2)}/MMBtu · Carbon $
-          {(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t <span className="text-emerald-700 dark:text-emerald-400">Edit</span>
+          {(a.carbon_price_usd_per_t ?? 0).toFixed(0)}/t
+          {a.price_source === "flat" && ` · Grid flat $${(a.flat_price_usd_per_mwh ?? 60).toFixed(0)}/MWh`}{" "}
+          <span className="text-emerald-700 dark:text-emerald-400">Edit</span>
         </button>
       </Panel>
     );
@@ -107,7 +109,30 @@ export function AssumptionsPanel() {
                 <option value={2024}>2024</option>
               </select>
             </label>
-            <p className="text-[11px] text-zinc-500">Grid prices: hourly, from the simulation&apos;s price data.</p>
+            <label className="block text-xs text-zinc-600 dark:text-zinc-400">
+              Grid price
+              <select
+                className="mt-1 w-full rounded border border-zinc-300 bg-transparent p-1 text-sm dark:border-zinc-700"
+                value={a.price_source ?? "caiso_historical"}
+                onChange={(e) => set({ price_source: e.target.value as Assumptions["price_source"] })}
+              >
+                <option value="caiso_historical">CAISO 2024 hourly prices</option>
+                <option value="flat">Flat price (what-if)</option>
+              </select>
+            </label>
+            {a.price_source === "flat" && (
+              <SliderField
+                label="Flat grid price"
+                unit="$/MWh"
+                value={a.flat_price_usd_per_mwh ?? 60}
+                onChange={(v) => set({ flat_price_usd_per_mwh: v })}
+                min={0}
+                max={200}
+                inputMax={1000}
+                step={1}
+                hint="Every hour of grid imports and exports at this price."
+              />
+            )}
           </div>
         )}
       </div>

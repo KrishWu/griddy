@@ -66,3 +66,16 @@ def test_hybrid_firm_capacity_covers_peak():
     h = PRESETS["hybrid"]
     firm = sum(a.capacity_mw for a in h.assets if a.kind in ("gas_cc", "gas_ct")) + h.grid.import_limit_mw
     assert firm >= h.demand.peak_mw
+
+
+def test_flat_grid_price_option_reaches_every_hour_and_the_bill():
+    """The builder's 'Flat price (what-if)' option must change what imports cost."""
+    base = PRESETS["hybrid"]
+    flat = base.model_copy(update={"assumptions": base.assumptions.model_copy(update={"price_source": "flat", "flat_price_usd_per_mwh": 120.0})})
+    r_base, r_flat = run_scenario(base), run_scenario(flat)
+    assert set(r_flat.simulation.hourly.price_usd_per_mwh) == {120.0}
+
+    def purchased(r):
+        return sum(line.usd for line in r.evaluation.economics.lines if line.category == "purchased_power")
+
+    assert purchased(r_flat) > purchased(r_base)
