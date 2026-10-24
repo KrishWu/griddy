@@ -6,6 +6,8 @@ import type { Provenance, SiteIntel } from "@/lib/contract";
 import { pct } from "@/lib/format";
 import { useGridForge } from "@/lib/store";
 
+import { CarbonAwarePanel } from "./CarbonAwarePanel";
+
 // ESA WorldCover's own legend colors, so the bar matches the dataset's maps.
 const LAND_COLOR: Record<string, string> = {
   "Tree cover": "#006400",
@@ -175,12 +177,15 @@ function Screening({ intel }: { intel: SiteIntel }) {
 export function SiteIntelPanel() {
   const { siteIntel } = useGridForge();
   return (
-    <Panel title="Site intelligence" owner="E · Site intel">
-      {siteIntel ? (
-        <Screening intel={siteIntel} />
-      ) : (
-        <p className="text-sm text-zinc-500">Select a site on the map to screen its land, imagery and air quality.</p>
-      )}
-    </Panel>
+    <>
+      <Panel title="Site intelligence" owner="E · Site intel">
+        {siteIntel ? (
+          <Screening intel={siteIntel} />
+        ) : (
+          <p className="text-sm text-zinc-500">Select a site on the map to screen its land, imagery and air quality.</p>
+        )}
+      </Panel>
+      <CarbonAwarePanel />
+    </>
   );
 }

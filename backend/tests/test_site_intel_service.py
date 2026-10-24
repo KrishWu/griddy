@@ -82,3 +82,28 @@ def test_site_findings_adds_air_permit_risk_from_c_numbers(offline, monkeypatch)
 
     monkeypatch.setattr(air, "air_permit_risk", boom)
     assert service.site_findings(hybrid, res.simulation, res.evaluation) == []  # logged, never raised
+
+
+def test_carbon_aware_endpoint(offline):
+    preset = next(p for p in list_presets() if p.id == "grid_connected")
+    res = run_scenario(preset)
+    body = {"scenario": res.scenario.model_dump(), "simulation": res.simulation.model_dump(), "flexible_share": 0.3}
+    r = client.post("/api/site/carbon-aware", json=body)
+    assert r.status_code == 200
+    out = r.json()
+    assert out["avoided_t_co2e"] > 0 and len(out["hours"]) == 24 and out["best_window"]["optimalDataPoints"]
+    assert client.post("/api/site/carbon-aware", json={**body, "flexible_share": 1.5}).status_code == 422
+
+
+def test_site_findings_includes_carbon_shift_when_flexible(offline, monkeypatch):
+    hybrid = next(p for p in list_presets() if p.id == "hybrid").model_copy(deep=True)
+    hybrid.demand.flexible_share = 0.3
+    res = run_scenario(hybrid)
+    assert {"AIR_PERMIT_RISK", "carbon_aware_shift"} <= {f.id for f in res.findings}
+
+    def boom(*_):
+        raise RuntimeError("air data corrupt")
+
+    monkeypatch.setattr(air, "air_permit_risk", boom)
+    got = {f.id for f in service.site_findings(hybrid, res.simulation, res.evaluation)}
+    assert got == {"carbon_aware_shift"}  # one broken check doesn't hide the other
