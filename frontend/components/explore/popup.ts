@@ -1,10 +1,15 @@
 // Feature popups for the Explore map, built as DOM with textContent (never raw HTML),
 // so property strings from external datasets can't inject markup.  OWNER: workstream A.
-import { fmtKv, fmtMw, num, parseMaybeJson, rec, safeUrl, str } from "./geo";
+import type { AssetKind } from "@/lib/contract";
+
+import { BATTERY_REF_HOURS } from "./footprints";
+import { countyLabel, fmtAcres, fmtCap, fmtKm2, fmtKv, fmtMw, fmtPerMw, num, parseMaybeJson, rec, safeUrl, str } from "./geo";
 import {
+  ASSET_FUEL,
   ASSET_LABEL,
   FUEL_COLOR,
   FUEL_LABEL,
+  QUEUE_CREDIT,
   UTILITY_TYPE_LABEL,
   asFuel,
   voltageClass,
@@ -158,6 +163,54 @@ function assetCard(p: Props): HTMLElement {
   });
 }
 
+/** County under the interconnection-queue choropleth (properties added to the boundaries layer by the backend). */
+function queueCard(p: Props): HTMLElement {
+  const n = num(p.queue_active_projects);
+  const mw = num(p.queue_active_mw);
+  const ia = num(p.queue_ia_executed_mw);
+  let subtitle: string;
+  if (n === null || mw === null) subtitle = "No queue data for this county";
+  else if (n === 0) subtitle = "No active interconnection requests";
+  else subtitle = `${n.toLocaleString()} active request${n === 1 ? "" : "s"} · ${fmtCap(mw)}${ia !== null && ia > 0 ? ` (${fmtCap(ia)} with signed agreements)` : ""}`;
+  return card({
+    title: str(p.full_name) ?? countyLabel(str(p.name)),
+    subtitle,
+    rows: [["Note", n ? "Requested capacity, not a build forecast" : null]],
+    source: QUEUE_CREDIT,
+  });
+}
+
+function isAssetKind(k: string | null): k is AssetKind {
+  return k !== null && k in ASSET_LABEL;
+}
+
+/** A scenario asset's land footprint (footprints.ts): MW x acres/MW (batteries also x hours/4). */
+function footprintCard(p: Props): HTMLElement {
+  const kind = str(p.kind);
+  const label = isAssetKind(kind) ? ASSET_LABEL[kind] : (kind ?? "Asset");
+  const name = str(p.name);
+  const hours = num(p.duration_h);
+  const facts = `${fmtMw(num(p.capacity_mw))}${hours !== null ? ` / ${hours} h` : ""} · ${fmtAcres(num(p.acres))} (${fmtKm2(num(p.area_km2))}) at ${fmtPerMw(num(p.land_acres_per_mw))} acres/MW`;
+  const notes = [
+    p.min_display === true ? "Not to scale: minimum display size" : null,
+    kind === "onshore_wind" ? "Wind area is turbine spacing; most of the land stays usable" : null,
+    hours !== null && hours !== BATTERY_REF_HOURS ? `Land rate is for a ${BATTERY_REF_HOURS} h system, scaled by ${hours}/${BATTERY_REF_HOURS}` : null,
+  ].filter(Boolean);
+  return card({
+    title: name ?? label,
+    swatch: isAssetKind(kind) ? FUEL_COLOR[ASSET_FUEL[kind]] : undefined,
+    subtitle: name ? `${label} · ${facts}` : facts,
+    rows: [
+      ["Note", notes.length ? notes.join(". ") : null],
+      ["Land use", `Estimate (assumption): ${str(p.lapm_source) ?? "Evaluate catalog"}`],
+      ["Layout", p.placed === "auto" ? "Schematic, east of the site" : "At the asset's location"],
+      ["Height", "Schematic, for legibility"],
+    ],
+    link: { href: str(p.source_url), text: "Land-use study" },
+    source: str(p.source) ?? "Evaluate catalog land-use assumption",
+  });
+}
+
 function siteCard(p: Props): HTMLElement {
   return card({ title: str(p.name) ?? "Selected site", subtitle: str(p.coords), rows: [], source: null });
 }
@@ -165,6 +218,8 @@ function siteCard(p: Props): HTMLElement {
 /** Popup content for a feature of one of our clickable layers. */
 export function popupContent(layerId: string, properties: Props | null | undefined): HTMLElement {
   const p = properties ?? {};
+  if (layerId.startsWith("footprints")) return footprintCard(p);
+  if (layerId === "queue-fill") return queueCard(p);
   if (layerId.startsWith("plants")) return plantCard(p);
   if (layerId.startsWith("substations")) return substationCard(p);
   if (layerId.startsWith("transmission")) return lineCard(p);
