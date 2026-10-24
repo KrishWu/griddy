@@ -1,0 +1,2 @@
+# Workstream E (Site Intelligence)
+earthengine-api==1.7.49

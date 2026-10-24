@@ -1,0 +1,397 @@
+{
+  "$defs": {
+    "Asset": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "solar_pv",
+            "onshore_wind",
+            "gas_cc",
+            "gas_ct",
+            "battery"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "capacity_mw": {
+          "minimum": 0,
+          "title": "Capacity Mw",
+          "type": "number"
+        },
+        "duration_h": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Batteries only: energy = capacity_mw x duration_h",
+          "title": "Duration H"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LngLat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "overrides": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Per-asset overrides of TechSpec fields, e.g. {'capex_usd_per_kw': 1100}",
+          "title": "Overrides",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "capacity_mw"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "Assumptions": {
+      "additionalProperties": false,
+      "properties": {
+        "weather_year": {
+          "default": 2024,
+          "title": "Weather Year",
+          "type": "integer"
+        },
+        "analysis_years": {
+          "default": 20,
+          "title": "Analysis Years",
+          "type": "integer"
+        },
+        "discount_rate": {
+          "default": 0.07,
+          "title": "Discount Rate",
+          "type": "number"
+        },
+        "gas_price_usd_per_mmbtu": {
+          "default": 4.0,
+          "title": "Gas Price Usd Per Mmbtu",
+          "type": "number"
+        },
+        "carbon_price_usd_per_t": {
+          "default": 0.0,
+          "title": "Carbon Price Usd Per T",
+          "type": "number"
+        },
+        "price_source": {
+          "default": "caiso_historical",
+          "enum": [
+            "caiso_historical",
+            "flat"
+          ],
+          "title": "Price Source",
+          "type": "string"
+        },
+        "flat_price_usd_per_mwh": {
+          "default": 60.0,
+          "title": "Flat Price Usd Per Mwh",
+          "type": "number"
+        },
+        "import_adder_usd_per_mwh": {
+          "default": 20.0,
+          "description": "Added to the wholesale price for imports (transmission access + delivery charges)",
+          "title": "Import Adder Usd Per Mwh",
+          "type": "number"
+        }
+      },
+      "title": "Assumptions",
+      "type": "object"
+    },
+    "DemandSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "data_center",
+          "enum": [
+            "data_center",
+            "community"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "peak_mw": {
+          "description": "Facility peak draw at the meter, incl. cooling (IT load x PUE)",
+          "title": "Peak Mw",
+          "type": "number"
+        },
+        "load_factor": {
+          "default": 0.9,
+          "description": "Average load / peak load",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Load Factor",
+          "type": "number"
+        },
+        "pue": {
+          "default": 1.2,
+          "minimum": 1,
+          "title": "Pue",
+          "type": "number"
+        },
+        "profile": {
+          "default": "flat",
+          "enum": [
+            "flat",
+            "ai_training",
+            "ai_inference",
+            "community"
+          ],
+          "title": "Profile",
+          "type": "string"
+        },
+        "flexible_share": {
+          "default": 0.0,
+          "description": "Share of load that can shift in time (carbon-aware scheduling)",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Flexible Share",
+          "type": "number"
+        }
+      },
+      "required": [
+        "peak_mw"
+      ],
+      "title": "DemandSpec",
+      "type": "object"
+    },
+    "GridConnection": {
+      "additionalProperties": false,
+      "properties": {
+        "connected": {
+          "default": true,
+          "title": "Connected",
+          "type": "boolean"
+        },
+        "import_limit_mw": {
+          "minimum": 0,
+          "title": "Import Limit Mw",
+          "type": "number"
+        },
+        "export_limit_mw": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Export Limit Mw",
+          "type": "number"
+        },
+        "interconnection_km": {
+          "default": 5,
+          "description": "New line length to the point of interconnection",
+          "minimum": 0,
+          "title": "Interconnection Km",
+          "type": "number"
+        },
+        "substation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Substation Id"
+        },
+        "new_substation": {
+          "default": true,
+          "title": "New Substation",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "import_limit_mw"
+      ],
+      "title": "GridConnection",
+      "type": "object"
+    },
+    "LngLat": {
+      "additionalProperties": false,
+      "properties": {
+        "lon": {
+          "title": "Lon",
+          "type": "number"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lon",
+        "lat"
+      ],
+      "title": "LngLat",
+      "type": "object"
+    },
+    "Site": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/LngLat"
+        },
+        "county": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "County"
+        },
+        "balancing_authority": {
+          "default": "CAISO",
+          "title": "Balancing Authority",
+          "type": "string"
+        },
+        "utility_territory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. \"PG&E\"",
+          "title": "Utility Territory"
+        },
+        "footprint": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "GeoJSON Polygon of the parcel, optional",
+          "title": "Footprint"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "location"
+      ],
+      "title": "Site",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "mode": {
+      "default": "industrial",
+      "enum": [
+        "industrial",
+        "community"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "preset": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preset"
+    },
+    "site": {
+      "$ref": "#/$defs/Site"
+    },
+    "demand": {
+      "$ref": "#/$defs/DemandSpec"
+    },
+    "assets": {
+      "items": {
+        "$ref": "#/$defs/Asset"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "grid": {
+      "$ref": "#/$defs/GridConnection"
+    },
+    "assumptions": {
+      "$ref": "#/$defs/Assumptions"
+    },
+    "options": {
+      "additionalProperties": true,
+      "description": "Escape hatch for experimental inputs before they earn a typed field",
+      "title": "Options",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "site",
+    "demand",
+    "grid"
+  ],
+  "title": "Scenario",
+  "type": "object"
+}

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(npm install:*)",
+      "Bash(npm i:*)",
+      "Bash(npm add:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git rebase:*)"
+    ]
+  }
+}

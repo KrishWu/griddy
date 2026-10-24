@@ -1,0 +1,91 @@
+{
+  "_comment": "Who may edit what. Each workstream edits ONLY its own paths. 'shared' paths are foundation files: change them only with a heads-up in team chat (adding an optional contract field is fine). Check your branch with: python3 scripts/check_ownership.py <A|B|C|D|E>",
+  "shared": [
+    "backend/app/contract.py",
+    "backend/app/main.py",
+    "backend/app/pipeline.py",
+    "backend/app/__init__.py",
+    "backend/requirements.txt",
+    "backend/requirements/base.txt",
+    "backend/tests/test_contract.py",
+    "backend/tests/conftest.py",
+    "frontend/components/shell/Panel.tsx",
+    "frontend/components/shell/FindingsList.tsx",
+    "frontend/package.json",
+    "frontend/package-lock.json",
+    "frontend/next.config.ts",
+    "frontend/tsconfig.json",
+    "contracts/**",
+    "scripts/**",
+    "ownership.json",
+    "CLAUDE.md",
+    "README.md",
+    "docs/WORKSTREAMS.md",
+    ".github/**",
+    ".claude/**",
+    ".gitignore",
+    "frontend/lib/contract.ts",
+    "frontend/lib/api.ts",
+    "frontend/lib/format.ts",
+    "frontend/eslint.config.mjs"
+  ],
+  "A": {
+    "name": "Explore (GIS map + grid data layers)",
+    "paths": [
+      "backend/app/explore/**",
+      "backend/requirements/a-explore.txt",
+      "backend/tests/test_explore*.py",
+      "frontend/components/explore/**",
+      "data/explore/**",
+      "docs/workstreams/A-explore.md"
+    ]
+  },
+  "B": {
+    "name": "Simulate + Stress Test (hourly dispatch, feasibility)",
+    "paths": [
+      "backend/app/simulate/**",
+      "backend/requirements/b-simulate.txt",
+      "backend/tests/test_simulate*.py",
+      "frontend/components/simulate/**",
+      "data/simulate/**",
+      "docs/workstreams/B-simulate.md"
+    ]
+  },
+  "C": {
+    "name": "Evaluate (catalog, costs, emissions, BOM)",
+    "paths": [
+      "backend/app/evaluate/**",
+      "backend/requirements/c-evaluate.txt",
+      "backend/tests/test_evaluate*.py",
+      "frontend/components/evaluate/**",
+      "data/evaluate/**",
+      "docs/workstreams/C-evaluate.md"
+    ]
+  },
+  "D": {
+    "name": "Build + Report + UI shell (scenario builder, compare, export, layout)",
+    "paths": [
+      "backend/app/builder/**",
+      "backend/requirements/d-builder.txt",
+      "backend/tests/test_builder*.py",
+      "frontend/components/builder/**",
+      "frontend/lib/store.tsx",
+      "frontend/components/shell/AppShell.tsx",
+      "frontend/app/**",
+      "frontend/public/**",
+      "docs/workstreams/D-builder.md"
+    ]
+  },
+  "E": {
+    "name": "Site Intelligence (Earth Engine, Planet, AirNow, carbon-aware) + pitch",
+    "paths": [
+      "backend/app/site_intel/**",
+      "backend/requirements/e-site-intel.txt",
+      "backend/tests/test_site_intel*.py",
+      "frontend/components/site_intel/**",
+      "data/site_intel/**",
+      "docs/workstreams/E-site-intel.md",
+      "docs/pitch/**"
+    ]
+  }
+}
