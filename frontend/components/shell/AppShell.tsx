@@ -7,6 +7,8 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
+import { RunFeedback } from "@/components/builder/RunFeedback";
+import { AreaToolsProvider } from "@/components/explore/areaTools";
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
 import { OptimizePanel, type RevealTarget } from "@/components/builder/OptimizePanel";
@@ -209,6 +211,7 @@ export function AppShell() {
 
   return (
     <LayerStateProvider>
+      <AreaToolsProvider>
       <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
         <header
           data-chrome
@@ -259,6 +262,7 @@ export function AppShell() {
             <SettingsButton />
           </div>
         </header>
+        <RunFeedback />
         {error && (
           <div data-chrome className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             <span className="truncate">{error}</span>
@@ -307,6 +311,7 @@ export function AppShell() {
           )}
         </div>
       </div>
+      </AreaToolsProvider>
     </LayerStateProvider>
   );
 }
