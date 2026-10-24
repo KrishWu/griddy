@@ -1,0 +1,16 @@
+{
+  "version": 8,
+  "name": "GridForge fallback",
+  "metadata": {
+    "gridforge:purpose": "Offline basemap used by the Explore map when the tile provider is unreachable: a plain background under GridForge's own grid layers.",
+    "gridforge:owner": "workstream A"
+  },
+  "sources": {},
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#F2F3F0" }
+    }
+  ]
+}

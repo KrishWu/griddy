@@ -1,0 +1,174 @@
+// Feature popups for the Explore map, built as DOM with textContent (never raw HTML),
+// so property strings from external datasets can't inject markup.  OWNER: workstream A.
+import { fmtKv, fmtMw, num, parseMaybeJson, rec, safeUrl, str } from "./geo";
+import {
+  ASSET_LABEL,
+  FUEL_COLOR,
+  FUEL_LABEL,
+  UTILITY_TYPE_LABEL,
+  asFuel,
+  voltageClass,
+} from "./palette";
+
+type Props = Record<string, unknown>;
+type Row = [label: string, value: string | null];
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function card(opts: { title: string; swatch?: string; ring?: boolean; subtitle?: string | null; rows: Row[]; source: string | null; link?: { href: string | null; text: string } }): HTMLElement {
+  const root = el("div", "min-w-[180px] max-w-[260px] font-sans text-xs leading-snug text-zinc-800");
+  const head = el("div", "flex items-start gap-1.5");
+  if (opts.swatch) {
+    const dot = el("span", "mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full");
+    if (opts.ring) dot.style.border = `2px solid ${opts.swatch}`;
+    else dot.style.backgroundColor = opts.swatch;
+    head.append(dot);
+  }
+  head.append(el("div", "pr-4 text-sm font-semibold text-zinc-900", opts.title));
+  root.append(head);
+  if (opts.subtitle) root.append(el("div", "mt-0.5 text-zinc-600", opts.subtitle));
+  const rows = opts.rows.filter((r): r is [string, string] => !!r[1]);
+  if (rows.length) {
+    const dl = el("dl", "mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5");
+    for (const [k, v] of rows) dl.append(el("dt", "text-zinc-500", k), el("dd", "break-words text-zinc-800", v));
+    root.append(dl);
+  }
+  if (opts.link?.href) {
+    const a = el("a", "mt-1.5 inline-block text-sky-700 underline", opts.link.text);
+    a.href = opts.link.href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    root.append(a);
+  }
+  if (opts.source) root.append(el("div", "mt-1.5 border-t border-zinc-200 pt-1 text-[10px] text-zinc-500", `Source: ${opts.source}`));
+  return root;
+}
+
+const years = (a: unknown, b: unknown) => {
+  const y1 = num(a);
+  const y2 = num(b);
+  if (y1 === null && y2 === null) return null;
+  return y1 !== null && y2 !== null && y1 !== y2 ? `${y1}–${y2}` : String(y1 ?? y2);
+};
+
+function plantCard(p: Props): HTMLElement {
+  const fuel = asFuel(p.fuel);
+  const mix = rec(parseMaybeJson(p.fuel_mix));
+  const mixText =
+    mix && Object.keys(mix).length > 1
+      ? Object.entries(mix)
+          .map(([f, mw]) => [f, num(mw) ?? 0] as const)
+          .sort((a, b) => b[1] - a[1])
+          .map(([f, mw]) => `${FUEL_LABEL[asFuel(f)]} ${fmtMw(mw)}`)
+          .join(", ")
+      : null;
+  const gens = num(p.n_generators);
+  return card({
+    title: str(p.name) ?? "Power plant",
+    swatch: FUEL_COLOR[fuel],
+    subtitle: `${FUEL_LABEL[fuel]} · ${fmtMw(num(p.capacity_mw))}${str(p.status) ? ` · ${str(p.status)}` : ""}`,
+    rows: [
+      ["Fuel mix", mixText],
+      ["Technology", str(p.technology)],
+      ["Operator", str(p.operator)],
+      ["County", str(p.county)],
+      ["BA", str(p.balancing_authority)],
+      ["Grid", num(p.grid_voltage_kv) !== null ? fmtKv(num(p.grid_voltage_kv)) : null],
+      ["Online", years(p.first_year, p.last_year)],
+      ["Units", gens !== null ? String(gens) : null],
+      ["EIA ID", str(p.plant_code)],
+    ],
+    source: str(p.source) ?? "EIA-860 2024",
+  });
+}
+
+function substationCard(p: Props): HTMLElement {
+  const kv = num(p.voltage_kv);
+  const all = parseMaybeJson(p.voltages_kv);
+  const list = Array.isArray(all) ? all.map(num).filter((v): v is number => v !== null && v > 0) : [];
+  const ts = str(p.osm_timestamp);
+  return card({
+    title: str(p.name) ?? "Substation",
+    swatch: voltageClass(kv).color,
+    ring: true,
+    subtitle: list.length > 1 ? list.map((v) => `${v}`).join(" / ") + " kV" : fmtKv(kv),
+    rows: [
+      ["Operator", str(p.operator)],
+      ["Type", str(p.substation_type)],
+      ["OSM edit", ts ? ts.slice(0, 10) : null],
+    ],
+    link: { href: safeUrl(p.osm_url), text: "View on OpenStreetMap" },
+    source: "© OpenStreetMap contributors (ODbL)",
+  });
+}
+
+function lineCard(p: Props): HTMLElement {
+  const kv = num(p.voltage_kv);
+  const lineType = str(p.line_type);
+  const lengthMi = num(p.length_mi);
+  const updated = str(p.source_updated);
+  const operational = p.operational !== false;
+  return card({
+    title: str(p.name) ?? "Transmission line",
+    swatch: voltageClass(kv).color,
+    subtitle: `${fmtKv(kv)}${operational ? "" : " · not operational"}`,
+    rows: [
+      ["Owner", str(p.owner)],
+      ["Status", str(p.status)],
+      ["Circuit", str(p.circuit)],
+      ["Type", lineType === "OH" ? "Overhead" : lineType === "UG" ? "Underground" : lineType === "UW" ? "Underwater" : lineType],
+      ["Length", lengthMi !== null ? `${lengthMi.toFixed(1)} mi` : null],
+    ],
+    source: `${str(p.source) ?? "CEC California Electric Transmission Lines"}${updated ? ` (updated ${updated.slice(0, 10)})` : ""}`,
+  });
+}
+
+function utilityCard(p: Props): HTMLElement {
+  const type = str(p.utility_type);
+  const area = num(p.area_km2);
+  const date = str(p.source_date);
+  return card({
+    title: str(p.name) ?? "Utility territory",
+    subtitle: type === "IOU" || type === "POU" ? UTILITY_TYPE_LABEL[type] : type,
+    rows: [
+      ["Acronym", str(p.acronym)],
+      ["Area", area !== null ? `${Math.round(area).toLocaleString()} km²` : null],
+      ["Note", str(p.note)],
+    ],
+    link: { href: safeUrl(p.url), text: "Utility website" },
+    source: `${str(p.source) ?? "CEC Electric Load Serving Entities"}${date ? ` (${date.slice(0, 10)})` : ""}`,
+  });
+}
+
+function assetCard(p: Props): HTMLElement {
+  const kind = str(p.kind);
+  const label = kind && kind in ASSET_LABEL ? ASSET_LABEL[kind as keyof typeof ASSET_LABEL] : (kind ?? "Asset");
+  const cap = num(p.capacity_mw);
+  const dur = num(p.duration_h);
+  return card({
+    title: str(p.name) ?? label,
+    subtitle: `${label} · ${fmtMw(cap)}${dur !== null ? ` · ${dur} h` : ""}`,
+    rows: [],
+    source: "Scenario asset (planned)",
+  });
+}
+
+function siteCard(p: Props): HTMLElement {
+  return card({ title: str(p.name) ?? "Selected site", subtitle: str(p.coords), rows: [], source: null });
+}
+
+/** Popup content for a feature of one of our clickable layers. */
+export function popupContent(layerId: string, properties: Props | null | undefined): HTMLElement {
+  const p = properties ?? {};
+  if (layerId.startsWith("plants")) return plantCard(p);
+  if (layerId.startsWith("substations")) return substationCard(p);
+  if (layerId.startsWith("transmission")) return lineCard(p);
+  if (layerId.startsWith("utilities")) return utilityCard(p);
+  if (layerId === "assets") return assetCard(p);
+  return siteCard(p);
+}
