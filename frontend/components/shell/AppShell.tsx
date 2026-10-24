@@ -2,10 +2,11 @@
 // Page layout. Every workstream's panel is already mounted here, so feature
 // branches edit their own components, not this file.  OWNER: workstream D.
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { AssumptionsPanel } from "@/components/builder/AssumptionsPanel";
 import { BuildPanel } from "@/components/builder/BuildPanel";
+import { OptimizePanel, type RevealTarget } from "@/components/builder/OptimizePanel";
 import { ProjectPlanner } from "@/components/builder/ProjectPlanner";
 import { ThemeToggle } from "@/components/builder/ThemeToggle";
 import { CompareView } from "@/components/builder/CompareView";
@@ -82,6 +83,16 @@ export function AppShell() {
   const large = useIsLarge();
   const [detailMode, setDetailMode] = useState<"basic" | "advanced">("basic");
   const advanced = detailMode === "advanced";
+  // "Use this design" in the optimizer: show the panel it names (Advanced mode, single view), then scroll to it.
+  const [reveal, setReveal] = useState<{ target: RevealTarget; n: number } | null>(null);
+  const showPanel = useCallback((target: RevealTarget) => {
+    setView("single");
+    setDetailMode("advanced");
+    setReveal((r) => ({ target, n: (r?.n ?? 0) + 1 }));
+  }, [setView]);
+  useEffect(() => {
+    if (reveal) document.getElementById(`panel-${reveal.target}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [reveal]);
   const mode: Mode = scenario?.mode ?? "industrial";
 
   return (
@@ -135,6 +146,7 @@ export function AppShell() {
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_420px] lg:overflow-hidden">
         <aside className="min-w-0 space-y-3 border-r border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
           <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
+          <PanelGuard name="Optimizer"><OptimizePanel advanced={advanced} onReveal={showPanel} /></PanelGuard>
           <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>
           {advanced && <><PanelGuard name="Build">
             <BuildPanel />
@@ -169,15 +181,15 @@ export function AppShell() {
                 <>
                   {!advanced && <PanelGuard name="Project summary"><ProjectSummary /></PanelGuard>}
                   {advanced && <>
-                  <PanelGuard key={`sim-${v}`} name="Simulate">
+                  <div id="panel-simulate" className="scroll-mt-3"><PanelGuard key={`sim-${v}`} name="Simulate">
                     <SimulatePanel />
-                  </PanelGuard>
+                  </PanelGuard></div>
                   <PanelGuard key={`eval-${v}`} name="Evaluate">
                     <EvaluatePanel />
                   </PanelGuard>
-                  <PanelGuard key={`stress-${v}`} name="Stress test">
+                  <div id="panel-stress" className="scroll-mt-3"><PanelGuard key={`stress-${v}`} name="Stress test">
                     <StressPanel />
-                  </PanelGuard>
+                  </PanelGuard></div>
                   </>}
                   <PanelGuard name="Project impacts"><ProjectDetails result={result} /></PanelGuard>
                   <PanelGuard key={`report-${v}`} name="Report">
