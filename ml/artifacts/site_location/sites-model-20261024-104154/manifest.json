@@ -1,7 +1,7 @@
 {
-  "artifact_id": "sites-heuristic-20261024-094415",
-  "mode": "heuristic",
-  "created_utc": "2026-10-24T09:44:15+00:00",
+  "artifact_id": "sites-model-20261024-104154",
+  "mode": "model",
+  "created_utc": "2026-10-24T10:41:54+00:00",
   "demand_artifact_id": "baseline-2024-20261024-093322",
   "scenario": "base",
   "year": 2024,
@@ -14,9 +14,30 @@
   "grid_spacing_km": 5.0,
   "producer": {
     "package": "ml.site_location",
-    "model_version": "heuristic-v1"
+    "model_version": "sites-20261024-104126"
   },
-  "model_metrics": {},
+  "model_metrics": {
+    "solar_pv": {
+      "spatial_cv_roc_auc": 0.9369233196854055,
+      "spatial_cv_pr_auc": 0.6820806118846365,
+      "positives": 347
+    },
+    "onshore_wind": {
+      "spatial_cv_roc_auc": 0.9634067952249771,
+      "spatial_cv_pr_auc": 0.8166201954874671,
+      "positives": 66
+    },
+    "battery": {
+      "spatial_cv_roc_auc": 0.9589481373265157,
+      "spatial_cv_pr_auc": 0.7515827192223502,
+      "positives": 74
+    },
+    "gas_cc": {
+      "spatial_cv_roc_auc": 0.9243613419513698,
+      "spatial_cv_pr_auc": 0.711468087266346,
+      "positives": 114
+    }
+  },
   "provenance": [
     {
       "kind": "observed",
