@@ -1,0 +1,6 @@
+# Prep-only packages for app/site_intel/prep/ (never imported by the server, so not in
+# backend/requirements/e-site-intel.txt). shapely and pyproj come from a-explore.txt.
+rasterio==1.5.2
+pyshp==3.1.6
+mercantile==1.2.1
+pillow==13.0.0

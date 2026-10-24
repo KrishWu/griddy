@@ -1,0 +1,21 @@
+{
+ "site": "kern",
+ "bounds": [
+  -119.497582,
+  35.377517,
+  -119.442418,
+  35.422483
+ ],
+ "minzoom": 12,
+ "maxzoom": 16,
+ "source": "Copernicus Sentinel-2 L2A 2024 median composite (Google Earth Engine COPERNICUS/S2_SR_HARMONIZED)",
+ "url": "https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED",
+ "style": "SCL cloud-masked median of B4/B3/B2, stretch 0-3000, gamma 1.2",
+ "season": [
+  "2024-05-01",
+  "2024-10-01"
+ ],
+ "attribution": "Contains modified Copernicus Sentinel data 2024, processed in Google Earth Engine",
+ "license": "Copernicus Sentinel data terms (free and open)",
+ "captured": "2026-10-24"
+}
