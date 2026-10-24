@@ -144,6 +144,8 @@ export function AppShell() {
       )}
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_420px] lg:overflow-hidden">
         <aside className="min-w-0 space-y-3 border-r border-zinc-200 p-3 lg:overflow-y-auto dark:border-zinc-800">
+          {/* Basic mode has no site cards, but the GriddyGrade still leads on small screens. */}
+          {!large && !advanced && <GradeCard epoch={v} />}
           <PanelGuard name="Project planner"><ProjectPlanner /></PanelGuard>
           <PanelGuard name="Selected area"><AreaPanel /></PanelGuard>
           {advanced && <><PanelGuard name="Build">
@@ -167,11 +169,12 @@ export function AppShell() {
               <PanelGuard name="Map">
                 <MapView advanced={advanced} />
               </PanelGuard>
-              {/* Site results appear next to where you clicked, not three screens down the sidebar. */}
-              {large && advanced && (
+              {/* Site results appear next to where you clicked, not three screens down the sidebar.
+                  The GriddyGrade shows in both modes; the site cards below it only in Advanced. */}
+              {large && (
                 <div className="absolute bottom-8 left-3 z-10 max-h-[55%] w-80 space-y-2 overflow-y-auto">
                   <GradeCard epoch={v} />
-                  <SiteCards epoch={v} />
+                  {advanced && <SiteCards epoch={v} />}
                 </div>
               )}
             </main>
