@@ -725,4 +725,8 @@ def stress_test(scenario: Scenario, sim: SimulationResult) -> list[Finding]:
             )
         )
     findings += _design_quality(scenario, sim, prep)
+    from app.simulate.resilience import resilience_findings, resilience_metrics
+    metrics = resilience_metrics(scenario, sim, prep)
+    sim.extras["resilience"] = metrics
+    findings += resilience_findings(metrics)
     return findings

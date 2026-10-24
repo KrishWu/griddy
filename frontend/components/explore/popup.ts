@@ -165,6 +165,9 @@ function siteCard(p: Props): HTMLElement {
 /** Popup content for a feature of one of our clickable layers. */
 export function popupContent(layerId: string, properties: Props | null | undefined): HTMLElement {
   const p = properties ?? {};
+  if (layerId === "zoning-fill") return card({ title: str(p.Code) ?? "Zoning code unavailable", subtitle: str(p.Description),
+    rows: [["Jurisdiction", str(p.Jurisdiction)], ["Class", str(p.New_Class)], ["Recorded date", str(p.Date)]],
+    source: `${str(p.Source) ?? "California LCI"}. Historical screening; verify current allowed uses with the jurisdiction.` });
   if (layerId.startsWith("plants")) return plantCard(p);
   if (layerId.startsWith("substations")) return substationCard(p);
   if (layerId.startsWith("transmission")) return lineCard(p);

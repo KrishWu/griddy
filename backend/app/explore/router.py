@@ -10,8 +10,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
 from app.contract import LngLat, SiteSummary
+from app.explore.area import AreaRequest, summarize_area
+from app.explore.zoning import ZoningRequest, selected_zoning, stream_zoning, validate_selection, zoning
+from app.explore.search import search_places
 from app.explore.service import (
     LAYERS,
     fallback_style_path,
@@ -89,6 +93,48 @@ def site_summary(
 def explore_layers() -> dict[str, Any]:
     """Per dataset: feature count, source, license, url, attribution and source date."""
     return layer_info()
+
+
+@router.get("/explore/search")
+def place_search(q: str = Query(min_length=2, max_length=120)) -> dict:
+    try:
+        return search_places(q)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/explore/area")
+def selected_area(req: AreaRequest) -> dict:
+    try:
+        return summarize_area(req)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/explore/zoning")
+def zoning_layer(bbox: str) -> dict:
+    try:
+        return zoning(bbox)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/explore/zoning")
+def highlighted_zoning(req: ZoningRequest) -> dict:
+    try:
+        return selected_zoning(req.footprint)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/explore/zoning/stream")
+def progressive_zoning(req: ZoningRequest):
+    try:
+        validate_selection(req.footprint)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return StreamingResponse(stream_zoning(req.footprint), media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @router.get("/explore/fallback-style", responses={404: {"description": "No bundled fallback style"}})
