@@ -137,9 +137,10 @@ export function LayerControl(props: {
   const legendOpen = userLegend ?? size === "roomy";
   const failed = DATA_KEYS.filter((k) => status[k] === "error");
 
-  // MapView caps the height; the toggles and the legend each scroll if squeezed.
+  // MapView caps the height; the toggles and the legend each scroll if squeezed, and the whole card
+  // scrolls when even that isn't enough (a short cap with the legend open), so no toggle is cut off.
   return (
-    <div className="pointer-events-auto flex min-h-0 w-56 flex-col overflow-hidden rounded-lg bg-white/95 text-xs text-zinc-800 shadow-md ring-1 ring-black/10 backdrop-blur-sm dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/10">
+    <div className="pointer-events-auto flex min-h-0 w-56 flex-col overflow-y-auto rounded-lg bg-white/95 text-xs text-zinc-800 shadow-md ring-1 ring-black/10 backdrop-blur-sm dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/10">
       <button
         type="button"
         onClick={() => setUserOpen(!open)}

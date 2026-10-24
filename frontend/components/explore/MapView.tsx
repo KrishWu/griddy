@@ -99,8 +99,11 @@ function framePadding(m: MLMap): Padding {
   const area = (p: Padding) => Math.max(0, size(p)[0]) * Math.max(0, size(p)[1]);
   const best = candidates.reduce((a, b) => (area(b) > area(a) ? b : a));
   const [bw, bh] = size(best);
-  if (bw < 120 || bh < 100) return { top: 40, right: 40, bottom: 40, left: 40 };
-  return { ...best, bottom: best.bottom + Math.round(Math.min(0.08 * h, 0.25 * bh)) };
+  if (bw >= 120 && bh >= 100) return { ...best, bottom: best.bottom + Math.round(Math.min(0.08 * h, 0.25 * bh)) };
+  // No clear rectangle (a map under ~380 px with floating cards): stay above the Site cards, which can't
+  // be moved, and accept the layers card, which folds.
+  if (cards && h - top - aboveCards >= 100) return { top, left: gap, right: gap, bottom: aboveCards };
+  return { top: 40, right: 40, bottom: 40, left: 40 };
 }
 
 // One fetch per layer per page load, shared across remounts (StrictMode, error-boundary resets).
