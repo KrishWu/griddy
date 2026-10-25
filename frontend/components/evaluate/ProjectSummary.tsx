@@ -11,7 +11,7 @@ import type { Provenance, ScenarioResult } from "@/lib/contract";
 import type { GlossaryKey } from "@/lib/glossary";
 import { projectOf, resilienceOf, type ProjectMetrics } from "./project";
 import { CarbonLedger } from "./CarbonLedger";
-import { allGridTonnes, communityCaseOf, economicCaseOf, economicProvenance, QUEUE_PROVENANCE, RECS_PROVENANCE, verdictSentence, years1, type EconomicCase, type Verdict } from "./economicCase";
+import { allGridTonnes, communityCaseOf, economicCaseOf, economicProvenance, OWNER_CAVEATS, QUEUE_PROVENANCE, RECS_PROVENANCE, verdictSentence, years1, type EconomicCase, type Verdict } from "./economicCase";
 import { ProvenanceTip } from "./ProvenanceTip";
 
 type Tone = "good" | "warn" | "bad" | "neutral";
@@ -118,11 +118,12 @@ function WhyBuild({ result, c }: { result: ScenarioResult; c: EconomicCase }) {
       <Headline tone={VERDICT[c.verdict].tone} label={<Label term="years_to_profitable" tip="Years to profitable" provenance={prov.payback}>Years to profitable</Label>}
         value={pb.value} sub={pb.sub} />
       <Headline tone={c.savingsUsd > 0 && c.verdict !== "grid_baseline" ? "good" : c.verdict === "grid_baseline" ? "neutral" : "bad"}
-        label={<Label tip="Savings vs grid-only" provenance={prov.savings}>{c.savingsUsd >= 0 ? "Saves vs utility power" : "Extra cost vs utility power"}</Label>}
+        label={<Label tip="Campus owner's savings vs the utility" provenance={prov.savings}>{c.savingsUsd >= 0 ? "Owner saves vs utility power" : "Owner's extra cost vs utility power"}</Label>}
         value={`${usd(Math.abs(c.savingsUsd))}/yr`}
         sub={<>utility bill {usd(c.gridAnnualUsd)}/yr <ProvenanceTip label="Buying from the utility" provenance={prov.grid} /> vs this design {usd(c.designAnnualUsd)}/yr</>} />
     </div>
-    <p className="mt-2.5 text-sm font-medium leading-snug text-zinc-800 dark:text-zinc-100">{verdictSentence(c)}</p>
+    <p className="mt-2.5 text-sm font-medium leading-snug text-zinc-800 dark:text-zinc-100">{verdictSentence(c, "this design", "the campus owner")}</p>
+    <p className="mt-1.5 text-[11px] leading-snug text-zinc-600 dark:text-zinc-400"><span className="font-semibold text-zinc-800 dark:text-zinc-200">Who saves:</span> the campus owner, who builds the plant and pays its power bill; other utility customers and the public aren&apos;t in these dollars. Not counted: departing-load <ProvenanceTip label="Departing-load charges" provenance={OWNER_CAVEATS.departingLoad} /> and standby <ProvenanceTip label="Standby charges" provenance={OWNER_CAVEATS.standby} /> charges the utility still bills a campus that makes its own power{c.peakMw >= 100 && <>, or the lower transmission-level rate a load this size would likely pay <ProvenanceTip label="Transmission-level rate" provenance={OWNER_CAVEATS.transmissionRate} /></>}, so real savings are likely smaller.</p>
     <div className="mt-2.5 grid grid-cols-2 gap-2">
       <Fact label={<Label tip="20-year net savings" provenance={prov.net}>{c.years}-year net savings</Label>} value={signed(c.netSavingsPvUsd)} sub={`after ${c.years} years of operation vs buying from the utility, today's dollars`} />
       <Fact label={<Label term="homes_equivalent" tip="Homes' worth of electricity" provenance={prov.homes}>Homes&apos; worth of power</Label>} value={`${count(c.homesEquivalent)} homes`} sub="California average homes, a size comparison" />

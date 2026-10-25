@@ -27,6 +27,29 @@ export const QUEUE_PROVENANCE: Provenance = {
   note: "The median project built in 2025 waited over 5 years from interconnection request to commercial operation (regions with data), and the report covers generation and storage, not new loads, so a smaller grid request shortening a campus's wait is a screening judgment that only a utility study can confirm.",
 };
 
+/** What the savings leave out: utility charges a campus that makes its own power still pays, and the rate a
+ *  1 GW load would really get. PG&E's tariffs are the example; other California utilities have similar ones.
+ *  ProvenanceTip shows one source per marker, so each caveat gets its own. */
+export const OWNER_CAVEATS: Record<"departingLoad" | "standby" | "transmissionRate", Provenance> = {
+  departingLoad: {
+    kind: "observed",
+    source: "PG&E Electric Schedule E-DCG, Departing Customer Generation (Advice 7562-E, effective May 10, 2025)",
+    url: "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_E-DCG.pdf",
+    note: "Load a customer moves to its own generation still owes non-bypassable charges, including the Wildfire Fund, CTC, nuclear decommissioning, public purpose programs and wildfire hardening charges, unless exempt; not counted in the savings.",
+  },
+  standby: {
+    kind: "observed",
+    source: "PG&E Electric Schedule S, Standby Service",
+    url: "https://www.pge.com/tariffs/assets/pdf/tariffbook/ELEC_SCHEDS_S%20(Sch).pdf",
+    note: "A customer whose own generation needs the utility to stand ready as backup pays standby reservation charges (some clean on-site generation is exempt); not counted in the savings.",
+  },
+  transmissionRate: {
+    kind: "assumption",
+    source: "Griddy assumption: a load this size would take service at transmission voltage",
+    note: "Transmission-voltage rates are below the all-industrial average used here, so buying from the utility is likely cheaper than shown and the savings smaller.",
+  },
+};
+
 /** Present value of $1 a year for n years at real rate r: (1 - (1 + r)^-n) / r. */
 export function annuityFactor(r: number, n: number): number {
   if (!(n > 0)) return 0;
@@ -206,8 +229,8 @@ export const RETAIL_SOURCE = {
 const money = (v: number) => usd(Math.abs(v));
 export const years1 = (v: number) => (v >= 100 ? "100+" : v.toFixed(1));
 
-/** One honest sentence: the economic reason this design is (or isn't) worth building. */
-export function verdictSentence(c: EconomicCase, subject = "this design"): string {
+/** One honest sentence: the economic reason this design is (or isn't) worth building, and for whom when given. */
+export function verdictSentence(c: EconomicCase, subject = "this design", owner?: string): string {
   const grid = "buying from the utility at California's 2024 average rate";
   const rest = "Its case rests on carbon, resilience or powering up sooner.";
   switch (c.verdict) {
@@ -218,7 +241,7 @@ export function verdictSentence(c: EconomicCase, subject = "this design"): strin
     case "slow_payback":
       return `Cuts running costs by ${money(c.savingsUsd)} a year versus ${grid}, but doesn't earn back its ${money(c.capexUsd)} build cost within ${c.years} years of operation (${money(c.netSavingsPvUsd)} behind in today's dollars). ${rest}`;
     case "pays_back":
-      return `Worth building on cost: it cuts running costs by ${money(c.savingsUsd)} a year versus ${grid}, is profitable about ${years1(c.paybackYears ?? 0)} years after the go-ahead (${years1(c.buildYears)}-year build, then ${years1(c.discountedPaybackYears ?? 0)} years to repay ${money(c.capexUsd)} at a ${(c.discountRate * 100).toFixed(0)}% cost of capital) and ends ${money(c.netSavingsPvUsd)} ahead after ${c.years} years of operation (today's dollars).`;
+      return `Worth building on cost${owner ? ` for ${owner}` : ""}: it cuts ${owner ? "their " : ""}running costs by ${money(c.savingsUsd)} a year versus ${grid}, is profitable about ${years1(c.paybackYears ?? 0)} years after the go-ahead (${years1(c.buildYears)}-year build, then ${years1(c.discountedPaybackYears ?? 0)} years to repay ${money(c.capexUsd)} at a ${(c.discountRate * 100).toFixed(0)}% cost of capital) and ends ${money(c.netSavingsPvUsd)} ahead after ${c.years} years of operation (today's dollars).`;
   }
 }
 
@@ -237,7 +260,7 @@ export function economicProvenance(c: EconomicCase) {
     } satisfies Provenance,
     savings: {
       kind: "inferred",
-      source: "Griddy estimate: buying from the utility − this design's year-1 running cost, with its own grid purchases also at the utility rate",
+      source: "Griddy estimate of the owner's savings: buying from the utility − this design's year-1 running cost, with its own grid purchases also at the utility rate",
       note: `${usd(c.gridAnnualUsd)} from the utility − ${usd(c.designAnnualUsd)} for this design (O&M, fuel, and its ${Math.round(c.importsMwh).toLocaleString()} MWh of grid power at $${c.retailUsdPerMwh.toFixed(1)}/MWh, ${usd(c.importPremiumUsd)} more than the evaluation's wholesale cost for it) = ${c.savingsUsd < 0 ? "−" : ""}${money(c.savingsUsd)} a year, in real 2024 dollars.`,
     } satisfies Provenance,
     payback: {
