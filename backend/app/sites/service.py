@@ -6,7 +6,9 @@ Combines every slice's data, live, for any what-if:
     distances, LBNL queue, ERA5 resource, EPA nonattainment), via app/ml_bridge;
   - how much nameplate a MW of peak needs: solar and wind capacity credit measured from B's 2024 hourly
     capacity factors (data/simulate/sites) at CAISO's 100 highest net-load hours (data/simulate/caiso_2024_hourly.csv);
-  - cost and land: C's catalog (ATB 2025 CAPEX, land per MW, gen-tie $/km) via app/evaluate/catalog.
+  - cost and land: C's catalog (ATB 2025 CAPEX, land per MW, gen-tie $/km) via app/evaluate/catalog;
+  - what's already built: A's EIA-860 operating plants (data/explore/plants_ca.geojson). A cell's room for a
+    kind is its cap minus the MW of that kind already operating in it.
 Solar and wind are sized to a clean share of the new annual energy, then batteries and gas to the peak growth
 left after the renewables' capacity credit. A linear program (HiGHS) places that nameplate on cells anywhere
 in California at least weighted cost
@@ -22,7 +24,9 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
+from pyproj import Transformer
 from scipy.optimize import linprog
+from scipy.spatial import cKDTree
 
 from app import DATA_DIR
 from app.contract import LngLat, Provenance, SiteCandidate, SiteRecommendation, SiteRequest
@@ -49,6 +53,8 @@ TOP_HOURS = 100
 MAX_SITES_RETURNED = 300
 
 KIND_LABEL = {"solar_pv": "solar", "onshore_wind": "wind", "battery": "battery", "gas_cc": "gas"}
+PLANT_FUEL = {"solar_pv": "solar", "onshore_wind": "wind", "battery": "battery", "gas_cc": "gas"}  # fuel_mix keys in A's plants layer
+TO_ALBERS = Transformer.from_crs(4326, 3310, always_xy=True).transform  # the site grid's CRS (ml/site_location)
 CAVEATS = [
     "Screening candidates, not buildable sites: land ownership, zoning, habitat and interconnection capacity need site studies and a utility study.",
     "Suitability means a cell looks like places where plants of that kind were built (grid access, resource, people, air quality).",
@@ -151,6 +157,43 @@ def cell_cap_mw(kind: str, spacing_km: float) -> float:
     return float(min(area_cap, HARD_CAP_MW[kind]))
 
 
+@lru_cache(maxsize=1)
+def _operating_plants() -> pd.DataFrame:
+    """A's EIA-860 operating plants: Albers x, y (m) and MW per kind. MW come from each plant's fuel mix, so a
+    solar + storage hybrid counts its battery too."""
+    rows = []
+    try:
+        for f in json.loads((DATA_DIR / "explore" / "plants_ca.geojson").read_text(encoding="utf-8"))["features"]:
+            p = f["properties"]
+            if not f.get("geometry") or p.get("status", "operating") != "operating":
+                continue
+            mix = p.get("fuel_mix") or {p["fuel"]: p["capacity_mw"]}
+            rows.append([*f["geometry"]["coordinates"][:2], *(float(mix.get(fuel, 0.0)) for fuel in PLANT_FUEL.values())])
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        log.exception("operating plants from data/explore failed; cells keep their full room")
+        rows = []
+    plants = pd.DataFrame(rows, columns=["lon", "lat", *PLANT_FUEL], dtype=float)
+    plants["x"], plants["y"] = TO_ALBERS(plants["lon"].to_numpy(), plants["lat"].to_numpy())
+    return plants
+
+
+def existing_mw(cand: pd.DataFrame, spacing_km: float) -> pd.DataFrame:
+    """MW of each kind already operating in each candidate cell (the spacing_km square around its centre on the
+    Albers grid), one column per kind, aligned with cand's rows."""
+    plants = _operating_plants()
+    out = pd.DataFrame(0.0, index=cand.index, columns=list(PLANT_FUEL))
+    if plants.empty or cand.empty:
+        return out
+    cx, cy = TO_ALBERS(cand["lon"].to_numpy(), cand["lat"].to_numpy())
+    # Chebyshev distance within half a spacing = inside that cell's square (+1 m for the rounded centres);
+    # a plant in a cell the artifact doesn't list matches nothing.
+    d, i = cKDTree(np.c_[cx, cy]).query(plants[["x", "y"]].to_numpy(), p=np.inf, distance_upper_bound=spacing_km * 500.0 + 1.0)
+    hit = np.isfinite(d)
+    for kind in PLANT_FUEL:
+        out[kind] = np.bincount(i[hit], weights=plants[kind].to_numpy()[hit], minlength=len(cand))
+    return out
+
+
 def capex_usd(kind: str, mw: float) -> float | None:
     spec = _specs().get(kind)
     if spec is None:
@@ -166,8 +209,9 @@ def _norm(v: np.ndarray) -> np.ndarray:
     return v / hi if hi > 0 else np.zeros_like(v, dtype=float)
 
 
-def candidates(cand: pd.DataFrame, kinds: list[str], w: dict[str, float]) -> pd.DataFrame:
-    """One row per (cell, kind) with its weighted cost; the cheapest CANDIDATES_PER_KIND per kind, anywhere in
+def candidates(cand: pd.DataFrame, kinds: list[str], w: dict[str, float], caps: dict[str, float], built: pd.DataFrame) -> pd.DataFrame:
+    """One row per (cell, kind) with its weighted cost and room (cap_mw: caps[kind] minus the kind's MW already
+    operating in the cell, from built); the cheapest CANDIDATES_PER_KIND per kind that still have room, anywhere in
     California (small regions like LADWP have little land of their own; the growth term keeps sites near load)."""
     grid = np.minimum(cand["d_line_hv_km"].to_numpy(), 100.0) / 100.0
     queue = _norm(cand["queue_mw"].to_numpy())
@@ -177,13 +221,16 @@ def candidates(cand: pd.DataFrame, kinds: list[str], w: dict[str, float]) -> pd.
         p = cand[f"p_{kind}"].to_numpy()
         air = cand["in_nonattainment"].to_numpy() if kind == "gas_cc" else 0.0
         cost = w["suitability"] * (1 - p) + w["grid"] * grid + w["queue"] * queue + w["growth"] * growth + w["air"] * air
-        rows.append(cand.assign(kind=kind, suitability=p, cost=cost))
+        have = built[kind].to_numpy()
+        room = np.maximum(caps[kind] - have, 0.0)
+        rows.append(cand.assign(kind=kind, suitability=p, cost=cost, existing_mw=have, cap_mw=room)[room > 0.5])
     out = pd.concat(rows, ignore_index=True)
     return out.sort_values("cost").groupby("kind", group_keys=False).head(CANDIDATES_PER_KIND).reset_index(drop=True)
 
 
-def solve(cand: pd.DataFrame, need: dict[str, float], caps: dict[str, float]) -> tuple[pd.DataFrame, dict[str, float]]:
-    """Place need[kind] MW on candidate cells at least total cost; returns (allocations, unmet MW per kind)."""
+def solve(cand: pd.DataFrame, need: dict[str, float]) -> tuple[pd.DataFrame, dict[str, float]]:
+    """Place need[kind] MW on candidate cells (each up to its cap_mw) at least total cost; returns (allocations,
+    unmet MW per kind)."""
     keys = [k for k, v in need.items() if v > 0.5]
     n, m = len(cand), len(keys)
     if m == 0:
@@ -195,7 +242,7 @@ def solve(cand: pd.DataFrame, need: dict[str, float], caps: dict[str, float]) ->
         A[j, :n] = -(kind == k).astype(float)
         A[j, n + j] = -1.0
     b = -np.array([need[k] for k in keys])
-    bounds = [(0.0, caps[k]) for k in kind] + [(0.0, None)] * m
+    bounds = [(0.0, cap) for cap in cand["cap_mw"].to_numpy()] + [(0.0, None)] * m
     res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method="highs")
     if res.status != 0:
         raise RuntimeError(f"site selection failed: {res.message}")
@@ -216,6 +263,8 @@ def _reason(r, label: str, learned: bool) -> str:
         parts.append(f"{r.growth_150km_gwh:,.0f} GWh/yr of new demand within 150 km")
     if label == "gas" and r.in_nonattainment:
         parts.append("inside an air-quality nonattainment area (permit risk)")
+    if r.existing_mw > 0.5:
+        parts.append(f"{r.existing_mw:,.0f} MW of {label} already operating in this cell, so it has room for {r.cap_mw:,.0f} MW more")
     return "; ".join(parts)
 
 
@@ -235,7 +284,8 @@ def recommend(req: SiteRequest) -> SiteRecommendation:
     kinds = [k for k in need if need[k] > 0.5]
     caps = {k: cell_cap_mw(k, art.manifest.grid_spacing_km) for k in kinds}
     if kinds:
-        alloc, unmet = solve(candidates(art.candidates, kinds, weights), {k: need[k] for k in kinds}, caps)
+        built = existing_mw(art.candidates, art.manifest.grid_spacing_km)
+        alloc, unmet = solve(candidates(art.candidates, kinds, weights, caps, built), {k: need[k] for k in kinds})
     else:
         alloc, unmet = art.candidates.iloc[0:0].assign(mw=pd.Series(dtype=float), kind=pd.Series(dtype=str), suitability=pd.Series(dtype=float)), {}
 
@@ -303,3 +353,4 @@ def clear_caches() -> None:
     _load_site_artifact.cache_clear()
     capacity_credit.cache_clear()
     annual_cf.cache_clear()
+    _operating_plants.cache_clear()

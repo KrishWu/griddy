@@ -65,6 +65,21 @@ def test_capacity_credit_and_costs_come_from_the_data():
     assert any("ATB" in p.source for p in rec.provenance)
 
 
+def test_operating_plants_use_up_cell_room():
+    art = service._site_artifact()
+    built = service.existing_mw(art.candidates, art.manifest.grid_spacing_km)
+    assert (built["solar_pv"] > 0).sum() > 300  # hundreds of cells already host solar
+    assert 15_000 < built["solar_pv"].sum() < 30_000  # California's utility solar, minus plants in cells the artifact drops
+    assert built["battery"].sum() > 8_000  # hybrids' storage counts (fuel mix), not only battery-only plants
+    row = dict(zip(art.candidates["cell"], range(len(art.candidates))))
+    rec = service.recommend(SiteRequest())
+    for s in rec.sites:
+        have = built[s.kind].iat[row[int(s.id.rsplit("-", 1)[1])]]
+        assert s.mw + have <= service.cell_cap_mw(s.kind, 5.0) + 0.05  # mw rounded to 0.1
+        assert ("already operating" in s.reason) == (have > 0.5)
+    assert (built["onshore_wind"] >= service.cell_cap_mw("onshore_wind", 5.0)).any()  # some cells are already full, so the loop above excludes them
+
+
 def test_mix_and_weights_are_respected():
     no_gas = service.recommend(SiteRequest(mix={"battery": 1.0, "gas_cc": 0.0}))
     assert not any(s.kind == "gas_cc" for s in no_gas.sites)
